@@ -12,3 +12,6 @@ build/
 builddir/
 out/
 dist/
+
+#mock
+*-mock/

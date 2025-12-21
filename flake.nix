@@ -28,6 +28,9 @@
         vala
         glib
         gtk4
+        wayland
+        wayland-protocols
+        wayland-scanner
       ];
 
       astalPackages = with astal.packages.${system}; [

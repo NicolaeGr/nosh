@@ -2,6 +2,34 @@ pkgdatadir = get_option('prefix') / get_option('datadir')
 bindir = get_option('prefix') / get_option('bindir')
 sass = find_program('sass', required: true)
 
+# Generate Wayland idle-inhibit protocol bindings
+wl_protocols_dep = dependency('wayland-protocols')
+wl_protocols_dir = wl_protocols_dep.get_variable('pkgdatadir')
+wl_scanner_prog = find_program('wayland-scanner', native: true, required: true)
+
+wl_inhibit_xml = wl_protocols_dir / 'unstable/idle-inhibit/idle-inhibit-unstable-v1.xml'
+
+wl_inhibit_inc = custom_target(
+  'idle-inhibit-client-protocol.h',
+  output: 'idle-inhibit-client-protocol.h',
+  input: wl_inhibit_xml,
+  command: [wl_scanner_prog, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+
+wl_inhibit_src = custom_target(
+  'idle-inhibit-client-protocol.c',
+  output: 'idle-inhibit-client-protocol.c',
+  input: wl_inhibit_xml,
+  command: [wl_scanner_prog, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+
+# Add Vala arguments for idle-inhibit protocol
+add_project_arguments(
+  '--vapidir=' + meson.current_source_dir() / 'utils' / 'Zwp',
+  '--pkg=idle-inhibit',
+  language: 'vala'
+)
+
 dependencies = [
   dependency('gtk4-layer-shell-0'),
   dependency('astal-io-0.1'),
@@ -49,7 +77,10 @@ resource = import('gnome').compile_resources(
 executable(
   meson.project_name(),
   dependencies: dependencies,
-  sources: [vala_sources, resource],
+  sources: [vala_sources, resource, wl_inhibit_src, wl_inhibit_inc],
+  c_args: [
+    '-I' + meson.current_build_dir(),
+  ],
   link_args: ['-lm'], # Link math library
   install: true,
   install_dir: bindir,

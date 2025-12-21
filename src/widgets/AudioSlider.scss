@@ -1,0 +1,37 @@
+@use "sass:color";
+
+.AudioSlider {
+  * {
+    all: unset;
+  }
+
+  image {
+    min-width: 24px;
+    min-height: 24px;
+    margin-right: 0.5em;
+  }
+
+  & {
+    margin: 0 1em;
+    min-width: 140px;
+  }
+
+  trough {
+    background-color: color.adjust($fg, $alpha: -0.8);
+    border-radius: $radius;
+  }
+
+  highlight {
+    background-color: $accent;
+    min-height: 0.8em;
+    border-radius: $radius;
+  }
+
+  slider {
+    background-color: $fg;
+    border-radius: $radius;
+    min-height: 1em;
+    min-width: 1em;
+    margin: -0.2em;
+  }
+}

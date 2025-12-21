@@ -1,0 +1,14 @@
+# IDE 
+.idea
+.vscode
+
+# Environment
+.direnv
+
+# Build
+result/
+bin/
+build/
+builddir/
+out/
+dist/

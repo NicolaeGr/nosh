@@ -15,6 +15,7 @@ namespace Widgets {
 
             var item = tray.get_item (id);
             var btn = new Gtk.MenuButton () { visible = true };
+            btn.set_css_classes ({ "menu-icon" });
             btn.set_menu_model (item.menu_model);
             var icon = new Gtk.Image ();
 

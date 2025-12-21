@@ -1,14 +1,15 @@
+using Gtk;
+
 namespace Widgets {
-    public class Wifi : Gtk.Box {
+    public class Wifi : Gtk.Button {
         private Gtk.Image icon;
 
         public Wifi () {
-            set_css_classes ({ "Wifi" });
+            set_css_classes ({"square-icon" });
+            set_valign (Align.CENTER);
 
             icon = new Gtk.Image ();
-            icon.hexpand = false;
-            icon.halign = Gtk.Align.CENTER;
-            append (icon);
+            this.set_child(icon);
 
             var wifi = AstalNetwork.get_default ().wifi;
             if (wifi != null) {

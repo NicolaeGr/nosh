@@ -12,6 +12,7 @@ namespace Widgets {
             this.valign = Align.CENTER;
 
             icon = new Gtk.Image();
+            this.set_css_classes({ "square-icon" });
             this.set_child(icon);
 
             manager = Utils.IdleInhibitorManager.get_instance();

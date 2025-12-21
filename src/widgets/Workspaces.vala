@@ -4,12 +4,15 @@ namespace Widgets {
 
         public Workspaces () {
             add_css_class ("Workspaces");
+            set_spacing (0);
             hypr.notify["workspaces"].connect (sync);
             sync ();
         }
 
         void sync () {
+            remove_css_class ("Workspaces");
             clear_children (this);
+            add_css_class ("Workspaces");
 
             var ordered = hypr.workspaces;
             ordered.sort ((a, b) => a.id - b.id);
@@ -23,8 +26,8 @@ namespace Widgets {
         private Gtk.Button create_button (AstalHyprland.Workspace ws) {
             var btn = new Gtk.Button () {
                 label = ws.id.to_string (),
-                height_request = 24,
-                width_request = 24,
+                hexpand = false,
+                vexpand = false,
             };
 
             // initial state

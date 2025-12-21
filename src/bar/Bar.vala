@@ -10,7 +10,6 @@ namespace TopBar {
             );
 
             add_css_class ("Bar");
-            height_request = 32;
 
             var layout = new Gtk.CenterBox ();
             layout.set_start_widget (new Left ());

@@ -4,7 +4,6 @@ namespace TopBar {
             hexpand = true;
             halign = Gtk.Align.START;
             append (new Widgets.Workspaces ());
-            // append (new FocusedClient ());
         }
     }
 }

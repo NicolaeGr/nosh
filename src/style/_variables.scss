@@ -1,6 +1,10 @@
 @use "sass:color";
 
-$bg: #212223;
-$fg: #f1f1f1;
-$accent: #378df7;
-$radius: 7px;
+// Purple-based theme matching frontend mock
+$bg: #1f1f20; // oklch(0.2478 0 0) - dark background
+$fg: #f4f4f4; // oklch(0.9551 0 0) - light foreground
+$accent: #a855f7; // oklch(0.5999 0.2412 293.0802) - vibrant purple
+$accent-dark: #7c3aed; // oklch(0.3779 0.1557 294.1462) - darker purple
+$muted: #525252; // oklch(0.36 0 0) - muted gray
+$card: #2a2a2b; // oklch(0.2768 0 0) - card background
+$radius: 8px; // 0.5rem border radius

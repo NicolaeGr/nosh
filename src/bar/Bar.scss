@@ -3,69 +3,103 @@
 window.Bar {
   border: none;
   box-shadow: none;
-  background-color: unquote("alpha(@theme_bg_color, 0.4)");
-  -gtk-backdrop-filter: blur(10px);
+  background-color: rgba(0, 0, 0, 0.1);
   color: unquote("@theme_fg_color");
-  font-size: 1.1em;
+  font-size: 0.9em;
   font-weight: bold;
-  min-height: 32px;
-  padding: 4px;
+  min-height: 28px;
+  padding: 2px 4px;
+  margin: 0 2px;
 
   label {
     margin: 0 8px;
   }
 
-  .Workspaces {
-    button {
-      all: unset;
-      background-color: transparent;
+  .square-icon,
+  .menu-icon button {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    transition: background-color 200ms;
+    margin: 0;
 
-      &:hover label {
-        background-color: color.adjust($fg, $alpha: -0.84);
-        border-color: color.adjust($accent, $alpha: -0.8);
-      }
-
-      &:active label {
-        background-color: color.adjust($fg, $alpha: -0.8);
-      }
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.1);
     }
 
-    label {
-      transition: 200ms;
-      padding: 0 8px;
-      margin: 2px;
-      border-radius: $radius;
-      border: 1pt solid transparent;
-    }
-
-    .focused label {
-      color: $accent;
-      border-color: $accent;
+    image {
+      min-width: 30px;
+      min-height: 30px;
     }
   }
 
-  .SysTray {
+  .menu-icon {
+    padding: 0;
+    margin: 0;
+
+    button {
+      min-height: 30px;
+
+      image {
+        min-width: 24px;
+        min-height: 24px;
+      }
+    }
+  }
+
+  .Workspaces {
+    padding: 4px;
+    background-color: rgba(255, 255, 255, 0.08);
+    border-top-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-top-right-radius: 14px;
+    border-bottom-left-radius: 14px;
+    hexpand: false;
+    vexpand: false;
     margin-right: 8px;
 
     button {
-      padding: 0 4px;
+      all: unset;
+      min-width: 16px;
+      min-height: 14px;
+      padding: 0 2px;
+      margin: 0 1px;
+      border-top-left-radius: 14px;
+      border-bottom-right-radius: 14px;
+      border-top-right-radius: 8px;
+      border-bottom-left-radius: 8px;
+      font-size: 0.8em;
+      font-weight: 600;
+      font-family: monospace;
+      color: rgba(255, 255, 255, 0.6);
+      background-color: transparent;
+      border: 2px solid transparent;
+      transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+      hexpand: false;
+      vexpand: false;
+
+      &:hover {
+        color: rgba(255, 255, 255, 0.9);
+        background-color: rgba(255, 255, 255, 0.1);
+        border-bottom-color: $accent;
+        border-left-color: $accent;
+        border-top-left-radius: 0;
+        border-bottom-right-radius: 0;
+        border-top-right-radius: 8px;
+        border-bottom-left-radius: 8px;
+        transform: scale(1.05);
+      }
     }
-  }
 
-  .FocusedClient {
-    color: $accent;
-  }
-
-  .Media .Cover {
-    min-height: 1.2em;
-    min-width: 1.2em;
-    border-radius: $radius;
-    background-position: center;
-    background-size: contain;
-  }
-
-  .Battery label {
-    padding-left: 0;
-    margin-left: 0;
+    button.focused {
+      color: $accent;
+      background-color: rgba(168, 85, 247, 0.15);
+      border-bottom-color: $accent;
+      border-left-color: $accent;
+      border-top-left-radius: 0;
+      border-bottom-right-radius: 0;
+      border-top-right-radius: 8px;
+      border-bottom-left-radius: 8px;
+    }
   }
 }

@@ -47,7 +47,7 @@
     in
     {
       packages.${system}.default = pkgs.stdenv.mkDerivation {
-        name = "hypr-shell";
+        name = "nosh";
         src = ./.;
         inherit nativeBuildInputs;
         buildInputs = astalPackages;

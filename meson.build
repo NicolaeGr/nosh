@@ -1,3 +1,3 @@
-project('hypr-schell', 'vala')
+project('nosh', 'vala')
 
 subdir('src')

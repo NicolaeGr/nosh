@@ -13,7 +13,7 @@ namespace QuickSettings {
                 layer: Astal.Layer.OVERLAY,
                 keymode: Astal.Keymode.EXCLUSIVE,
                 visible: false,
-                namespace: "hypr-shell-quick-settings"
+                namespace: "nosh-quick-settings"
             );
 
             add_css_class ("QuickSettings");

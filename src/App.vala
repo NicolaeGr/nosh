@@ -40,13 +40,13 @@ class App : Gtk.Application {
     }
 
     private App() {
-        application_id = "com.nicolaegr.hypr-shell";
+        application_id = "com.nicolaegr.nosh";
         flags = ApplicationFlags.HANDLES_COMMAND_LINE;
     }
 
     static int main(string[] argv) {
         App.instance = new App();
-        Environment.set_prgname("hypr-shell");
+        Environment.set_prgname("nosh");
         return App.instance.run(argv);
     }
 }

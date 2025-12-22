@@ -6,7 +6,7 @@ namespace TopBar {
                     | Astal.WindowAnchor.LEFT
                     | Astal.WindowAnchor.RIGHT,
                     exclusivity: Astal.Exclusivity.EXCLUSIVE,
-                    namespace: "hypr-shell-topbar"
+                    namespace: "nosh-topbar"
             );
 
             add_css_class ("Bar");

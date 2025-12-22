@@ -1,6 +1,7 @@
 namespace QuickSettings {
     public class Window : Astal.Window {
         private State.AppState app_state = State.AppState.get_instance ();
+        private ulong visible_handler_id = 0;
 
         public Window () {
             Object (
@@ -46,11 +47,18 @@ namespace QuickSettings {
 
             app_state.bind_property ("quick-settings-open", this, "visible", BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL);
 
-            notify["visible"].connect (() => {
+            visible_handler_id = notify["visible"].connect (() => {
                 if (visible) {
                     present ();
                     grab_focus ();
                 }
+            });
+            
+            close_request.connect (() => {
+                if (visible_handler_id > 0) {
+                    disconnect (visible_handler_id);
+                }
+                return false;
             });
         }
     }

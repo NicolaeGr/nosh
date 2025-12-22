@@ -12,7 +12,6 @@ namespace TopBar.Widgets {
             clear_children (this);
 
             if (mpris.players.length () == 0) {
-                append (new Gtk.Label ("Nothing Playing"));
                 return;
             }
 

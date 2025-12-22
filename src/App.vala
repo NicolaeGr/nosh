@@ -8,11 +8,14 @@ class App : Gtk.Application {
         var provider = new Gtk.CssProvider();
         provider.load_from_resource("/style.css");
 
-        Gtk.StyleContext.add_provider_for_display(
-                                                  Gdk.Display.get_default(),
-                                                  provider,
-                                                  Gtk.STYLE_PROVIDER_PRIORITY_USER
-        );
+        var display = Gdk.Display.get_default();
+        if (display != null) {
+            Gtk.StyleContext.add_provider_for_display(
+                display,
+                provider,
+                Gtk.STYLE_PROVIDER_PRIORITY_USER
+            );
+        }
     }
 
     public override int command_line(ApplicationCommandLine command_line) {

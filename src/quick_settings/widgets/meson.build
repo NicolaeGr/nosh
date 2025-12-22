@@ -1,11 +1,11 @@
 vala_sources += files(
-    'LargeButton.vala',
-    'WiFi.vala',
     'Bluetooth.vala',
-    'KDEConnect.vala',
-    'VolumeSlider.vala',
-    'Microphone.vala',
     'BrightnessSlider.vala',
-    'QuickToggleButton.vala',
     'Card.vala',
+    'KDEConnect.vala',
+    'LargeButton.vala',
+    'Microphone.vala',
+    'QuickToggleButton.vala',
+    'VolumeSlider.vala',
+    'WiFi.vala',
 )

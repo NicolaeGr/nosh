@@ -82,8 +82,12 @@ executable(
   sources: [vala_sources, resource, wl_inhibit_src, wl_inhibit_inc],
   c_args: [
     '-I' + meson.current_build_dir(),
+    '-fno-semantic-interposition',  # Better optimizations
   ],
-  link_args: ['-lm'], # Link math library
+  link_args: [
+    '-lm',  # Link math library
+    '-Wl,-O2',  # Linker optimization
+  ],
   install: true,
   install_dir: bindir,
 )

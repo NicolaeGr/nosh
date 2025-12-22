@@ -103,4 +103,31 @@ window.Bar {
       border-bottom-left-radius: 8px;
     }
   }
+
+  .SystemStats {
+    margin: 0 8px;
+
+    label {
+      font-weight: bold;
+      min-width: 32px;
+      text-align: end;
+      transition: color 200ms;
+
+      &.level-low {
+        color: #22c55e;
+      }
+
+      &.level-medium {
+        color: #eab308;
+      }
+
+      &.level-high {
+        color: #f97316;
+      }
+
+      &.level-critical {
+        color: #ef4444;
+      }
+    }
+  }
 }

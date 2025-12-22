@@ -8,4 +8,5 @@ vala_sources += files(
     'Workspaces.vala',
     'Time.vala',
     'Media.vala',
+    'SystemStats.vala',
 )

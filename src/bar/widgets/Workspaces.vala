@@ -1,6 +1,7 @@
 namespace TopBar.Widgets {
     public class Workspaces : Gtk.Box {
         AstalHyprland.Hyprland hypr = AstalHyprland.get_default ();
+        private HashTable<int, ulong> workspace_handlers = new HashTable<int, ulong> (direct_hash, direct_equal);
 
         public Workspaces () {
             add_css_class ("Workspaces");
@@ -11,6 +12,14 @@ namespace TopBar.Widgets {
 
         void sync () {
             remove_css_class ("Workspaces");
+            
+            // Disconnect old handlers before clearing
+            var handler_ids = workspace_handlers.get_values ();
+            foreach (ulong handler_id in handler_ids) {
+                hypr.disconnect (handler_id);
+            }
+            workspace_handlers.remove_all ();
+            
             clear_children (this);
             add_css_class ("Workspaces");
 
@@ -34,13 +43,14 @@ namespace TopBar.Widgets {
             if (hypr.focused_workspace == ws)
                 btn.add_css_class ("focused");
 
-            // update on change
-            hypr.notify["focused-workspace"].connect (() => {
+            // update on change - store handler for later disconnection
+            var handler_id = hypr.notify["focused-workspace"].connect (() => {
                 if (hypr.focused_workspace == ws)
                     btn.add_css_class ("focused");
                 else
                     btn.remove_css_class ("focused");
             });
+            workspace_handlers.insert (ws.id, handler_id);
 
             btn.clicked.connect (ws.focus);
             return btn;

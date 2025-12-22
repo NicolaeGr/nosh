@@ -1,6 +1,15 @@
-# Simple Astal Bar example in Vala
+# NOSH
 
-This example shows you how to get a Vala+Blueprint+Sass project going.
+This is my try at implementing a shell around Hyprland in astal. For starters this only includes a top bar an a tentative at a quick settings menu.
+
+## Features i want to implemet
+
+- [x] TopBar
+- [ ] Quick Settings
+- [ ] App Launcher
+- [ ] Notification Widgets
+- [ ] Central Console for media and notes
+- [ ] PowerMenu / User Switcher
 
 ## Dependencies
 
@@ -18,10 +27,6 @@ This example shows you how to get a Vala+Blueprint+Sass project going.
 - astal-bluetooth
 
 ## How to use
-
-> [!NOTE]
-> If you are on Nix, there is an example flake included
-> otherwise feel free to `rm flake.nix`
 
 - developing
 

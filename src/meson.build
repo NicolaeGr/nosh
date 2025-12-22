@@ -50,11 +50,13 @@ dependencies = [
 
 vala_sources = files(
   'App.vala',
+  'AppState.vala',
 )
 
 subdir('utils')
 subdir('widgets')
 subdir('bar')
+subdir('quick_settings')
 
 # bundle scss files
 css = custom_target(

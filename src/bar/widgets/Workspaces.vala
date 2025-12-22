@@ -1,4 +1,4 @@
-namespace Widgets {
+namespace TopBar.Widgets {
     public class Workspaces : Gtk.Box {
         AstalHyprland.Hyprland hypr = AstalHyprland.get_default ();
 

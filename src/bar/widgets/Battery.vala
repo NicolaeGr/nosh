@@ -1,6 +1,6 @@
 using Gtk;
 
-namespace Widgets {
+namespace TopBar.Widgets {
     public class Battery : Gtk.Button {
         Gtk.Image icon = new Gtk.Image ();
 

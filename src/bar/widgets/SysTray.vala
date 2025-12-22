@@ -1,4 +1,4 @@
-namespace Widgets {
+namespace TopBar.Widgets {
     public class SysTray : Gtk.Box {
         HashTable<string, Gtk.Widget> items = new HashTable<string, Gtk.Widget> (str_hash, str_equal);
         AstalTray.Tray tray = AstalTray.get_default ();

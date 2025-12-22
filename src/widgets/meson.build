@@ -1,10 +1,1 @@
-vala_sources += files(
-    'AudioSlider.vala',
-    'Battery.vala',
-    'Media.vala',
-    'IdleInhibitor.vala',
-    'SysTray.vala',
-    'Time.vala',
-    'Wifi.vala',
-    'Workspaces.vala',
-)
+vala_sources += files()

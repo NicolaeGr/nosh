@@ -1,6 +1,6 @@
 using Gtk;
 
-namespace Widgets {
+namespace TopBar.Widgets {
     public class Wifi : Gtk.Button {
         private Gtk.Image icon;
 

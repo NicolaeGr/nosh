@@ -2,6 +2,7 @@ class App : Gtk.Application {
     static App instance;
 
     private TopBar.Bar bar;
+    private QuickSettings.Window quick_settings;
 
     private void init_css() {
         var provider = new Gtk.CssProvider();
@@ -29,6 +30,7 @@ class App : Gtk.Application {
             // main instance, initialize stuff here
             init_css();
             add_window((bar = new TopBar.Bar()));
+            add_window((quick_settings = new QuickSettings.Window()));
         }
 
         return 0;

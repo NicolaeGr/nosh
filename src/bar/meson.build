@@ -4,3 +4,5 @@ vala_sources += files(
     'Left.vala',
     'Right.vala',
 )
+
+subdir('widgets')

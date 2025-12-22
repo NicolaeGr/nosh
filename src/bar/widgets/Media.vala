@@ -1,4 +1,4 @@
-namespace Widgets {
+namespace TopBar.Widgets {
     public class Media : Gtk.Box {
         AstalMpris.Mpris mpris = AstalMpris.get_default ();
 

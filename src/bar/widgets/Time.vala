@@ -1,4 +1,4 @@
-namespace Widgets {
+namespace TopBar.Widgets {
     public class Time : Gtk.Box {
         private Gtk.Label label;
         private string format;

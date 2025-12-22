@@ -19,7 +19,7 @@ namespace TopBar.Widgets {
             append (cpu_label);
             append (mem_label);
 
-            timeout_id = Timeout.add_seconds (1, update_stats);
+            timeout_id = Timeout.add_seconds (3, update_stats);
 
             update_stats ();
 

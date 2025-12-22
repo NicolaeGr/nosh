@@ -3,8 +3,8 @@ namespace TopBar.Widgets {
         private State.AppState app_state = State.AppState.get_instance ();
 
         public QuickSettingsButton () {
-            label = "⚙️";
             set_css_classes({"QuickSettingsButton", "square-icon"});
+            this.set_icon_name ("preferences-other-symbolic");
 
             clicked.connect (() => {
                 app_state.quick_settings_open = !app_state.quick_settings_open;

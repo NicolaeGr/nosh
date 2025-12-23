@@ -1,4 +1,6 @@
 {
+  description = "NOSH - A Hyprland shell written in Vala";
+
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     astal = {
@@ -44,14 +46,20 @@
         bluetooth
         hyprland
       ];
+
+      buildNosh =
+        { pkgs }:
+        pkgs.stdenv.mkDerivation {
+          name = "nosh";
+          src = ./.;
+          inherit nativeBuildInputs;
+          buildInputs = astalPackages;
+        };
+
+      noshPackage = buildNosh { inherit pkgs; };
     in
     {
-      packages.${system}.default = pkgs.stdenv.mkDerivation {
-        name = "nosh";
-        src = ./.;
-        inherit nativeBuildInputs;
-        buildInputs = astalPackages;
-      };
+      packages.${system}.default = noshPackage;
 
       devShells.${system}.default = pkgs.mkShell {
         packages =
@@ -63,5 +71,88 @@
             pkgs.uncrustify
           ];
       };
+
+      # NixOS Module
+      nixosModules.nosh =
+        {
+          config,
+          lib,
+          pkgs,
+          ...
+        }:
+        with lib;
+        let
+          cfg = config.services.nosh;
+        in
+        {
+          options.services.nosh = {
+            enable = mkEnableOption "NOSH - Hyprland shell";
+          };
+
+          config = mkIf cfg.enable {
+            # Enable required system services
+            services.upower.enable = true;
+            services.power-profiles-daemon.enable = true;
+
+            environment.systemPackages = [ pkgs.light ];
+          };
+        };
+
+      # Home Manager Module
+      homeManagerModules.nosh =
+        {
+          config,
+          lib,
+          pkgs,
+          ...
+        }:
+        with lib;
+        let
+          cfg = config.programs.nosh;
+          nosh = self.packages.${pkgs.system}.default;
+        in
+        {
+          options.programs.nosh = {
+            enable = mkEnableOption "NOSH - Hyprland shell";
+
+            startAfter = mkOption {
+              type = types.listOf types.str;
+              default = [ "hyprland-session.target" ];
+              description = "Systemd targets to start after";
+            };
+
+            package = mkOption {
+              type = types.package;
+              default = nosh;
+              description = "The nosh package to use";
+            };
+          };
+
+          config = mkIf cfg.enable {
+            systemd.user.services.nosh = {
+              Unit = {
+                Description = "NOSH - Hyprland Shell";
+                After = cfg.startAfter;
+                PartOf = [ "graphical-session.target" ];
+              };
+
+              Service = {
+                Type = "simple";
+                ExecStart = "${cfg.package}/bin/nosh";
+                Restart = "on-failure";
+                RestartSec = 5;
+
+                Environment = [
+                  "QT_QPA_PLATFORM=wayland"
+                  "WAYLAND_DISPLAY=wayland-1"
+                ];
+              };
+
+              Install = {
+                WantedBy = [ "graphical-session.target" ];
+              };
+            };
+          };
+        };
     };
 }

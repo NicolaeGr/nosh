@@ -72,7 +72,6 @@
           ];
       };
 
-      # NixOS Module
       nixosModules.nosh =
         {
           config,
@@ -90,15 +89,12 @@
           };
 
           config = mkIf cfg.enable {
-            # Enable required system services
             services.upower.enable = true;
-            services.power-profiles-daemon.enable = true;
 
             environment.systemPackages = [ pkgs.light ];
           };
         };
 
-      # Home Manager Module
       homeManagerModules.nosh =
         {
           config,

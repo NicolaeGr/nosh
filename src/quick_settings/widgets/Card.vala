@@ -20,17 +20,8 @@ namespace QuickSettings.Widgets {
 
             var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             
-            // WiFi, Bluetooth, KDE Connect in a row
-            var connectivity_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            connectivity_box.set_css_classes ({"QuickSettings-item-row"});
-            connectivity_box.halign = Gtk.Align.FILL;
-            connectivity_box.homogeneous = true;
-
-            connectivity_box.append (new WiFi ());
-            connectivity_box.append (new Bluetooth ());
-            connectivity_box.append (new KDEConnect ());
-
-            content.append (connectivity_box);
+            // Add connectivity component (WiFi, Bluetooth, KDE Connect)
+            content.append (new Connectivity ());
 
             // Separator
             var separator1 = new Gtk.Separator (Gtk.Orientation.HORIZONTAL);

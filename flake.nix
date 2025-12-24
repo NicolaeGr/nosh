@@ -54,6 +54,7 @@
           src = ./.;
           inherit nativeBuildInputs;
           buildInputs = astalPackages;
+          mesonFlags = [ "-Dstable=true" ];
         };
 
       noshPackage = buildNosh { inherit pkgs; };
@@ -129,7 +130,6 @@
               Unit = {
                 Description = "NOSH - Hyprland Shell";
                 After = cfg.startAfter;
-                PartOf = [ "graphical-session.target" ];
               };
 
               Service = {

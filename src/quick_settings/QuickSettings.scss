@@ -14,18 +14,15 @@ window.QuickSettings {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   }
 
-  // Item rows - any row with padding 12px
   .QuickSettings-item-row {
     padding: 8px 12px;
   }
 
-  // Divider - separator with bottom border
   .QuickSettings-divider {
     margin: 6px 0;
     background-color: rgba(255, 255, 255, 0.08);
   }
 
-  // Large button (WiFi, Bluetooth, KDE Connect, DND, Sleep, VPN)
   .QuickSettings-large-button {
     padding: 0;
     border: none;
@@ -84,14 +81,12 @@ window.QuickSettings {
     }
   }
 
-  // Slider (Volume, Brightness, Microphone)
   .QuickSettings-slider {
     padding: 2px 12px;
     margin-top: 0;
     margin-bottom: 0;
 
     > box {
-      // Header box with label and value
       image {
         color: $muted;
         font-size: 16px;
@@ -140,11 +135,9 @@ window.QuickSettings {
     }
   }
 
-  // Volume slider with overamplification warning (0-150% range)
   .QuickSettings-slider.volume-slider {
     scale {
       trough {
-        // Special handling for volume slider overamplification (100-150)
         &:dir(ltr) {
           background: linear-gradient(
             to right,
@@ -176,7 +169,6 @@ window.QuickSettings {
     }
   }
 
-  // Overamplification state for volume slider - bullet turns red
   scale.volume-scale.overamp slider {
     background-color: #ff6464;
     border-color: #ff6464;
@@ -187,12 +179,14 @@ window.QuickSettings {
     }
   }
 
-  // Quick toggles container
   .QuickSettings-toggles {
     padding: 12px;
 
     .QuickSettings-large-button {
       flex: 1;
     }
+  }
+
+  .QuickSettings-network-item {
   }
 }

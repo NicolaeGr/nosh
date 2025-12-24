@@ -11,6 +11,10 @@ window.Bar {
   padding: 2px 4px;
   margin: 0 2px;
 
+  &.secondary-instance {
+    border-top: 1px solid rgba(192, 113, 113, 0.8);
+  }
+
   label {
     margin: 0 8px;
   }

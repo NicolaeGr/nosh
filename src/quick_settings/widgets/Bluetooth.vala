@@ -22,11 +22,6 @@ namespace QuickSettings.Widgets {
             bluetooth.notify["is-powered"].connect (() => {
                 update_status ();
             });
-
-            // Click to toggle Bluetooth
-            button.clicked.connect (() => {
-                bluetooth.toggle ();
-            });
         }
 
         private void update_status () {

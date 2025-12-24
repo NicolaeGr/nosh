@@ -35,17 +35,6 @@ namespace QuickSettings.Widgets {
             wifi.notify["ssid"].connect (() => {
                 update_status ();
             });
-
-            // Click to toggle WiFi connection
-            button.clicked.connect (() => {
-                if (is_connected) {
-                    wifi.deactivate_connection.begin ();
-                } else {
-                    if (wifi.active_access_point != null) {
-                        wifi.active_access_point.activate.begin (null);
-                    }
-                }
-            });
         }
 
         private void update_status () {

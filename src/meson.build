@@ -2,6 +2,9 @@ pkgdatadir = get_option('prefix') / get_option('datadir')
 bindir = get_option('prefix') / get_option('bindir')
 sass = find_program('sass', required: true)
 
+# Get the stable option
+stable_build = get_option('stable')
+
 # Generate Wayland idle-inhibit protocol bindings
 wl_protocols_dep = dependency('wayland-protocols')
 wl_protocols_dir = wl_protocols_dep.get_variable('pkgdatadir')
@@ -84,6 +87,7 @@ executable(
     '-I' + meson.current_build_dir(),
     '-fno-semantic-interposition',  # Better optimizations
   ],
+  vala_args: stable_build ? ['-D', 'STABLE_BUILD'] : [],
   link_args: [
     '-lm',  # Link math library
     '-Wl,-O2',  # Linker optimization

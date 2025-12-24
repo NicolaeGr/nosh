@@ -1,0 +1,1 @@
+option('stable', type: 'boolean', value: false, description: 'Build as stable version (pass -Dstable=true flag to app)')

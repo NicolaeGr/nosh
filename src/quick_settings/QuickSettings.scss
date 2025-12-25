@@ -90,6 +90,11 @@ window.QuickSettings {
       font-family: "Monospace";
       min-width: 70px;
       text-align: center;
+
+      &.disabled {
+        color: $muted;
+        opacity: 0.6;
+      }
     }
 
     .QuickSettings-label {
@@ -347,5 +352,259 @@ window.QuickSettings {
     color: $muted;
     font-size: 0.9em;
     text-align: center;
+  }
+
+  // KDE Connect dropdown styles
+  .kde-connect-dropdown {
+    .daemon-box {
+      padding: 6px 8px;
+      margin: 2px 0;
+      background-color: rgba(255, 255, 255, 0.03);
+      border-radius: 4px;
+
+      .daemon-status {
+        font-size: 0.9em;
+        margin: 0;
+        padding: 4px 0;
+
+        &.status-active {
+          color: #8dd8f1;
+          font-weight: 500;
+        }
+      }
+
+      switch {
+        margin: 0;
+      }
+    }
+
+    .devices-container {
+      padding: 0;
+      margin: 0;
+      spacing: 2px;
+    }
+
+    .device-card {
+      padding: 6px;
+      margin: 0;
+      background-color: rgba(255, 255, 255, 0.04);
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      transition: background-color 150ms ease-in-out;
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.08);
+      }
+
+      .device-name {
+        font-size: 0.95em;
+        font-weight: 500;
+        margin: 0;
+        padding: 0;
+      }
+
+      .battery-level {
+        font-size: 0.85em;
+        color: $muted;
+        margin: 0;
+        padding: 0;
+      }
+
+      .status-label {
+        font-size: 0.8em;
+        margin: 0;
+        padding: 2px 4px;
+
+        &.status-ok {
+          color: #81c784;
+        }
+
+        &.status-offline {
+          color: #e57373;
+        }
+
+        &.status-warning {
+          color: #ffb74d;
+        }
+      }
+
+      .device-action-btn {
+        padding: 4px 6px;
+        margin: 0;
+        min-width: 32px;
+        min-height: 32px;
+        background-color: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        color: $fg;
+        transition: all 150ms ease-in-out;
+
+        &:hover {
+          background-color: rgba(255, 255, 255, 0.15);
+          border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        &:active {
+          background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        image {
+          icon-size: 16px;
+        }
+      }
+    }
+
+    .no-devices {
+      color: $muted;
+      font-size: 0.85em;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .dropdown-separator {
+      margin: 0;
+      min-height: 1px;
+      background-color: rgba(255, 255, 255, 0.05);
+    }
+
+    .dropdown-header {
+      padding: 6px 8px;
+      margin: 0;
+
+      button {
+        padding: 4px;
+        margin: 0;
+        background-color: transparent;
+        border: none;
+        color: $fg;
+
+        &:hover {
+          background-color: rgba(255, 255, 255, 0.08);
+          border-radius: 3px;
+        }
+      }
+    }
+
+    // KDE Connect specific styles
+    .kde-connect-dropdown {
+      .daemon-box {
+        padding: 0;
+        margin: 0;
+        min-height: 32px;
+        align-items: center;
+
+        .daemon-status {
+          font-size: 0.9em;
+          margin: 0;
+          padding: 0;
+
+          &.status-active {
+            color: rgba(76, 175, 80, 0.9);
+          }
+        }
+
+        switch {
+          margin-left: 8px;
+          margin-right: 0;
+        }
+      }
+
+      .devices-container {
+        spacing: 6px;
+        padding: 0;
+        margin: 0;
+
+        .device-card {
+          background-color: rgba(255, 255, 255, 0.04);
+          border-radius: 4px;
+          padding: 0;
+          margin: 0;
+          spacing: 0;
+
+          .device-top {
+            padding: 6px 8px;
+            margin: 0;
+            spacing: 8px;
+
+            .device-icon {
+              min-width: 28px;
+              min-height: 28px;
+              color: rgba(255, 255, 255, 0.7);
+            }
+
+            .device-name {
+              font-weight: 500;
+              font-size: 0.95em;
+              margin: 0;
+              padding: 0;
+            }
+
+            .status-label {
+              font-size: 0.8em;
+              margin: 0;
+              padding: 0;
+              letter-spacing: 0.3px;
+
+              &.status-online {
+                color: rgba(129, 199, 132, 0.8);
+              }
+
+              &.status-offline {
+                color: rgba(178, 190, 195, 0.7);
+              }
+
+              &.status-trusted {
+                color: rgba(129, 199, 132, 0.8);
+              }
+
+              &.status-untrusted {
+                color: rgba(255, 167, 38, 0.7);
+              }
+            }
+
+            .battery-level {
+              font-size: 0.85em;
+              color: rgba(255, 255, 255, 0.6);
+              margin: 0;
+              padding: 0;
+              min-width: 40px;
+            }
+          }
+
+          .device-buttons {
+            padding: 0 8px 6px 8px;
+            margin: 0;
+            spacing: 4px;
+
+            .device-action-btn {
+              padding: 4px 6px;
+              margin: 0;
+              border: none;
+              background-color: rgba(255, 255, 255, 0.06);
+              color: rgba(255, 255, 255, 0.8);
+              border-radius: 3px;
+              min-width: 28px;
+              min-height: 28px;
+
+              &:hover {
+                background-color: rgba(255, 255, 255, 0.12);
+              }
+
+              &:active {
+                background-color: rgba(255, 255, 255, 0.16);
+              }
+            }
+          }
+        }
+
+        .no-devices {
+          padding: 12px 8px;
+          margin: 0;
+          color: rgba(255, 255, 255, 0.5);
+          font-size: 0.9em;
+          text-align: center;
+        }
+      }
+    }
   }
 }

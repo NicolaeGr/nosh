@@ -7,6 +7,7 @@ namespace QuickSettings.Widgets {
         private KDEConnectDropdown kde_dropdown;
         private Gtk.Box dropdowns_container;
         private Gtk.CssProvider height_provider = new Gtk.CssProvider ();
+        private State.AppState app_state = State.AppState.get_instance ();
 
         public Connectivity () {
             Object (orientation: Gtk.Orientation.VERTICAL, spacing: 0);
@@ -65,6 +66,13 @@ namespace QuickSettings.Widgets {
             kde.button.clicked.connect (() => {
                 toggle_dropdown (kde_dropdown);
                 hide_other_dropdowns (kde_dropdown);
+            });
+
+            // Close all dropdowns when quick settings window closes
+            app_state.notify["quick-settings-open"].connect (() => {
+                if (!app_state.quick_settings_open) {
+                    hide_other_dropdowns (null);
+                }
             });
         }
 
@@ -127,7 +135,7 @@ namespace QuickSettings.Widgets {
             }
         }
 
-        private void hide_other_dropdowns (Gtk.Widget except) {
+        private void hide_other_dropdowns (Gtk.Widget? except) {
             if (wifi_dropdown != null && wifi_dropdown != except) {
                 wifi_dropdown.visible = false;
                 wifi_dropdown.remove_css_class ("visible");

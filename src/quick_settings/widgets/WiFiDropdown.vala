@@ -14,7 +14,6 @@ namespace QuickSettings.Widgets {
 
             wifi = wifi_obj;
 
-            // Header with switch and collapse button
             var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             header.set_css_classes ({"QuickSettings-dropdown-header"});
             header.halign = Gtk.Align.FILL;
@@ -23,32 +22,42 @@ namespace QuickSettings.Widgets {
             header.margin_top = 8;
             header.margin_bottom = 8;
 
+           
             var header_label = new Gtk.Label ("WiFi");
-            header_label.hexpand = true;
             header_label.halign = Gtk.Align.START;
+
+            var wifi_switch = new Gtk.Switch ();
+            wifi_switch.set_css_classes ({"small-switch"});
+            wifi_switch.active = wifi.enabled;
+            wifi_switch.halign = Gtk.Align.START;
+            wifi_switch.valign = Gtk.Align.CENTER;
+            wifi_switch.hexpand = true;
+            
+            wifi.bind_property ("enabled", wifi_switch, "active", BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL);
+
+
+            var refresh_button = new Gtk.Button.from_icon_name ("view-refresh-symbolic");
+            refresh_button.halign = Gtk.Align.END;
+            refresh_button.set_size_request (24, 24);
+            refresh_button.clicked.connect (() => {
+                request_scan ();
+            });
 
             var collapse_button = new Gtk.Button.from_icon_name ("go-up-symbolic");
             collapse_button.halign = Gtk.Align.END;
+            collapse_button.set_size_request (24, 24);
 
             header.append (header_label);
+            header.append (wifi_switch);
+            header.append (refresh_button);
             header.append (collapse_button);
 
             append (header);
 
-            // Settings button
-            var settings_button = new Gtk.Button.with_label ("WiFi Settings");
-            settings_button.halign = Gtk.Align.FILL;
-            settings_button.margin_start = 8;
-            settings_button.margin_end = 8;
-            settings_button.margin_bottom = 4;
-            append (settings_button);
-
-            // Separator
             var separator = new Gtk.Separator (Gtk.Orientation.HORIZONTAL);
             separator.set_css_classes ({"QuickSettings-divider"});
             append (separator);
 
-            // Scrollable content area for WiFi networks
             scroll = new Gtk.ScrolledWindow ();
             scroll.set_policy (Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC);
             scroll.vexpand = false;
@@ -61,27 +70,22 @@ namespace QuickSettings.Widgets {
             scroll.set_child (content_box);
             append (scroll);
 
-            // Populate with available networks
             update_networks ();
 
-            // Connect signal to update when access points change
             wifi.notify["access-points"].connect (() => {
                 update_networks ();
             });
 
             collapse_button.clicked.connect (() => {
-                // Hide the dropdown by setting visible to false
                 this.visible = false;
             });
         }
 
         private void update_networks () {
-            // Clear existing items
             while (content_box.get_first_child () != null) {
                 content_box.remove (content_box.get_first_child ());
             }
 
-            // Get access points and display them
             var access_points = wifi.access_points;
             if (access_points == null || access_points.length () == 0) {
                 var label = new Gtk.Label ("No WiFi networks available");
@@ -92,7 +96,6 @@ namespace QuickSettings.Widgets {
                 return;
             }
 
-            // Sort by signal strength (descending)
             var sorted_aps = new GLib.List<AstalNetwork.AccessPoint> ();
             foreach (var ap in access_points) {
                 sorted_aps.append (ap);
@@ -111,17 +114,16 @@ namespace QuickSettings.Widgets {
             var item = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
             item.set_css_classes ({"QuickSettings-network-item"});
             item.halign = Gtk.Align.FILL;
-            item.margin_start = 8;
-            item.margin_end = 8;
-            item.margin_top = 4;
-            item.margin_bottom = 4;
+            item.margin_start = 0;
+            item.margin_end = 0;
+            item.margin_top = 0;
+            item.margin_bottom = 0;
+            item.hexpand = true;
 
-            // Network icon based on strength - SMALL size
             var icon = new Gtk.Image.from_icon_name (get_signal_icon (ap.strength));
             icon.set_icon_size (Gtk.IconSize.NORMAL);
 
-            // Network name and status
-            var info = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            var info = new Gtk.Box (Gtk.Orientation.VERTICAL, 2);
             info.hexpand = true;
             info.halign = Gtk.Align.FILL;
 
@@ -132,21 +134,28 @@ namespace QuickSettings.Widgets {
 
             info.append (name_label);
 
-            // Show "Connected" status if this is the active network
+            var status_label = new Gtk.Label ("");
+            status_label.halign = Gtk.Align.START;
+            status_label.set_css_classes ({"QuickSettings-network-status"});
+            
             if (wifi.active_access_point == ap) {
-                var status_label = new Gtk.Label ("Connected");
-                status_label.halign = Gtk.Align.START;
-                status_label.set_css_classes ({"success"});
-                info.append (status_label);
+                status_label.set_label ("Connected");
+                status_label.add_css_class ("connected");
+            } else {
+                status_label.set_label ("Signal: " + ap.strength.to_string () + "%");
             }
+            
+            info.append (status_label);
 
-            // Make the entire item clickable to connect
             var button = new Gtk.Button ();
             button.set_child (item);
             button.halign = Gtk.Align.FILL;
+            button.add_css_class ("QuickSettings-network-button");
 
             button.clicked.connect (() => {
-                if (wifi.active_access_point != ap) {
+                if (wifi.active_access_point == ap) {
+                    wifi.deactivate_connection.begin (null);
+                } else {
                     ap.activate.begin (null);
                 }
             });
@@ -156,7 +165,6 @@ namespace QuickSettings.Widgets {
 
             return button;
         }
-
         private string get_signal_icon (uint8 strength) {
             if (strength >= 80) {
                 return "network-wireless-signal-excellent-symbolic";
@@ -168,6 +176,20 @@ namespace QuickSettings.Widgets {
                 return "network-wireless-signal-weak-symbolic";
             } else {
                 return "network-wireless-signal-none-symbolic";
+            }
+        }
+
+        private void request_scan () {
+            try {
+                wifi.scan ();
+                // After scan, update the display with a delay to allow results to populate
+                GLib.Timeout.add (500, () => {
+                    update_networks ();
+                    return false;
+                });
+            } catch (Error e) {
+                warning ("WiFi scan failed: %s", e.message);
+                update_networks ();
             }
         }
     }

@@ -14,7 +14,6 @@ namespace QuickSettings.Widgets {
             margin_start = 12;
             margin_end = 12;
 
-            // Header with label and percentage
             var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             header.halign = Gtk.Align.FILL;
 
@@ -29,7 +28,6 @@ namespace QuickSettings.Widgets {
             header.append (label);
             header.append (percentage_label);
 
-            // Slider
             scale = new Gtk.Scale.with_range (Gtk.Orientation.HORIZONTAL, 0.0, 100.0, 1.0);
             scale.draw_value = false;
             scale.hexpand = true;
@@ -37,7 +35,6 @@ namespace QuickSettings.Widgets {
             append (header);
             append (scale);
 
-            // Get initial brightness from light command
             get_brightness.begin ();
 
             scale.value_changed.connect (() => {

@@ -14,7 +14,6 @@ namespace QuickSettings.Widgets {
 
             bluetooth = bt_obj;
 
-            // Header with switch and collapse button
             var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             header.set_css_classes ({"QuickSettings-dropdown-header"});
             header.halign = Gtk.Align.FILL;
@@ -24,31 +23,56 @@ namespace QuickSettings.Widgets {
             header.margin_bottom = 8;
 
             var header_label = new Gtk.Label ("Bluetooth");
-            header_label.hexpand = true;
             header_label.halign = Gtk.Align.START;
+
+            var bt_switch = new Gtk.Switch ();
+            bt_switch.set_css_classes ({"small-switch"});
+            bt_switch.active = bluetooth.is_powered;
+            bt_switch.halign = Gtk.Align.START;
+            bt_switch.valign = Gtk.Align.CENTER;
+            bt_switch.hexpand = true;
+            
+            bluetooth.bind_property ("is-powered", bt_switch, "active", BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL);
+
+            var refresh_button = new Gtk.Button.from_icon_name ("view-refresh-symbolic");
+            refresh_button.halign = Gtk.Align.END;
+            refresh_button.set_size_request (24, 24);
+            refresh_button.clicked.connect (() => {
+                update_devices ();
+            });
+
+            var settings_button = new Gtk.Button.from_icon_name ("preferences-system-symbolic");
+            settings_button.halign = Gtk.Align.END;
+            settings_button.set_size_request (24, 24);
+            settings_button.clicked.connect (() => {
+                try {
+                    GLib.AppInfo.launch_default_for_uri ("settings://bluetooth", null);
+                } catch (Error e) {
+                    warning ("Failed to open Bluetooth settings: %s", e.message);
+                    try {
+                        GLib.Process.spawn_command_line_async ("gnome-control-center bluetooth");
+                    } catch (Error e2) {
+                        warning ("Failed to launch bluetooth settings: %s", e2.message);
+                    }
+                }
+            });
 
             var collapse_button = new Gtk.Button.from_icon_name ("go-up-symbolic");
             collapse_button.halign = Gtk.Align.END;
+            collapse_button.set_size_request (24, 24);
 
             header.append (header_label);
+            header.append (bt_switch);
+            header.append (refresh_button);
+            header.append (settings_button);
             header.append (collapse_button);
 
             append (header);
 
-            // Settings button
-            var settings_button = new Gtk.Button.with_label ("Bluetooth Settings");
-            settings_button.halign = Gtk.Align.FILL;
-            settings_button.margin_start = 8;
-            settings_button.margin_end = 8;
-            settings_button.margin_bottom = 4;
-            append (settings_button);
-
-            // Separator
             var separator = new Gtk.Separator (Gtk.Orientation.HORIZONTAL);
             separator.set_css_classes ({"QuickSettings-divider"});
             append (separator);
 
-            // Scrollable content area for devices
             scroll = new Gtk.ScrolledWindow ();
             scroll.set_policy (Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC);
             scroll.vexpand = false;
@@ -60,10 +84,8 @@ namespace QuickSettings.Widgets {
             scroll.set_child (content_box);
             append (scroll);
 
-            // Populate with paired devices
             update_devices ();
 
-            // Connect signals
             bluetooth.notify["is-powered"].connect (() => {
                 update_devices ();
             });
@@ -73,13 +95,11 @@ namespace QuickSettings.Widgets {
             });
 
             collapse_button.clicked.connect (() => {
-                // Hide the dropdown by setting visible to false
                 this.visible = false;
             });
         }
 
         private void update_devices () {
-            // Clear existing items
             while (content_box.get_first_child () != null) {
                 content_box.remove (content_box.get_first_child ());
             }
@@ -93,14 +113,24 @@ namespace QuickSettings.Widgets {
                 return;
             }
 
-            // Get paired devices and display them
-            bool has_devices = false;
+            var paired_devices = new GLib.List<AstalBluetooth.Device> ();
             foreach (var device in bluetooth.devices) {
                 if (device.paired) {
-                    var item = create_device_item (device);
-                    content_box.append (item);
-                    has_devices = true;
+                    paired_devices.append (device);
                 }
+            }
+            
+            paired_devices.sort ((a, b) => {
+                if (a.connected && !b.connected) return -1;
+                if (!a.connected && b.connected) return 1;
+                return 0;
+            });
+            
+            bool has_devices = false;
+            foreach (var device in paired_devices) {
+                var item = create_device_item (device);
+                content_box.append (item);
+                has_devices = true;
             }
 
             if (!has_devices) {
@@ -112,54 +142,60 @@ namespace QuickSettings.Widgets {
             }
         }
 
-        private Gtk.Box create_device_item (AstalBluetooth.Device device) {
-            var item = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+        private Gtk.Button create_device_item (AstalBluetooth.Device device) {
+            var item = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
             item.set_css_classes ({"QuickSettings-device-item"});
             item.halign = Gtk.Align.FILL;
-            item.margin_start = 8;
-            item.margin_end = 8;
-            item.margin_top = 8;
-            item.margin_bottom = 8;
+            item.margin_start = 0;
+            item.margin_end = 0;
+            item.margin_top = 0;
+            item.margin_bottom = 0;
+            item.hexpand = true;
 
-            // Device icon
             var icon = new Gtk.Image.from_icon_name (get_device_icon (device.icon));
-            icon.set_icon_size (Gtk.IconSize.LARGE);
+            icon.set_icon_size (Gtk.IconSize.NORMAL);
 
-            // Device name and status
             var info = new Gtk.Box (Gtk.Orientation.VERTICAL, 2);
             info.hexpand = true;
             info.halign = Gtk.Align.FILL;
 
             var name_label = new Gtk.Label (device.name);
             name_label.halign = Gtk.Align.START;
-            name_label.set_css_classes ({"QuickSettings-device-name"});
-
-            var status_label = new Gtk.Label (device.connected ? "Connected" : "Disconnected");
-            status_label.halign = Gtk.Align.START;
-            status_label.set_css_classes ({"QuickSettings-device-status"});
-            status_label.add_css_class ("dim-label");
+            name_label.set_css_classes ({"QuickSettings-network-name"});
+            name_label.add_css_class ("dim-label");
 
             info.append (name_label);
+
+            var status_label = new Gtk.Label ("");
+            status_label.halign = Gtk.Align.START;
+            status_label.set_css_classes ({"QuickSettings-network-status"});
+            
+            if (device.connected) {
+                status_label.set_label ("Connected");
+                status_label.add_css_class ("connected");
+            } else {
+                status_label.set_label ("Available");
+            }
+            
             info.append (status_label);
 
-            // Connection toggle
-            var connect_switch = new Gtk.Switch ();
-            connect_switch.active = device.connected;
-            connect_switch.halign = Gtk.Align.END;
-            connect_switch.valign = Gtk.Align.CENTER;
-            connect_switch.notify["active"].connect (() => {
-                if (connect_switch.active) {
-                    device.connect_device.begin ();
-                } else {
+            var button = new Gtk.Button ();
+            button.set_child (item);
+            button.halign = Gtk.Align.FILL;
+            button.add_css_class ("QuickSettings-network-button");
+
+            button.clicked.connect (() => {
+                if (device.connected) {
                     device.disconnect_device.begin ();
+                } else {
+                    device.connect_device.begin ();
                 }
             });
 
             item.append (icon);
             item.append (info);
-            item.append (connect_switch);
 
-            return item;
+            return button;
         }
 
         private string get_device_icon (string icon_name) {

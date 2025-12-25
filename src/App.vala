@@ -75,6 +75,7 @@ class App : Gtk.Application {
         #else
         application_id = "com.nicolaegr.nosh.dev";
         #endif
+        
         flags = ApplicationFlags.HANDLES_COMMAND_LINE;
     }
 

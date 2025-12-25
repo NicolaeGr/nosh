@@ -20,27 +20,22 @@ namespace QuickSettings.Widgets {
 
             var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             
-            // Add connectivity component (WiFi, Bluetooth, KDE Connect)
             content.append (new Connectivity ());
 
-            // Separator
             var separator1 = new Gtk.Separator (Gtk.Orientation.HORIZONTAL);
             separator1.set_css_classes ({"QuickSettings-divider"});
             content.append (separator1);
 
-            // Sliders - wrapped in a container for tighter spacing
             var sliders_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             sliders_box.append (new VolumeSlider ());
             sliders_box.append (new Microphone ());
             sliders_box.append (new BrightnessSlider ());
             content.append (sliders_box);
 
-            // Separator
             var separator2 = new Gtk.Separator (Gtk.Orientation.HORIZONTAL);
             separator2.set_css_classes ({"QuickSettings-divider"});
             content.append (separator2);
 
-            // Quick toggles
             var toggles_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             toggles_box.set_css_classes ({"QuickSettings-item-row", "QuickSettings-toggles"});
             toggles_box.halign = Gtk.Align.FILL;

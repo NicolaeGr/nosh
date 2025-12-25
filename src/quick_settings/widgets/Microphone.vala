@@ -20,7 +20,6 @@ namespace QuickSettings.Widgets {
                 return;
             }
 
-            // Header with label and percentage
             var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             header.halign = Gtk.Align.FILL;
 
@@ -35,7 +34,6 @@ namespace QuickSettings.Widgets {
             header.append (label);
             header.append (percentage_label);
 
-            // Slider
             scale = new Gtk.Scale.with_range (Gtk.Orientation.HORIZONTAL, 0.0, 100.0, 1.0);
             scale.draw_value = false;
             scale.hexpand = true;
@@ -43,7 +41,6 @@ namespace QuickSettings.Widgets {
             append (header);
             append (scale);
 
-            // Bind microphone volume to slider
             var mic = audio.default_microphone;
             scale.set_value (mic.volume * 100);
 

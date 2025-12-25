@@ -18,7 +18,6 @@ namespace QuickSettings.Widgets {
 
             update_status ();
 
-            // Update status on changes
             bluetooth.notify["is-powered"].connect (() => {
                 update_status ();
             });

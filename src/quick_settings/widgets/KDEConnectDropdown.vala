@@ -21,31 +21,34 @@ namespace QuickSettings.Widgets {
             header.margin_top = 8;
             header.margin_bottom = 8;
 
+            var header_label = new Gtk.Label ("KDE Connect");
+            header_label.halign = Gtk.Align.START;
+
             kde_switch = new Gtk.Switch ();
+            kde_switch.set_css_classes ({"small-switch"});
             kde_switch.active = true; // TODO: Connect to actual KDE Connect state
             kde_switch.halign = Gtk.Align.START;
             kde_switch.valign = Gtk.Align.CENTER;
+            kde_switch.hexpand = true;
 
-            var header_label = new Gtk.Label ("KDE Connect");
-            header_label.hexpand = true;
-            header_label.halign = Gtk.Align.START;
+            // Refresh button
+            var refresh_button = new Gtk.Button.from_icon_name ("view-refresh-symbolic");
+            refresh_button.halign = Gtk.Align.END;
+            refresh_button.set_size_request (24, 24);
+            refresh_button.clicked.connect (() => {
+                update_devices ();
+            });
 
             var collapse_button = new Gtk.Button.from_icon_name ("go-up-symbolic");
             collapse_button.halign = Gtk.Align.END;
+            collapse_button.set_size_request (24, 24);
 
-            header.append (kde_switch);
             header.append (header_label);
+            header.append (kde_switch);
+            header.append (refresh_button);
             header.append (collapse_button);
 
             append (header);
-
-            // Settings button
-            var settings_button = new Gtk.Button.with_label ("KDE Connect Settings");
-            settings_button.halign = Gtk.Align.FILL;
-            settings_button.margin_start = 8;
-            settings_button.margin_end = 8;
-            settings_button.margin_bottom = 4;
-            append (settings_button);
 
             // Separator
             var separator = new Gtk.Separator (Gtk.Orientation.HORIZONTAL);

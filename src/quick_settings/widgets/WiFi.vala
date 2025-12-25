@@ -7,7 +7,6 @@ namespace QuickSettings.Widgets {
         private bool is_connected = false;
 
         public WiFi () {
-            // Properly initialize parent
             base ();
             add_css_class ("QuickSettings-wifi");
 
@@ -20,10 +19,8 @@ namespace QuickSettings.Widgets {
                 return;
             }
 
-            // Set initial state
             update_status ();
 
-            // Watch for changes
             wifi.notify["icon-name"].connect (() => {
                 set_icon_name (wifi.icon_name ?? "network-wireless-offline-symbolic");
             });
@@ -40,11 +37,9 @@ namespace QuickSettings.Widgets {
         private void update_status () {
             is_connected = wifi.active_access_point != null;
             
-            // Set icon
             var icon = wifi.icon_name ?? "network-wireless-offline-symbolic";
             set_icon_name (icon);
             
-            // Set status text and color
             if (is_connected) {
                 set_status (wifi.ssid ?? "WiFi");
                 set_icon_enabled (true);

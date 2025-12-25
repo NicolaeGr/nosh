@@ -49,13 +49,11 @@ namespace QuickSettings.Widgets {
             full_text = text;
             scroll_position = 0;
             
-            // Stop any existing animation
             if (scroll_timeout != 0) {
                 GLib.Source.remove (scroll_timeout);
                 scroll_timeout = 0;
             }
             
-            // If text is longer than 10 chars, start scrolling
             if (text.length > 10) {
                 update_scroll_text ();
                 scroll_timeout = GLib.Timeout.add (500, () => {
@@ -73,7 +71,6 @@ namespace QuickSettings.Widgets {
                 return;
             }
             
-            // Show 10 characters, scroll through the text
             int max_pos = full_text.length - 10;
             string visible = full_text.substring (scroll_position, 10);
             status_label.set_label (visible);

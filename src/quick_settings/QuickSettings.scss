@@ -1,5 +1,28 @@
 @import "../style/variables";
 
+// Dropdown animation keyframes
+@keyframes dropdown-appear {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 1000px;
+  }
+}
+
+@keyframes dropdown-disappear {
+  from {
+    opacity: 1;
+    max-height: 1000px;
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
+  }
+}
+
 window.QuickSettings {
   background-color: transparent;
 
@@ -15,6 +38,10 @@ window.QuickSettings {
   }
 
   .QuickSettings-item-row {
+    padding: 8px 12px;
+  }
+
+  .QuickSettings-dropdowns-container {
     padding: 8px 12px;
   }
 
@@ -78,6 +105,106 @@ window.QuickSettings {
       .QuickSettings-label {
         color: $accent;
       }
+    }
+  }
+
+  .QuickSettings-dropdown {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+
+    // Default state - hidden with 0 max-height
+    max-height: 0;
+    opacity: 0;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+
+    // Smooth transition for all properties
+    transition: max-height 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      margin 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      padding 300ms cubic-bezier(0.4, 0, 0.2, 1),
+      border-width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+    &.visible {
+      opacity: 1;
+      margin: 0;
+      padding: 0;
+      border-width: 1px;
+    }
+
+    & > separator {
+      margin-top: 0;
+    }
+  }
+  .QuickSettings-dropdown-header {
+    padding: 0 4px;
+    margin: 0;
+
+    button {
+      background-color: transparent;
+      border: none;
+      color: $fg;
+      transition: background-color 150ms ease-in-out;
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+      }
+
+      &:active {
+        background-color: rgba(255, 255, 255, 0.15);
+      }
+    }
+  }
+
+  // WiFi and network items
+  .QuickSettings-network-item {
+    padding: 8px 12px;
+    margin: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+    transition: background-color 150ms ease-in-out;
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+
+    &:first-child {
+      border-top: none;
+    }
+  }
+
+  .QuickSettings-network-button {
+    padding: 0;
+    border: none;
+    background-color: transparent;
+    color: inherit;
+    text-align: left;
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.05);
+    }
+
+    &:active {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+  }
+
+  .QuickSettings-network-name {
+    color: $fg;
+    font-size: 0.95em;
+    font-weight: 500;
+  }
+
+  .QuickSettings-network-status {
+    color: $muted;
+    font-size: 0.75em;
+    font-weight: 400;
+
+    &.connected {
+      color: $accent;
     }
   }
 
@@ -187,6 +314,38 @@ window.QuickSettings {
     }
   }
 
-  .QuickSettings-network-item {
+  // Device items
+  .QuickSettings-device-item {
+    padding: 8px;
+    margin: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+    transition: background-color 150ms ease-in-out;
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+
+    &:first-child {
+      border-top: none;
+    }
+  }
+
+  .QuickSettings-device-name {
+    color: $fg;
+    font-size: 0.95em;
+    font-weight: 500;
+  }
+
+  .QuickSettings-device-status {
+    color: $muted;
+    font-size: 0.75em;
+    font-weight: 400;
+  }
+
+  // Empty state styling
+  .QuickSettings-empty-state {
+    color: $muted;
+    font-size: 0.9em;
+    text-align: center;
   }
 }

@@ -48,6 +48,7 @@ dependencies = [
   dependency('astal-tray-0.1'),
   dependency('astal-bluetooth-0.1'),
   dependency('astal-hyprland-0.1'),
+  dependency('astal-notifd-0.1'),
   dependency('wayland-client'),
 ]
 
@@ -59,6 +60,7 @@ vala_sources = files(
 subdir('utils')
 subdir('widgets')
 subdir('bar')
+subdir('notifications')
 subdir('quick_settings')
 
 # bundle scss files
@@ -85,12 +87,12 @@ executable(
   sources: [vala_sources, resource, wl_inhibit_src, wl_inhibit_inc],
   c_args: [
     '-I' + meson.current_build_dir(),
-    '-fno-semantic-interposition',  # Better optimizations
+    '-fno-semantic-interposition', # Better optimizations
   ],
   vala_args: stable_build ? ['-D', 'STABLE_BUILD'] : [],
   link_args: [
-    '-lm',  # Link math library
-    '-Wl,-O2',  # Linker optimization
+    '-lm', # Link math library
+    '-Wl,-O2', # Linker optimization
   ],
   install: true,
   install_dir: bindir,

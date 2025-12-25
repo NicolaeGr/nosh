@@ -2,6 +2,7 @@ class App : Gtk.Application {
     static App instance;
 
     private TopBar.Bar bar;
+    private Notifications.Window notifications;
     private QuickSettings.Window quick_settings;
 
     private void init_css() {
@@ -48,6 +49,7 @@ class App : Gtk.Application {
             bar = new TopBar.Bar(true);
             #endif
             add_window(bar);
+            add_window((notifications = new Notifications.Window()));
             add_window((quick_settings = new QuickSettings.Window()));
 
             bar.present();

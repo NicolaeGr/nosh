@@ -1,12 +1,12 @@
 vala_sources += files(
-    'Wifi.vala',
-    'Battery.vala',
     'AudioSlider.vala',
+    'Battery.vala',
     'IdleInhibitor.vala',
-    'SysTray.vala',
-    'QuickSettingsButton.vala',
-    'Workspaces.vala',
-    'Time.vala',
     'Media.vala',
+    'QuickSettingsButton.vala',
+    'SysTray.vala',
     'SystemStats.vala',
+    'Time.vala',
+    'Wifi.vala',
+    'Workspaces.vala',
 )

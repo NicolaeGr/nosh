@@ -110,6 +110,7 @@ namespace Notifications.Widgets {
             desc_label.set_css_classes ({"dimmed"});
             desc_label.set_halign (Align.START);
             desc_label.set_wrap (true);
+            desc_label.set_use_markup (true);
             desc_label.set_lines (2);
             desc_label.set_ellipsize (Pango.EllipsizeMode.END);
 

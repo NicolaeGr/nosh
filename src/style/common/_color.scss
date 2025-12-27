@@ -1,5 +1,9 @@
 @use "../variables";
 
+.transparent {
+  background-color: transparent;
+}
+
 .bg {
   background-color: variables.$bg;
 }

@@ -10,13 +10,19 @@ namespace Notifications {
                 namespace: "nosh-notifications-outer"
             );
 
-            add_css_class ("Notifications-outer");
+            set_css_classes ({"Notifications-outer"});
 
-           try {
-                //  var notifd = AstalNotifd.Notifd.get_default ();
-            } catch (Error e) {
-                warning ("Failed to initialize notifyd: %s\n", e.message);
-            }
+            var container = new Widgets.NotificationsContainer ();
+            set_child (container);
+
+            //  mock notification for testing, no timeut
+            //  var test_notification = new Widgets.NotificationCard (
+            //       "Test Notification",
+            //       "This is a test notification to demonstrate the notification system.",
+            //      "dialog-information",
+            //      5000000
+            //  );
+            //  set_child (test_notification);
         }
     }
 }

@@ -16,12 +16,12 @@ namespace QuickSettings {
                 namespace: "nosh-quick-settings"
             );
 
-            add_css_class ("QuickSettings");
+            set_css_classes ({"QuickSettings"});
 
             var background = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             background.hexpand = true;
             background.vexpand = true;
-            background.add_css_class ("QuickSettings-background");
+            background.set_css_classes ({"background"});
 
             var card = new Widgets.Card ();
             background.append (card);

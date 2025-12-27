@@ -13,7 +13,7 @@ namespace QuickSettings.Widgets {
             Object (orientation: Gtk.Orientation.VERTICAL, spacing: 0);
 
             button = new Gtk.Button ();
-            button.set_css_classes ({"QuickSettings-large-button"});
+            button.set_css_classes ({"large-button"});
 
             var button_content = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
             button_content.halign = Gtk.Align.CENTER;
@@ -25,10 +25,10 @@ namespace QuickSettings.Widgets {
 
             icon_widget = new Gtk.Image ();
             icon_widget.set_icon_size (Gtk.IconSize.LARGE);
-            icon_widget.set_css_classes ({"QuickSettings-icon"});
+            icon_widget.set_css_classes ({"icon"});
 
             status_label = new Gtk.Label ("");
-            status_label.set_css_classes ({"QuickSettings-status"});
+            status_label.set_css_classes ({"status"});
             status_label.set_wrap (false);
             status_label.set_ellipsize (Pango.EllipsizeMode.NONE);
             status_label.set_justify (Gtk.Justification.CENTER);

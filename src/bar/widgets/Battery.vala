@@ -5,7 +5,7 @@ namespace TopBar.Widgets {
         Gtk.Image icon = new Gtk.Image ();
 
         public Battery () {
-            set_css_classes ({ "Battery", "square-icon" });
+            set_css_classes ({"square-icon"});
             set_halign (Align.CENTER);
             set_valign (Align.CENTER);
             set_child (icon);

@@ -13,7 +13,7 @@ namespace Notifications {
             add_css_class ("Notifications-outer");
 
            try {
-                var notifd = AstalNotifd.Notifd.get_default ();
+                //  var notifd = AstalNotifd.Notifd.get_default ();
             } catch (Error e) {
                 warning ("Failed to initialize notifyd: %s\n", e.message);
             }

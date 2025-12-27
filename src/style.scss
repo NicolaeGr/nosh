@@ -1,6 +1,7 @@
-@import "./style/variables";
-@import "./style/global";
+@use "style/variables";
+@use "style/common";
+@use "style/functions" as *;
+@use "style/blocks";
 
-@import "./bar/Bar.scss";
-@import "./notifications/Notifications.scss";
-@import "./quick_settings/QuickSettings.scss";
+@use "bar/Bar";
+@use "quick_settings/QuickSettings";

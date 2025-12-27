@@ -1,5 +1,5 @@
 vala_sources += files(
-    'AudioSlider.vala',
+    'Volume.vala',
     'Battery.vala',
     'IdleInhibitor.vala',
     'Media.vala',

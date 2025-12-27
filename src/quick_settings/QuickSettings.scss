@@ -1,172 +1,42 @@
 @import "../style/variables";
-
-// Dropdown animation keyframes
-@keyframes dropdown-appear {
-  from {
-    opacity: 0;
-    max-height: 0;
-  }
-  to {
-    opacity: 1;
-    max-height: 1000px;
-  }
-}
-
-@keyframes dropdown-disappear {
-  from {
-    opacity: 1;
-    max-height: 1000px;
-  }
-  to {
-    opacity: 0;
-    max-height: 0;
-  }
-}
+@import "../style/functions";
 
 window.QuickSettings {
   background-color: transparent;
 
-  .QuickSettings-background {
+  .background {
     background-color: rgba(0, 0, 0, 0.15);
   }
 
-  .QuickSettings-card {
-    background-color: $card;
-    border-radius: $radius;
+  .card {
+    background-color: $bg;
+    border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   }
 
-  .QuickSettings-item-row {
+  // ========================
+  // Item Rows & Containers
+  // ========================
+
+  .item-row {
     padding: 8px 12px;
   }
 
-  .QuickSettings-dropdowns-container {
+  .dropdowns-container {
     padding: 8px 12px;
   }
 
-  .QuickSettings-divider {
+  .divider {
     margin: 6px 0;
     background-color: rgba(255, 255, 255, 0.08);
   }
 
-  .QuickSettings-large-button {
-    padding: 0;
-    border: none;
-    background-color: transparent;
-    color: $fg;
-    min-height: 60px;
-    max-width: 80px;
-    transition: background-color 150ms ease-in-out;
+  // ========================
+  // Network Items
+  // ========================
 
-    &:hover {
-      background-color: rgba(255, 255, 255, 0.05);
-      border-radius: 4px;
-    }
-
-    &:active {
-      background-color: rgba(255, 255, 255, 0.1);
-    }
-
-    .QuickSettings-icon {
-      color: $accent;
-      font-size: 20px;
-      transition: color 150ms ease-in-out;
-
-      &.disabled {
-        color: $muted;
-        opacity: 0.6;
-      }
-
-      &.enabled {
-        color: $accent;
-      }
-    }
-
-    .QuickSettings-status {
-      color: $fg;
-      font-size: 0.75em;
-      font-weight: 500;
-      font-family: "Monospace";
-      min-width: 70px;
-      text-align: center;
-
-      &.disabled {
-        color: $muted;
-        opacity: 0.6;
-      }
-    }
-
-    .QuickSettings-label {
-      color: $fg;
-      font-size: 0.75em;
-      font-weight: 500;
-    }
-
-    &.active {
-      background-color: rgba($accent, 0.2);
-
-      .QuickSettings-icon,
-      .QuickSettings-label {
-        color: $accent;
-      }
-    }
-  }
-
-  .QuickSettings-dropdown {
-    background-color: rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    overflow: hidden;
-
-    // Default state - hidden with 0 max-height
-    max-height: 0;
-    opacity: 0;
-    margin: 0;
-    padding: 0;
-    border-width: 0;
-
-    // Smooth transition for all properties
-    transition: max-height 300ms cubic-bezier(0.4, 0, 0.2, 1),
-      opacity 300ms cubic-bezier(0.4, 0, 0.2, 1),
-      margin 300ms cubic-bezier(0.4, 0, 0.2, 1),
-      padding 300ms cubic-bezier(0.4, 0, 0.2, 1),
-      border-width 300ms cubic-bezier(0.4, 0, 0.2, 1);
-
-    &.visible {
-      opacity: 1;
-      margin: 0;
-      padding: 0;
-      border-width: 1px;
-    }
-
-    & > separator {
-      margin-top: 0;
-    }
-  }
-  .QuickSettings-dropdown-header {
-    padding: 0 4px;
-    margin: 0;
-
-    button {
-      background-color: transparent;
-      border: none;
-      color: $fg;
-      transition: background-color 150ms ease-in-out;
-
-      &:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 4px;
-      }
-
-      &:active {
-        background-color: rgba(255, 255, 255, 0.15);
-      }
-    }
-  }
-
-  // WiFi and network items
-  .QuickSettings-network-item {
+  .network-item {
     padding: 8px 12px;
     margin: 0;
     border-top: 1px solid rgba(255, 255, 255, 0.03);
@@ -181,11 +51,10 @@ window.QuickSettings {
     }
   }
 
-  .QuickSettings-network-button {
+  .network-button {
     padding: 0;
     border: none;
     background-color: transparent;
-    color: inherit;
     text-align: left;
 
     &:hover {
@@ -197,77 +66,400 @@ window.QuickSettings {
     }
   }
 
-  .QuickSettings-network-name {
-    color: $fg;
+  .network-name {
     font-size: 0.95em;
     font-weight: 500;
   }
 
-  .QuickSettings-network-status {
-    color: $muted;
+  .network-status {
+    color: #a0a0a0;
     font-size: 0.75em;
     font-weight: 400;
 
     &.connected {
-      color: $accent;
+      color: #a855f7;
     }
   }
 
-  .QuickSettings-slider {
-    padding: 2px 12px;
-    margin-top: 0;
-    margin-bottom: 0;
+  // ========================
+  // Toggles Container
+  // ========================
 
-    > box {
-      image {
-        color: $muted;
-        font-size: 16px;
-      }
+  .toggles {
+    padding: 12px;
 
-      label {
-        color: $fg;
+    .large-button {
+      flex: 1;
+    }
+  }
+
+  // ========================
+  // Device Items
+  // ========================
+
+  .device-item {
+    padding: 8px;
+    margin: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+    transition: background-color 150ms ease-in-out;
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+
+    &:first-child {
+      border-top: none;
+    }
+  }
+
+  .device-name {
+    font-size: 0.95em;
+    font-weight: 500;
+  }
+
+  .device-status {
+    color: #a0a0a0;
+    font-size: 0.75em;
+    font-weight: 400;
+  }
+
+  // ========================
+  // Empty State
+  // ========================
+
+  .empty-state {
+    color: #a0a0a0;
+    font-size: 0.9em;
+    text-align: center;
+  }
+
+  // ========================
+  // KDE Connect Styles
+  // ========================
+
+  .kde-connect-dropdown {
+    .daemon-box {
+      padding: 0;
+      margin: 0;
+      min-height: 32px;
+      align-items: center;
+
+      .daemon-status {
         font-size: 0.9em;
+        margin: 0;
+        padding: 0;
+
+        &.status-active {
+          color: #81c784;
+        }
       }
 
-      .numeric {
-        color: $muted;
-        font-size: 0.85em;
-        font-family: "Monospace";
+      switch {
+        margin-left: 8px;
+        margin-right: 0;
       }
     }
 
-    scale {
-      min-height: 2px;
-      margin-top: 2px;
-      margin-bottom: 0;
-      padding: 4px 0;
+    .devices-container {
+      padding: 0;
+      margin: 0;
 
-      trough {
-        min-height: 2px;
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 1px;
+      .device-card {
+        background-color: rgba(255, 255, 255, 0.04);
+        border-radius: 4px;
+        padding: 0;
+        margin: 0;
+
+        .device-top {
+          padding: 6px 8px;
+          margin: 0;
+
+          .device-icon {
+            min-width: 28px;
+            min-height: 28px;
+            color: rgba(255, 255, 255, 0.7);
+          }
+
+          .device-name {
+            font-weight: 500;
+            font-size: 0.95em;
+            margin: 0;
+            padding: 0;
+          }
+
+          .status-label {
+            font-size: 0.8em;
+            margin: 0;
+            padding: 0;
+            letter-spacing: 0.3px;
+
+            &.status-online {
+              color: #81c784;
+            }
+
+            &.status-offline {
+              color: #b2bebf;
+            }
+
+            &.status-trusted {
+              color: #81c784;
+            }
+
+            &.status-untrusted {
+              color: #ffa726;
+            }
+          }
+
+          .battery-level {
+            font-size: 0.85em;
+            color: rgba(255, 255, 255, 0.6);
+            margin: 0;
+            padding: 0;
+            min-width: 40px;
+          }
+        }
+
+        .device-buttons {
+          padding: 0 8px 6px 8px;
+          margin: 0;
+
+          .device-action-btn {
+            padding: 4px 6px;
+            margin: 0;
+            border: none;
+            background-color: rgba(255, 255, 255, 0.06);
+            border-radius: 3px;
+            min-width: 28px;
+            min-height: 28px;
+
+            &:hover {
+              background-color: rgba(255, 255, 255, 0.12);
+            }
+
+            &:active {
+              background-color: rgba(255, 255, 255, 0.16);
+            }
+          }
+        }
       }
 
-      highlight {
-        background-color: $accent;
-        border-radius: 2px;
+      .no-devices {
+        padding: 12px 8px;
+        margin: 0;
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 0.9em;
+        text-align: center;
       }
+    }
 
-      slider {
-        min-width: 10px;
-        min-height: 10px;
-        border-radius: 50%;
-        background-color: $accent;
-        border: 1px solid $accent;
+    .dropdown-separator {
+      margin: 0;
+      min-height: 1px;
+      background-color: rgba(255, 255, 255, 0.05);
+    }
+
+    .dropdown-header {
+      padding: 6px 8px;
+      margin: 0;
+
+      button {
+        padding: 4px;
+        margin: 0;
+        background-color: transparent;
+        border: none;
 
         &:hover {
-          background-color: lighten($accent, 5%);
+          background-color: rgba(255, 255, 255, 0.08);
+          border-radius: 3px;
         }
       }
     }
   }
+}
 
-  .QuickSettings-slider.volume-slider {
+// ========================
+// Large Button (Toggle Buttons)
+// ========================
+
+.large-button {
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  min-height: 60px;
+  max-width: 80px;
+  transition: background-color 150ms ease-in-out;
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+  }
+
+  &:active {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .icon,
+  .label {
+    transition: color 150ms ease-in-out;
+  }
+
+  .icon {
+    color: $accent-color;
+    font-size: 20px;
+
+    &.disabled {
+      color: #a0a0a0;
+      opacity: 0.6;
+    }
+
+    &.enabled {
+      color: $accent-color;
+    }
+  }
+
+  .status {
+    color: inherit;
+    font-size: 0.75em;
+    font-weight: 500;
+    font-family: "Monospace";
+    min-width: 70px;
+    text-align: center;
+
+    &.disabled {
+      color: #a0a0a0;
+      opacity: 0.6;
+    }
+  }
+
+  .label {
+    color: inherit;
+    font-size: 0.75em;
+    font-weight: 500;
+  }
+
+  &.active {
+    background-color: alpha($accent-color, 0.2);
+
+    .icon,
+    .label {
+      color: $accent-color;
+    }
+  }
+}
+
+// ========================
+// Dropdown (Collapsible)
+// ========================
+
+.dropdown {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+
+  // Default state - hidden
+  max-height: 0;
+  opacity: 0;
+  margin: 0;
+  padding: 0;
+  border-width: 0;
+
+  // Smooth transition
+  transition: max-height 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    margin 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    padding 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  &.visible {
+    opacity: 1;
+    margin: 0;
+    padding: 0;
+    border-width: 1px;
+  }
+
+  & > separator {
+    margin-top: 0;
+  }
+
+  .header {
+    padding: 0 4px;
+    margin: 0;
+
+    button {
+      background-color: transparent;
+      border: none;
+      transition: background-color 150ms ease-in-out;
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+      }
+
+      &:active {
+        background-color: rgba(255, 255, 255, 0.15);
+      }
+    }
+  }
+}
+
+// ========================
+// Slider / Scale
+// ========================
+
+.slider {
+  padding: 2px 12px;
+  margin-top: 0;
+  margin-bottom: 0;
+
+  > box {
+    image {
+      color: #a0a0a0;
+      font-size: 16px;
+    }
+
+    label {
+      font-size: 0.9em;
+    }
+
+    .numeric {
+      color: #a0a0a0;
+      font-size: 0.85em;
+      font-family: "Monospace";
+    }
+  }
+
+  scale {
+    min-height: 2px;
+    margin-top: 2px;
+    margin-bottom: 0;
+    padding: 4px 0;
+
+    trough {
+      min-height: 2px;
+      background-color: rgba(255, 255, 255, 0.1);
+      border-radius: 1px;
+    }
+
+    highlight {
+      background-color: $accent-color;
+      border-radius: 2px;
+    }
+
+    slider {
+      min-width: 10px;
+      min-height: 10px;
+      border-radius: 50%;
+      background-color: $accent-color;
+      border: 1px solid $accent-color;
+
+      &:hover {
+        background-color: lighter($accent-color);
+      }
+    }
+  }
+
+  &.volume {
     scale {
       trough {
         &:dir(ltr) {
@@ -292,319 +484,22 @@ window.QuickSettings {
       }
 
       slider {
-        border: 1px solid $accent;
+        border: 1px solid $accent-color;
 
         &:hover {
-          background-color: lighten($accent, 5%);
+          background-color: lighter($accent-color);
         }
       }
     }
   }
+}
 
-  scale.volume-scale.overamp slider {
-    background-color: #ff6464;
-    border-color: #ff6464;
+scale.overamp slider {
+  background-color: #ff6464;
+  border-color: #ff6464;
 
-    &:hover {
-      background-color: #ff7a7a;
-      border-color: #ff7a7a;
-    }
-  }
-
-  .QuickSettings-toggles {
-    padding: 12px;
-
-    .QuickSettings-large-button {
-      flex: 1;
-    }
-  }
-
-  // Device items
-  .QuickSettings-device-item {
-    padding: 8px;
-    margin: 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.03);
-    transition: background-color 150ms ease-in-out;
-
-    &:hover {
-      background-color: rgba(255, 255, 255, 0.08);
-    }
-
-    &:first-child {
-      border-top: none;
-    }
-  }
-
-  .QuickSettings-device-name {
-    color: $fg;
-    font-size: 0.95em;
-    font-weight: 500;
-  }
-
-  .QuickSettings-device-status {
-    color: $muted;
-    font-size: 0.75em;
-    font-weight: 400;
-  }
-
-  // Empty state styling
-  .QuickSettings-empty-state {
-    color: $muted;
-    font-size: 0.9em;
-    text-align: center;
-  }
-
-  // KDE Connect dropdown styles
-  .kde-connect-dropdown {
-    .daemon-box {
-      padding: 6px 8px;
-      margin: 2px 0;
-      background-color: rgba(255, 255, 255, 0.03);
-      border-radius: 4px;
-
-      .daemon-status {
-        font-size: 0.9em;
-        margin: 0;
-        padding: 4px 0;
-
-        &.status-active {
-          color: #8dd8f1;
-          font-weight: 500;
-        }
-      }
-
-      switch {
-        margin: 0;
-      }
-    }
-
-    .devices-container {
-      padding: 0;
-      margin: 0;
-      spacing: 2px;
-    }
-
-    .device-card {
-      padding: 6px;
-      margin: 0;
-      background-color: rgba(255, 255, 255, 0.04);
-      border-radius: 4px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      transition: background-color 150ms ease-in-out;
-
-      &:hover {
-        background-color: rgba(255, 255, 255, 0.08);
-      }
-
-      .device-name {
-        font-size: 0.95em;
-        font-weight: 500;
-        margin: 0;
-        padding: 0;
-      }
-
-      .battery-level {
-        font-size: 0.85em;
-        color: $muted;
-        margin: 0;
-        padding: 0;
-      }
-
-      .status-label {
-        font-size: 0.8em;
-        margin: 0;
-        padding: 2px 4px;
-
-        &.status-ok {
-          color: #81c784;
-        }
-
-        &.status-offline {
-          color: #e57373;
-        }
-
-        &.status-warning {
-          color: #ffb74d;
-        }
-      }
-
-      .device-action-btn {
-        padding: 4px 6px;
-        margin: 0;
-        min-width: 32px;
-        min-height: 32px;
-        background-color: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 3px;
-        color: $fg;
-        transition: all 150ms ease-in-out;
-
-        &:hover {
-          background-color: rgba(255, 255, 255, 0.15);
-          border-color: rgba(255, 255, 255, 0.2);
-        }
-
-        &:active {
-          background-color: rgba(255, 255, 255, 0.2);
-        }
-
-        image {
-          icon-size: 16px;
-        }
-      }
-    }
-
-    .no-devices {
-      color: $muted;
-      font-size: 0.85em;
-      padding: 12px;
-      text-align: center;
-    }
-
-    .dropdown-separator {
-      margin: 0;
-      min-height: 1px;
-      background-color: rgba(255, 255, 255, 0.05);
-    }
-
-    .dropdown-header {
-      padding: 6px 8px;
-      margin: 0;
-
-      button {
-        padding: 4px;
-        margin: 0;
-        background-color: transparent;
-        border: none;
-        color: $fg;
-
-        &:hover {
-          background-color: rgba(255, 255, 255, 0.08);
-          border-radius: 3px;
-        }
-      }
-    }
-
-    // KDE Connect specific styles
-    .kde-connect-dropdown {
-      .daemon-box {
-        padding: 0;
-        margin: 0;
-        min-height: 32px;
-        align-items: center;
-
-        .daemon-status {
-          font-size: 0.9em;
-          margin: 0;
-          padding: 0;
-
-          &.status-active {
-            color: rgba(76, 175, 80, 0.9);
-          }
-        }
-
-        switch {
-          margin-left: 8px;
-          margin-right: 0;
-        }
-      }
-
-      .devices-container {
-        spacing: 6px;
-        padding: 0;
-        margin: 0;
-
-        .device-card {
-          background-color: rgba(255, 255, 255, 0.04);
-          border-radius: 4px;
-          padding: 0;
-          margin: 0;
-          spacing: 0;
-
-          .device-top {
-            padding: 6px 8px;
-            margin: 0;
-            spacing: 8px;
-
-            .device-icon {
-              min-width: 28px;
-              min-height: 28px;
-              color: rgba(255, 255, 255, 0.7);
-            }
-
-            .device-name {
-              font-weight: 500;
-              font-size: 0.95em;
-              margin: 0;
-              padding: 0;
-            }
-
-            .status-label {
-              font-size: 0.8em;
-              margin: 0;
-              padding: 0;
-              letter-spacing: 0.3px;
-
-              &.status-online {
-                color: rgba(129, 199, 132, 0.8);
-              }
-
-              &.status-offline {
-                color: rgba(178, 190, 195, 0.7);
-              }
-
-              &.status-trusted {
-                color: rgba(129, 199, 132, 0.8);
-              }
-
-              &.status-untrusted {
-                color: rgba(255, 167, 38, 0.7);
-              }
-            }
-
-            .battery-level {
-              font-size: 0.85em;
-              color: rgba(255, 255, 255, 0.6);
-              margin: 0;
-              padding: 0;
-              min-width: 40px;
-            }
-          }
-
-          .device-buttons {
-            padding: 0 8px 6px 8px;
-            margin: 0;
-            spacing: 4px;
-
-            .device-action-btn {
-              padding: 4px 6px;
-              margin: 0;
-              border: none;
-              background-color: rgba(255, 255, 255, 0.06);
-              color: rgba(255, 255, 255, 0.8);
-              border-radius: 3px;
-              min-width: 28px;
-              min-height: 28px;
-
-              &:hover {
-                background-color: rgba(255, 255, 255, 0.12);
-              }
-
-              &:active {
-                background-color: rgba(255, 255, 255, 0.16);
-              }
-            }
-          }
-        }
-
-        .no-devices {
-          padding: 12px 8px;
-          margin: 0;
-          color: rgba(255, 255, 255, 0.5);
-          font-size: 0.9em;
-          text-align: center;
-        }
-      }
-    }
+  &:hover {
+    background-color: #ff7a7a;
+    border-color: #ff7a7a;
   }
 }

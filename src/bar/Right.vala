@@ -10,7 +10,7 @@ namespace TopBar {
             append (new Widgets.IdleInhibitor ());
             append (new Widgets.Battery ());
             append (new Widgets.Wifi ());
-            append (new Widgets.AudioSlider ());
+            append (new Widgets.Volume ());
             append (new Widgets.QuickSettingsButton ());
         }
     }

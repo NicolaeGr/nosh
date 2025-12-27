@@ -58,7 +58,6 @@ vala_sources = files(
 )
 
 subdir('utils')
-subdir('widgets')
 subdir('bar')
 subdir('notifications')
 subdir('quick_settings')

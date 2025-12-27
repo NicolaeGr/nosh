@@ -9,9 +9,8 @@ namespace TopBar {
                     namespace: "nosh-topbar"
             );
 
-            add_css_class ("Bar");
+            set_css_classes({"Bar", "min-h-6", "px-1", "py-0", "mx-1", "text-sm", "font-bold"});
             
-            // Add secondary indicator class if this is the dev instance
             if (is_secondary) {
                 add_css_class ("secondary-instance");
             }

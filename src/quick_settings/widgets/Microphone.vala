@@ -8,7 +8,7 @@ namespace QuickSettings.Widgets {
 
         public Microphone () {
             Object (orientation: Gtk.Orientation.VERTICAL, spacing: 2);
-            set_css_classes ({"QuickSettings-slider"});
+            set_css_classes ({"slider"});
             margin_top = 6;
             margin_bottom = 6;
             margin_start = 12;

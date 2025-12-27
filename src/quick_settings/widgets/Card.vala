@@ -4,7 +4,7 @@ namespace QuickSettings.Widgets {
     public class Card : Gtk.Box {
         public Card () {
             Object (orientation: Gtk.Orientation.VERTICAL, spacing: 0);
-            set_css_classes ({"QuickSettings-card"});
+            set_css_classes ({"card"});
             halign = Gtk.Align.END;
             valign = Gtk.Align.START;
             vexpand = false;
@@ -23,7 +23,7 @@ namespace QuickSettings.Widgets {
             content.append (new Connectivity ());
 
             var separator1 = new Gtk.Separator (Gtk.Orientation.HORIZONTAL);
-            separator1.set_css_classes ({"QuickSettings-divider"});
+            separator1.set_css_classes ({"divider"});
             content.append (separator1);
 
             var sliders_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
@@ -33,11 +33,11 @@ namespace QuickSettings.Widgets {
             content.append (sliders_box);
 
             var separator2 = new Gtk.Separator (Gtk.Orientation.HORIZONTAL);
-            separator2.set_css_classes ({"QuickSettings-divider"});
+            separator2.set_css_classes ({"divider"});
             content.append (separator2);
 
             var toggles_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            toggles_box.set_css_classes ({"QuickSettings-item-row", "QuickSettings-toggles"});
+            toggles_box.set_css_classes ({"item-row", "toggles"});
             toggles_box.halign = Gtk.Align.FILL;
             toggles_box.homogeneous = true;
 

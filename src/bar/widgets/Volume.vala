@@ -1,10 +1,10 @@
 using Gtk;
 
 namespace TopBar.Widgets {
-    public class AudioSlider : Gtk.Button {
+    public class Volume : Gtk.Button {
         Gtk.Image icon = new Gtk.Image ();
 
-        public AudioSlider () {
+        public Volume () {
             set_child(icon);
             set_css_classes ({"square-icon" });
             set_valign (Align.CENTER);

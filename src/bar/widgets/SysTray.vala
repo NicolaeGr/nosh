@@ -18,12 +18,11 @@ namespace TopBar.Widgets {
             if (item == null)
                 return;
 
-            // Skip items without icon or menu
             if (item.gicon == null && item.menu_model == null)
                 return;
 
             var btn = new Gtk.MenuButton () { visible = true };
-            btn.set_css_classes ({ "menu-icon" });
+            btn.set_css_classes ({"menu-icon", "m-0", "p-0"});
             btn.set_menu_model (item.menu_model);
             var icon = new Gtk.Image ();
 

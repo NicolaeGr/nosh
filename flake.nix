@@ -41,6 +41,7 @@
         wireplumber
         network
         mpris
+        notifd
         powerprofiles
         tray
         bluetooth

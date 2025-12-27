@@ -8,7 +8,7 @@ namespace QuickSettings.Widgets {
 
         public VolumeSlider () {
             Object (orientation: Gtk.Orientation.VERTICAL, spacing: 2);
-            set_css_classes ({"QuickSettings-slider", "volume-slider"});
+            set_css_classes ({"slider", "volume"});
             margin_top = 6;
             margin_bottom = 6;
             margin_start = 12;

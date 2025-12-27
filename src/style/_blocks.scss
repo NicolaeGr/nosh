@@ -1,0 +1,39 @@
+@use "variables" as *;
+@use "functions" as *;
+
+// ========================
+// Square Icon Button
+// ========================
+
+.square-icon,
+.menu-icon button {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  background-color: transparent;
+  transition: background-color 200ms;
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+
+  image {
+    min-width: 30px;
+    min-height: 30px;
+  }
+}
+
+// ========================
+// Small Switch
+// ========================
+
+switch.small-switch {
+  min-width: 20px;
+  min-height: 10px;
+  -gtk-icon-size: 6px;
+
+  slider {
+    min-width: 6px;
+    min-height: 6px;
+  }
+}

@@ -12,7 +12,7 @@ namespace TopBar.Widgets {
             this.valign = Align.CENTER;
 
             icon = new Gtk.Image();
-            this.set_css_classes({ "square-icon" });
+            this.set_css_classes({"square-icon"});
             this.set_child(icon);
 
             if (!app_state.is_idle_inhibitor_available()) {

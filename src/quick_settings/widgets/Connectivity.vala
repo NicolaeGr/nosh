@@ -13,7 +13,7 @@ namespace QuickSettings.Widgets {
             Object (orientation: Gtk.Orientation.VERTICAL, spacing: 0);
 
             var connectivity_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            connectivity_box.set_css_classes ({"QuickSettings-item-row"});
+            connectivity_box.set_css_classes ({"item-row"});
             connectivity_box.halign = Gtk.Align.FILL;
             connectivity_box.homogeneous = true;
 
@@ -33,7 +33,7 @@ namespace QuickSettings.Widgets {
             append (connectivity_box);
 
             dropdowns_container = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-            dropdowns_container.set_css_classes ({"QuickSettings-dropdowns-container"});
+            dropdowns_container.set_css_classes ({"dropdowns-container"});
             dropdowns_container.halign = Gtk.Align.FILL;
             append (dropdowns_container);
 

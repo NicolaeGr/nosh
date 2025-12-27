@@ -145,7 +145,9 @@
                 ];
               };
 
-              wantedBy = [ "graphical-session.target" ];
+              Install = {
+                WantedBy = [ "hyprland-session.target" ];
+              };
             };
           };
         };

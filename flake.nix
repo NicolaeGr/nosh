@@ -145,7 +145,7 @@
                 ];
               };
 
-              WantedBy = [ "graphical-session.target" ];
+              wantedBy = [ "graphical-session.target" ];
             };
           };
         };

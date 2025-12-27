@@ -3,7 +3,9 @@ using Gtk;
 namespace Notifications.Widgets {
     public class NotificationsContainer : Gtk.Box {
         private Gtk.Box notifications_stack;
-        private const uint DEFAULT_TIMEOUT = 5000;  
+        private Queue<NotificationCard> waiting_queue;
+        private const uint DEFAULT_TIMEOUT = 5000;
+        private const uint MAX_VISIBLE = 3;
 
         public NotificationsContainer () {
             Object (
@@ -16,6 +18,7 @@ namespace Notifications.Widgets {
             set_css_classes ({"NotificationsContainer"});
             set_size_request (-1, 0);
 
+            waiting_queue = new Queue<NotificationCard> ();
             notifications_stack = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
             notifications_stack.set_css_classes ({"notifications-stack"});
 
@@ -67,26 +70,35 @@ namespace Notifications.Widgets {
 
             add_notification (card);
         }
-
         public void add_notification (NotificationCard card) {
-            notifications_stack.append (card);
-            update_pointer_events ();
+            var children_count = count_visible_notifications ();
             
-            var children_count = 0;
-            var child = notifications_stack.get_first_child ();
-            while (child != null) {
-                children_count++;
-                child = child.get_next_sibling ();
-            }
-
-            if (children_count > 3) {
-                var first = notifications_stack.get_first_child ();
-                if (first != null && first is NotificationCard) {
-                    ((NotificationCard)first).dismiss ();
-                }
+            if (children_count < MAX_VISIBLE) {
+                notifications_stack.append (card);
+                update_pointer_events ();
+            } else {
+                waiting_queue.push_tail (card);
             }
         }
-
+        
+        private uint count_visible_notifications () {
+            var count = 0;
+            var child = notifications_stack.get_first_child ();
+            while (child != null) {
+                count++;
+                child = child.get_next_sibling ();
+            }
+            return count;
+        }
+        
+        private void show_next_queued_notification () {
+            if (!waiting_queue.is_empty ()) {
+                var card = waiting_queue.pop_head ();
+                notifications_stack.append (card);
+                update_pointer_events ();
+            }
+        }
+        
         private void on_card_dismissed (NotificationCard card) {
             // Check if card is still in the stack before removing
             var child = notifications_stack.get_first_child ();
@@ -101,6 +113,7 @@ namespace Notifications.Widgets {
             
             if (found) {
                 notifications_stack.remove (card);
+                show_next_queued_notification ();
             }
             
             on_notification_dismissed ();

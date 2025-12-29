@@ -29,7 +29,16 @@ namespace AppLauncher {
                     string? icon_name = null;
                     
                     if (icon != null) {
-                        icon_name = icon.to_string();
+                        // Handle ThemedIcon properly
+                        if (icon is ThemedIcon) {
+                            var themed = (ThemedIcon) icon;
+                            var names = themed.get_names();
+                            if (names.length > 0) {
+                                icon_name = names[0];
+                            }
+                        } else {
+                            icon_name = icon.to_string();
+                        }
                     }
                     
                     var entry = new AppEntry(name, icon_name, app_info);

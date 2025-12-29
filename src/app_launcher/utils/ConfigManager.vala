@@ -54,17 +54,17 @@ namespace AppLauncher {
                 } else if (line.has_prefix("name")) {
                     var parts = line.split("=", 2);
                     if (parts.length == 2) {
-                        current_name = parts[1].strip().replace("\"", "");
+                        current_name = parse_toml_string(parts[1].strip());
                     }
                 } else if (line.has_prefix("icon")) {
                     var parts = line.split("=", 2);
                     if (parts.length == 2) {
-                        current_icon = parts[1].strip().replace("\"", "");
+                        current_icon = parse_toml_string(parts[1].strip());
                     }
                 } else if (line.has_prefix("exec")) {
                     var parts = line.split("=", 2);
                     if (parts.length == 2) {
-                        current_exec = parts[1].strip().replace("\"", "");
+                        current_exec = parse_toml_string(parts[1].strip());
                     }
                 }
             }
@@ -73,6 +73,16 @@ namespace AppLauncher {
             if (current_name != null && current_exec != null) {
                 add_toml_entry(current_name, current_icon, current_exec);
             }
+        }
+        
+        private string parse_toml_string(string value) {
+            // Remove surrounding quotes (handles both " and ')
+            string result = value.strip();
+            if ((result.has_prefix("\"") && result.has_suffix("\"")) ||
+                (result.has_prefix("'") && result.has_suffix("'"))) {
+                result = result.substring(1, result.length - 2);
+            }
+            return result;
         }
         
         private void add_toml_entry(string name, string? icon, string exec) {

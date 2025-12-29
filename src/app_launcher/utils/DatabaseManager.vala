@@ -31,7 +31,8 @@ namespace AppLauncher {
             var db_path = Path.build_filename(nosh_data_dir, "app_launcher.db");
             
             if (Sqlite.Database.open(db_path, out db) != Sqlite.OK) {
-                warning("Failed to open database: %s", db.errmsg());
+                warning("Failed to open database: %s", db != null ? db.errmsg() : "unknown error");
+                db = null;
                 return;
             }
             

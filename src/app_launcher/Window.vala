@@ -73,7 +73,7 @@ namespace AppLauncher {
             ((Gtk.Widget) this).add_controller(key_controller);
             
             // Bind to app state
-            app_state.bind_property("app-launcher-open", this, "visible", BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL);
+            app_state.bind_property("app_launcher_open", this, "visible", BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL);
             
             // Initialize with all apps
             notify["visible"].connect(() => {

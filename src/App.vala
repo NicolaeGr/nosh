@@ -4,6 +4,7 @@ class App : Gtk.Application {
     private TopBar.Bar bar;
     private Notifications.Window notifications;
     private QuickSettings.Window quick_settings;
+    private Indicators.ChangeIndicatorWindow change_indicator;
 
     private void init_css() {
         var provider = new Gtk.CssProvider();
@@ -25,6 +26,12 @@ class App : Gtk.Application {
         if (command_line.is_remote) {
             // app is already running we can print to remote
             command_line.print_literal("hello from the main instance\n");
+
+            // Handle control commands
+            if (argv.length >= 2) {
+                var handler = Utils.KeybindHandler.get_instance ();
+                handler.handle_command (argv[1]);
+            }
 
             // for example, we could toggle the visibility of the bar
             if (argv.length >= 3 && argv[1] == "toggle" && argv[2] == "bar") {
@@ -51,6 +58,7 @@ class App : Gtk.Application {
             add_window(bar);
             add_window((notifications = new Notifications.Window()));
             add_window((quick_settings = new QuickSettings.Window()));
+            add_window((change_indicator = new Indicators.ChangeIndicatorWindow()));
 
             bar.present();
             //  quick_settings.present();

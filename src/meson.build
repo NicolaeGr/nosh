@@ -61,6 +61,7 @@ subdir('utils')
 subdir('bar')
 subdir('notifications')
 subdir('quick_settings')
+subdir('indicators')
 
 # bundle scss files
 css = custom_target(

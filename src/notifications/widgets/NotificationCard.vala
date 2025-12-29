@@ -39,10 +39,9 @@ namespace Notifications.Widgets {
 
             set_css_classes ({"NotificationCard", "p-2", "gap-1", "rounded-2xl"});
             set_margin_top (8);
-            //  set_margin_bottom (8);
             set_margin_start (8);
             set_margin_end (8);
-            set_size_request (360, -1);
+            hexpand = false;
 
             var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             header.set_css_classes ({"gap-2", "header"});
@@ -106,14 +105,17 @@ namespace Notifications.Widgets {
             var content_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             content_box.set_spacing (8);
 
-            var desc_label = new Gtk.Label (description);
-            desc_label.set_css_classes ({"dimmed"});
-            desc_label.set_halign (Align.START);
-            desc_label.set_wrap (true);
-            desc_label.set_use_markup (true);
-            desc_label.set_lines (2);
-            desc_label.set_ellipsize (Pango.EllipsizeMode.END);
-
+            var desc_label = new Gtk.Label("");
+            desc_label.set_use_markup(true);
+            desc_label.set_markup(description);
+            desc_label.set_wrap(true);
+            desc_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR);
+            desc_label.set_halign(Gtk.Align.START);
+                    
+            desc_label.set_max_width_chars(40);    
+            desc_label.set_ellipsize(Pango.EllipsizeMode.END);
+            desc_label.set_lines(3);             
+            
             var main_content = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
             main_content.set_css_classes ({"gap-2"});
             main_content.append (desc_label);
@@ -131,6 +133,7 @@ namespace Notifications.Widgets {
             content_revealer.set_transition_duration (200);
             content_revealer.set_transition_type (Gtk.RevealerTransitionType.SLIDE_DOWN);
             content_revealer.set_child (content_box);
+            content_revealer.set_css_classes ({"m-0", "p-0"});
 
             append (header);
             append (content_revealer);

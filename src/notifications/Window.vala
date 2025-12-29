@@ -14,15 +14,6 @@ namespace Notifications {
 
             var container = new Widgets.NotificationsContainer ();
             set_child (container);
-
-            //  mock notification for testing, no timeut
-            //  var test_notification = new Widgets.NotificationCard (
-            //       "Test Notification",
-            //       "This is a test notification to demonstrate the notification system.",
-            //      "dialog-information",
-            //      5000000
-            //  );
-            //  set_child (test_notification);
         }
     }
 }

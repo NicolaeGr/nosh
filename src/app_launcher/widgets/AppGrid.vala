@@ -94,11 +94,6 @@ namespace AppLauncher.Widgets {
             var child = flow_box.get_child_at_index(selected_index);
             if (child != null) {
                 flow_box.select_child(child);
-                // Scroll to make visible
-                var adjustment = get_vadjustment();
-                var allocation = Graphene.Rect();
-                child.compute_bounds(flow_box, out allocation);
-                adjustment.set_value(allocation.get_y());
             }
         }
         
@@ -113,11 +108,6 @@ namespace AppLauncher.Widgets {
             var child = flow_box.get_child_at_index(selected_index);
             if (child != null) {
                 flow_box.select_child(child);
-                // Scroll to make visible
-                var adjustment = get_vadjustment();
-                var allocation = Graphene.Rect();
-                child.compute_bounds(flow_box, out allocation);
-                adjustment.set_value(allocation.get_y());
             }
         }
         

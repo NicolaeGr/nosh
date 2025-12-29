@@ -1,0 +1,46 @@
+@use "../style/variables" as *;
+@use "../style/functions" as *;
+
+.ChangeIndicator {
+  background-color: transparent;
+
+  .indicator-card {
+    background-color: alpha($bg, 0.7);
+    border-radius: 16px;
+    border: 1px solid alpha($fg, 0.08);
+    padding: 24px;
+    min-width: 280px;
+    backdrop-filter: blur(8px);
+
+    .indicator-icon {
+      font-size: 32pt;
+      color: alpha($fg, 0.9);
+      min-width: 40px;
+    }
+
+    .indicator-value {
+      font-weight: 700;
+      color: alpha($fg, 0.95);
+      font-size: 24pt;
+      min-width: 80px;
+    }
+
+    .indicator-bar {
+      min-height: 10px;
+      border-radius: 5px;
+      background-color: alpha($fg, 0.1);
+
+      trough {
+        background-color: alpha($fg, 0.1);
+        border-radius: 5px;
+        min-height: 10px;
+      }
+
+      progress {
+        background-color: $accent-color;
+        border-radius: 5px;
+        min-height: 10px;
+      }
+    }
+  }
+}

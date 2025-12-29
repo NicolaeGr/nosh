@@ -33,6 +33,8 @@
         wayland
         wayland-protocols
         wayland-scanner
+        sqlite
+        libgee
       ];
 
       astalPackages = with astal.packages.${system}; [

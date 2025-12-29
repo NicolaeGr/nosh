@@ -100,7 +100,6 @@ namespace Notifications.Widgets {
         }
         
         private void on_card_dismissed (NotificationCard card) {
-            // Check if card is still in the stack before removing
             var child = notifications_stack.get_first_child ();
             var found = false;
             while (child != null) {

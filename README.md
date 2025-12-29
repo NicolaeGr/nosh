@@ -6,7 +6,7 @@ This is my try at implementing a shell around Hyprland in astal. For starters th
 
 - [x] TopBar
 - [ ] Quick Settings
-- [ ] App Launcher
+- [x] App Launcher
 - [ ] Notification Widgets
 - [ ] Central Console for media and notes
 - [ ] PowerMenu / User Switcher
@@ -25,6 +25,8 @@ This is my try at implementing a shell around Hyprland in astal. For starters th
 - astak-power-profiles
 - astal-tray
 - astal-bluetooth
+- sqlite3
+- libgee-0.8
 
 ## How to use
 
@@ -47,3 +49,52 @@ This is my try at implementing a shell around Hyprland in astal. For starters th
 - adding new vala files will also have to be listed in `meson.build`
 - adding new scss files requires no additional steps as long as they are imported from `style.scss`
 - adding new ui (blueprint) files will also have to be listed in `meson.build` and in `gresource.xml`
+
+## App Launcher
+
+The app launcher is a rofi replacement with the following features:
+
+- **500px max width** with **16:10 aspect ratio**
+- **Search bar** with fuzzy search support
+- **2-column app grid** displaying app icons and names
+- **Keyboard navigation**: Enter to launch, Tab/Shift+Tab to navigate
+- **SQLite database** tracking app usage frequency
+- **Smart sorting**: Most frequently used apps appear first
+- **TOML config support** for custom entries
+- **In-code entries** with lambda support
+
+### Usage
+
+Trigger the app launcher with:
+```sh
+nosh app-launcher
+```
+
+You can bind this to a key in your window manager (e.g., Hyprland):
+
+```
+bind = $mainMod, D, exec, nosh app-launcher
+```
+
+### Custom Entries
+
+On first launch, an example config file will be automatically created at `~/.config/nosh/app_launcher.toml`.
+
+To use the config file, remove or comment out the first line (`# EXAMPLE_CONFIG`), then add your custom entries:
+
+```toml
+[[entry]]
+name = "My Custom App"
+icon = "application-x-executable"
+exec = "/path/to/my/app"
+
+[[entry]]
+name = "Terminal in Home"
+icon = "utilities-terminal"
+exec = "alacritty --working-directory ~"
+```
+
+### Data Storage
+
+- App usage data is stored in `~/.local/share/nosh/app_launcher.db`
+- Custom config is read from `~/.config/nosh/app_launcher.toml`

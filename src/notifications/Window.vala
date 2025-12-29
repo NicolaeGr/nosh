@@ -6,23 +6,16 @@ namespace Notifications {
                 anchor: Astal.WindowAnchor.TOP | Astal.WindowAnchor.RIGHT,
                 exclusivity: Astal.Exclusivity.IGNORE,
                 layer: Astal.Layer.OVERLAY,
-                visible: true,
-                namespace: "nosh-notifications-outer"
+                visible: false,
+                namespace: "nosh-notifications-outer",
+                margin_top: 8,
+                margin_right: 28
             );
 
             set_css_classes ({"Notifications-outer"});
 
             var container = new Widgets.NotificationsContainer ();
             set_child (container);
-
-            //  mock notification for testing, no timeut
-            //  var test_notification = new Widgets.NotificationCard (
-            //       "Test Notification",
-            //       "This is a test notification to demonstrate the notification system.",
-            //      "dialog-information",
-            //      5000000
-            //  );
-            //  set_child (test_notification);
         }
     }
 }

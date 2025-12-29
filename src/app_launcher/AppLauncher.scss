@@ -1,0 +1,70 @@
+@use "../style/functions" as *;
+@use "../style/variables" as *;
+
+.AppLauncher {
+  .background {
+    background-color: transparent;
+  }
+
+  .container {
+    background-color: alpha($bg, 0.95);
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid alpha($fg, 0.1);
+  }
+
+  .SearchBar {
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background-color: alpha($bg-alt, 0.8);
+    border: 1px solid alpha($fg, 0.05);
+    caret-color: $accent-color;
+    outline: none;
+    box-shadow: none;
+
+    &:focus {
+      border-color: alpha($accent-color, 0.5);
+      outline: none;
+      box-shadow: 0 0 0 2px alpha($accent-color, 0.2);
+    }
+  }
+
+  .AppGrid {
+    border-radius: 8px;
+
+    flowboxchild {
+      border-radius: 6px;
+      outline: none;
+
+      &:selected {
+        background-color: alpha($accent-color, 0.2);
+        outline: 2px solid alpha($accent-color, 0.5);
+        outline-offset: -2px;
+
+        .AppItem {
+          background-color: alpha($accent-color, 0.1);
+        }
+      }
+
+      &:focus {
+        outline: 2px solid alpha($accent-color, 0.5);
+        outline-offset: -2px;
+      }
+    }
+
+    .AppItem {
+      padding: 8px 12px;
+      border-radius: 6px;
+      transition: background-color 0.2s;
+
+      &:hover {
+        background-color: alpha($accent-color, 0.1);
+      }
+
+      label {
+        font-size: 0.9em;
+      }
+    }
+  }
+}

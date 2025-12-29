@@ -37,6 +37,7 @@ dependencies = [
   dependency('gtk4-layer-shell-0'),
   dependency('astal-io-0.1'),
   dependency('gio-2.0'),
+  dependency('gio-unix-2.0'),
   dependency('glib-2.0'),
   dependency('astal-4-4.0'),
   dependency('astal-battery-0.1'),
@@ -50,6 +51,8 @@ dependencies = [
   dependency('astal-hyprland-0.1'),
   dependency('astal-notifd-0.1'),
   dependency('wayland-client'),
+  dependency('sqlite3'),
+  dependency('gee-0.8'),
 ]
 
 vala_sources = files(
@@ -61,6 +64,8 @@ subdir('utils')
 subdir('bar')
 subdir('notifications')
 subdir('quick_settings')
+subdir('indicators')
+subdir('app_launcher')
 
 # bundle scss files
 css = custom_target(

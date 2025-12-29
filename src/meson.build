@@ -50,6 +50,8 @@ dependencies = [
   dependency('astal-hyprland-0.1'),
   dependency('astal-notifd-0.1'),
   dependency('wayland-client'),
+  dependency('sqlite3'),
+  dependency('gee-0.8'),
 ]
 
 vala_sources = files(
@@ -62,6 +64,7 @@ subdir('bar')
 subdir('notifications')
 subdir('quick_settings')
 subdir('indicators')
+subdir('app_launcher')
 
 # bundle scss files
 css = custom_target(

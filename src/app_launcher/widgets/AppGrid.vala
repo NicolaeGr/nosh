@@ -1,5 +1,6 @@
 namespace AppLauncher.Widgets {
-    public class AppGrid : Gtk.ScrolledWindow {
+    public class AppGrid : Gtk.Box {
+        private Gtk.ScrolledWindow scrolled_window;
         private Gtk.FlowBox flow_box;
         private Gee.ArrayList<AppEntry> apps;
         private int selected_index = 0;
@@ -8,13 +9,20 @@ namespace AppLauncher.Widgets {
         
         public AppGrid() {
             Object(
-                hscrollbar_policy: Gtk.PolicyType.NEVER,
-                vscrollbar_policy: Gtk.PolicyType.AUTOMATIC,
+                orientation: Gtk.Orientation.VERTICAL,
+                spacing: 0,
                 vexpand: true,
                 hexpand: true
             );
             
             set_css_classes({"AppGrid"});
+            
+            // Create scrolled window
+            scrolled_window = new Gtk.ScrolledWindow();
+            scrolled_window.hscrollbar_policy = Gtk.PolicyType.NEVER;
+            scrolled_window.vscrollbar_policy = Gtk.PolicyType.AUTOMATIC;
+            scrolled_window.vexpand = true;
+            scrolled_window.hexpand = true;
             
             flow_box = new Gtk.FlowBox();
             flow_box.set_valign(Gtk.Align.START);
@@ -25,7 +33,8 @@ namespace AppLauncher.Widgets {
             flow_box.set_homogeneous(true);
             flow_box.set_selection_mode(Gtk.SelectionMode.SINGLE);
             
-            set_child(flow_box);
+            scrolled_window.set_child(flow_box);
+            append(scrolled_window);
             
             flow_box.child_activated.connect((child) => {
                 var index = child.get_index();

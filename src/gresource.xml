@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
-    <gresource prefix="/">
+    <gresource prefix="/com/nicolaegr/nosh">
         <file>style.css</file>
+        <!-- UI_FILES_PLACEHOLDER -->
     </gresource>
 </gresources>

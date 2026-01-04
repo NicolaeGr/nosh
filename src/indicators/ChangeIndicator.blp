@@ -1,0 +1,58 @@
+using Gtk 4.0;
+using Astal 4.0;
+
+template $IndicatorsChangeIndicator: Astal.Window {
+    anchor: bottom | left | right;
+    exclusivity: ignore;
+    layer: top;
+    keymode: none;
+    visible: false;
+    namespace: "nosh-change-indicator";
+
+    css-classes: [
+        "ChangeIndicator",
+    ];
+
+    Box {
+        orientation: vertical;
+        spacing: 12;
+
+        css-classes: [
+            "indicator-card",
+        ];
+
+        halign: center;
+        valign: end;
+        margin-bottom: 40;
+
+        Box {
+            orientation: horizontal;
+            spacing: 8;
+            halign: center;
+
+            Image icon_widget {
+                css-classes: [
+                    "indicator-icon",
+                ];
+
+                halign: center;
+            }
+
+            Label value_label {
+                css-classes: [
+                    "indicator-value",
+                ];
+
+                halign: center;
+            }
+        }
+
+        ProgressBar progress_bar {
+            css-classes: [
+                "indicator-bar",
+            ];
+
+            hexpand: true;
+        }
+    }
+}

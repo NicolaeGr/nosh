@@ -4,12 +4,12 @@ class App : Gtk.Application {
     private TopBar.Bar bar;
     private Notifications.Window notifications;
     private QuickSettings.Window quick_settings;
-    private Indicators.ChangeIndicatorWindow change_indicator;
     private AppLauncher.Window app_launcher;
+    private Indicators.ChangeIndicator change_indicator;
 
     private void init_css() {
         var provider = new Gtk.CssProvider();
-        provider.load_from_resource("/style.css");
+        provider.load_from_resource("/com/nicolaegr/nosh/style.css");
 
         var display = Gdk.Display.get_default();
         if (display != null) {
@@ -59,8 +59,8 @@ class App : Gtk.Application {
             add_window(bar);
             add_window((notifications = new Notifications.Window()));
             add_window((quick_settings = new QuickSettings.Window()));
-            add_window((change_indicator = new Indicators.ChangeIndicatorWindow()));
             add_window((app_launcher = new AppLauncher.Window()));
+            add_window((change_indicator = new Indicators.ChangeIndicator()));
 
             bar.present();
             //  quick_settings.present();

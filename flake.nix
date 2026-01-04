@@ -73,6 +73,7 @@
             pkgs.vala-language-server
             pkgs.openjdk
             pkgs.uncrustify
+            pkgs.brightnessctl
           ];
       };
 
@@ -95,7 +96,9 @@
           config = mkIf cfg.enable {
             services.upower.enable = true;
 
-            environment.systemPackages = [ pkgs.light ];
+            environment.systemPackages = [
+              pkgs.brightnessctl
+            ];
           };
         };
 

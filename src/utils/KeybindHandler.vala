@@ -16,10 +16,6 @@ namespace Utils {
             return _instance;
         }
 
-        /**
-         * Handle a command from the command line
-         * Usage: nosh volume-up, nosh volume-down, nosh brightness-up, nosh brightness-down, nosh app-launcher
-         */
         public void handle_command (string command) {
             switch (command) {
                 case "volume-up":

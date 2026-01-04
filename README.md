@@ -78,7 +78,9 @@ bind = $mainMod, D, exec, nosh app-launcher
 
 ### Custom Entries
 
-Create a config file at `~/.config/nosh/app_launcher.toml`:
+On first launch, an example config file will be automatically created at `~/.config/nosh/app_launcher.toml`.
+
+To use the config file, remove or comment out the first line (`# EXAMPLE_CONFIG`), then add your custom entries:
 
 ```toml
 [[entry]]

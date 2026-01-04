@@ -38,7 +38,7 @@ namespace AppLauncher {
             
             // Search bar
             search_bar = new Widgets.SearchBar();
-            search_bar.search_changed.connect(on_search_changed);
+            search_bar.query_changed.connect(on_search_changed);
             search_bar.activate_selected.connect(on_activate_selected);
             search_bar.move_next.connect(() => app_grid.select_next());
             search_bar.move_previous.connect(() => app_grid.select_previous());

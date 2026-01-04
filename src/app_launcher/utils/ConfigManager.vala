@@ -17,19 +17,80 @@ namespace AppLauncher {
         
         private void load_config() {
             var config_dir = Environment.get_user_config_dir();
-            var config_path = Path.build_filename(config_dir, "nosh", "app_launcher.toml");
+            var nosh_config_dir = Path.build_filename(config_dir, "nosh");
+            var config_path = Path.build_filename(nosh_config_dir, "app_launcher.toml");
             
             var file = File.new_for_path(config_path);
             if (!file.query_exists()) {
+                // Create the config directory and example file
+                create_example_config(nosh_config_dir, config_path);
                 return;
             }
             
             try {
-                string contents;
-                file.load_contents(null, out contents, null);
+                uint8[] contents_bytes;
+                file.load_contents(null, out contents_bytes, null);
+                string contents = (string) contents_bytes;
+                
+                // Check if this is an example file (first line is the flag)
+                if (contents.has_prefix("# EXAMPLE_CONFIG")) {
+                    // Don't parse example config
+                    return;
+                }
+                
                 parse_toml(contents);
             } catch (Error e) {
                 warning("Failed to load config: %s", e.message);
+            }
+        }
+        
+        private void create_example_config(string config_dir, string config_path) {
+            // Create config directory if it doesn't exist
+            var dir = File.new_for_path(config_dir);
+            try {
+                dir.make_directory_with_parents();
+            } catch (Error e) {
+                if (!(e is IOError.EXISTS)) {
+                    warning("Failed to create config directory: %s", e.message);
+                    return;
+                }
+            }
+            
+            // Create example config file
+            string example_config = """# EXAMPLE_CONFIG
+# This is an example configuration file for the app launcher.
+# To use this file, remove or comment out the first line (# EXAMPLE_CONFIG).
+#
+# Each entry should follow this format:
+# [[entry]]
+# name = "App Name"
+# icon = "icon-name"
+# exec = "command to execute"
+
+# Example: Custom script
+# [[entry]]
+# name = "My Custom Script"
+# icon = "application-x-executable"
+# exec = "/home/user/scripts/my-script.sh"
+
+# Example: Terminal in specific directory
+# [[entry]]
+# name = "Terminal (Projects)"
+# icon = "utilities-terminal"
+# exec = "alacritty --working-directory ~/projects"
+
+# Example: Application with arguments
+# [[entry]]
+# name = "Firefox (Work Profile)"
+# icon = "firefox"
+# exec = "firefox -P work"
+""";
+            
+            try {
+                var file = File.new_for_path(config_path);
+                file.replace_contents(example_config.data, null, false, FileCreateFlags.NONE, null);
+            } catch (Error e) {
+                warning("Failed to create example config: %s", e.message);
             }
         }
         

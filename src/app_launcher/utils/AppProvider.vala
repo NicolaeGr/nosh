@@ -69,30 +69,79 @@ namespace AppLauncher {
                 return all_apps;
             }
             
-            var results = new Gee.ArrayList<AppEntry>();
+            var scored_results = new Gee.ArrayList<ScoredEntry>();
             var lower_query = query.down();
             
             foreach (var app in all_apps) {
-                if (fuzzy_match(app.name.down(), lower_query)) {
-                    results.add(app);
+                int score = fuzzy_match_score(app.name.down(), lower_query);
+                if (score > 0) {
+                    scored_results.add(new ScoredEntry(app, score));
                 }
+            }
+            
+            // Sort by score (higher is better), then by frequency
+            scored_results.sort((a, b) => {
+                if (a.score != b.score) {
+                    return b.score - a.score;
+                }
+                return b.entry.frequency - a.entry.frequency;
+            });
+            
+            // Extract just the entries
+            var results = new Gee.ArrayList<AppEntry>();
+            foreach (var scored in scored_results) {
+                results.add(scored.entry);
             }
             
             return results;
         }
         
-        private bool fuzzy_match(string text, string pattern) {
+        private class ScoredEntry : Object {
+            public AppEntry entry;
+            public int score;
+            
+            public ScoredEntry(AppEntry entry, int score) {
+                this.entry = entry;
+                this.score = score;
+            }
+        }
+        
+        private int fuzzy_match_score(string text, string pattern) {
             int text_idx = 0;
             int pattern_idx = 0;
+            int score = 0;
+            int consecutive = 0;
+            bool in_word = false;
             
             while (text_idx < text.length && pattern_idx < pattern.length) {
                 if (text[text_idx] == pattern[pattern_idx]) {
+                    // Bonus for matching at word start
+                    if (text_idx == 0 || text[text_idx - 1] == ' ' || text[text_idx - 1] == '-') {
+                        score += 10;
+                        in_word = true;
+                    }
+                    
+                    // Bonus for consecutive matches
+                    consecutive++;
+                    score += consecutive * 5;
+                    
                     pattern_idx++;
+                } else {
+                    consecutive = 0;
+                    in_word = false;
                 }
                 text_idx++;
             }
             
-            return pattern_idx == pattern.length;
+            // Return 0 if pattern wasn't fully matched
+            if (pattern_idx < pattern.length) {
+                return 0;
+            }
+            
+            // Bonus for matching the entire pattern
+            score += 20;
+            
+            return score;
         }
         
         public void record_launch(AppEntry entry) {

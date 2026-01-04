@@ -1,6 +1,6 @@
 namespace AppLauncher.Widgets {
     public class SearchBar : Gtk.SearchEntry {
-        public signal void search_changed(string query);
+        public signal void query_changed(string query);
         public signal void activate_selected();
         public signal void move_next();
         public signal void move_previous();
@@ -14,7 +14,7 @@ namespace AppLauncher.Widgets {
             set_css_classes({"SearchBar"});
             
             changed.connect(() => {
-                search_changed(get_text());
+                query_changed(get_text());
             });
             
             activate.connect(() => {

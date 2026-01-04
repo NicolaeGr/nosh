@@ -71,13 +71,13 @@ namespace AppLauncher {
 # [[entry]]
 # name = "My Custom Script"
 # icon = "application-x-executable"
-# exec = "/home/user/scripts/my-script.sh"
+# exec = "$HOME/scripts/my-script.sh"
 
 # Example: Terminal in specific directory
 # [[entry]]
-# name = "Terminal (Projects)"
+# name = "Terminal (Documents)"
 # icon = "utilities-terminal"
-# exec = "alacritty --working-directory ~/projects"
+# exec = "alacritty --working-directory ~/Documents"
 
 # Example: Application with arguments
 # [[entry]]

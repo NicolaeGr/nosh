@@ -37,6 +37,7 @@ dependencies = [
   dependency('gtk4-layer-shell-0'),
   dependency('astal-io-0.1'),
   dependency('gio-2.0'),
+  dependency('gio-unix-2.0'),
   dependency('glib-2.0'),
   dependency('astal-4-4.0'),
   dependency('astal-battery-0.1'),

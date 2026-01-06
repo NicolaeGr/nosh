@@ -6,6 +6,7 @@ namespace AppLauncher.Widgets {
         private int selected_index = 0;
         
         public signal void app_activated(AppEntry entry);
+        public signal void move_up_to_search();
         
         public AppGrid() {
             Object(
@@ -42,6 +43,33 @@ namespace AppLauncher.Widgets {
                     activate_app(apps[index]);
                 }
             });
+            
+            // Add key controller for arrow navigation
+            var key_controller = new Gtk.EventControllerKey();
+            key_controller.key_pressed.connect(on_key_pressed);
+            flow_box.add_controller(key_controller);
+        }
+        
+        private bool on_key_pressed(uint keyval, uint keycode, Gdk.ModifierType state) {
+            if (keyval == Gdk.Key.Down) {
+                select_next_row();
+                return true;
+            } else if (keyval == Gdk.Key.Up) {
+                if (selected_index < 2) {
+                    // If on first row, move back to search
+                    move_up_to_search();
+                    return true;
+                }
+                select_previous_row();
+                return true;
+            } else if (keyval == Gdk.Key.Left) {
+                select_previous();
+                return true;
+            } else if (keyval == Gdk.Key.Right) {
+                select_next();
+                return true;
+            }
+            return false;
         }
         
         public void set_apps(Gee.ArrayList<AppEntry> new_apps) {
@@ -112,6 +140,32 @@ namespace AppLauncher.Widgets {
             selected_index = selected_index - 1;
             if (selected_index < 0) {
                 selected_index = apps.size - 1;
+            }
+            
+            var child = flow_box.get_child_at_index(selected_index);
+            if (child != null) {
+                flow_box.select_child(child);
+            }
+        }
+        
+        public void select_next_row() {
+            if (apps.size == 0) return;
+            
+            // Move down by 2 (number of columns)
+            selected_index = (selected_index + 2) % apps.size;
+            var child = flow_box.get_child_at_index(selected_index);
+            if (child != null) {
+                flow_box.select_child(child);
+            }
+        }
+        
+        public void select_previous_row() {
+            if (apps.size == 0) return;
+            
+            // Move up by 2 (number of columns)
+            selected_index = selected_index - 2;
+            if (selected_index < 0) {
+                selected_index = 0;
             }
             
             var child = flow_box.get_child_at_index(selected_index);

@@ -42,11 +42,19 @@ namespace AppLauncher {
             search_bar.activate_selected.connect(on_activate_selected);
             search_bar.move_next.connect(() => app_grid.select_next());
             search_bar.move_previous.connect(() => app_grid.select_previous());
+            search_bar.move_down.connect(() => {
+                app_grid.select_next();
+                // Don't actually change focus, keep it on search bar
+            });
+            search_bar.close_requested.connect(close_launcher);
             main_container.append(search_bar);
             
             // App grid
             app_grid = new Widgets.AppGrid();
             app_grid.app_activated.connect(on_app_activated);
+            app_grid.move_up_to_search.connect(() => {
+                search_bar.grab_focus();
+            });
             main_container.append(app_grid);
             
             background.append(main_container);
@@ -61,23 +69,13 @@ namespace AppLauncher {
             });
             background.add_controller(bg_click);
             
-            // Escape key to close
-            var key_controller = new Gtk.EventControllerKey();
-            key_controller.key_pressed.connect((keyval, keycode, state) => {
-                if (keyval == Gdk.Key.Escape) {
-                    close_launcher();
-                    return true;
-                }
-                return false;
-            });
-            ((Gtk.Widget) this).add_controller(key_controller);
-            
             // Bind to app state
             app_state.bind_property("app_launcher_open", this, "visible", BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL);
             
             // Initialize with all apps
             notify["visible"].connect(() => {
                 if (visible) {
+                    app_provider.reload();
                     search_bar.set_text("");
                     app_grid.set_apps(app_provider.get_all_apps());
                     present();

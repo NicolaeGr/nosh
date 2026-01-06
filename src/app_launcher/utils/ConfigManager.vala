@@ -2,9 +2,14 @@ namespace AppLauncher {
     public class ConfigManager : Object {
         private static ConfigManager? _instance = null;
         private Gee.ArrayList<AppEntry> custom_entries;
+        private uint64 last_modified_time = 0;
+        private string config_path;
         
         private ConfigManager() {
             custom_entries = new Gee.ArrayList<AppEntry>();
+            var config_dir = Environment.get_user_config_dir();
+            var nosh_config_dir = Path.build_filename(config_dir, "nosh");
+            config_path = Path.build_filename(nosh_config_dir, "app_launcher.toml");
             load_config();
         }
         
@@ -16,18 +21,27 @@ namespace AppLauncher {
         }
         
         private void load_config() {
-            var config_dir = Environment.get_user_config_dir();
-            var nosh_config_dir = Path.build_filename(config_dir, "nosh");
-            var config_path = Path.build_filename(nosh_config_dir, "app_launcher.toml");
-            
             var file = File.new_for_path(config_path);
             if (!file.query_exists()) {
                 // Create the config directory and example file
+                var config_dir = Environment.get_user_config_dir();
+                var nosh_config_dir = Path.build_filename(config_dir, "nosh");
                 create_example_config(nosh_config_dir, config_path);
                 return;
             }
             
             try {
+                FileInfo info = file.query_info(FileAttribute.TIME_MODIFIED, FileQueryInfoFlags.NONE);
+                uint64 modified_time = info.get_attribute_uint64(FileAttribute.TIME_MODIFIED);
+                
+                // Only reload if file has been modified since last read
+                if (modified_time == last_modified_time && custom_entries.size > 0) {
+                    return;
+                }
+                
+                last_modified_time = modified_time;
+                custom_entries.clear();
+                
                 uint8[] contents_bytes;
                 file.load_contents(null, out contents_bytes, null);
                 string contents = (string) contents_bytes;
@@ -166,6 +180,10 @@ namespace AppLauncher {
         
         public Gee.ArrayList<AppEntry> get_custom_entries() {
             return custom_entries;
+        }
+        
+        public void reload() {
+            load_config();
         }
     }
 }

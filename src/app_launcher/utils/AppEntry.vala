@@ -3,6 +3,8 @@ namespace AppLauncher {
         public string name { get; set; }
         public string? icon { get; set; }
         public string? desktop_id { get; set; }
+        public string? description { get; set; }
+        public string[]? categories { get; set; }
         public AppInfo? app_info { get; set; }
         public AppLaunchFunc? launch_func { get; set; }
         public int frequency { get; set; default = 0; }

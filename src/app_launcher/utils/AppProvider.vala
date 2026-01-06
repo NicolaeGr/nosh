@@ -43,6 +43,18 @@ namespace AppLauncher {
                     
                     var entry = new AppEntry(name, icon_name, app_info);
                     
+                    // Load description and categories
+                    entry.description = app_info.get_description();
+                    
+                    // Get categories from desktop file
+                    var desktop_app = app_info as GLib.DesktopAppInfo;
+                    if (desktop_app != null) {
+                        var categories_str = desktop_app.get_categories();
+                        if (categories_str != null) {
+                            entry.categories = categories_str.split(";");
+                        }
+                    }
+                    
                     // Load frequency from database
                     if (entry.desktop_id != null) {
                         entry.frequency = db_manager.get_frequency(entry.desktop_id);
@@ -74,6 +86,22 @@ namespace AppLauncher {
             
             foreach (var app in all_apps) {
                 int score = fuzzy_match_score(app.name.down(), lower_query);
+                
+                // Also search in description
+                if (score == 0 && app.description != null) {
+                    score = fuzzy_match_score(app.description.down(), lower_query) / 2; // Lower priority
+                }
+                
+                // Also search in categories
+                if (score == 0 && app.categories != null) {
+                    foreach (var category in app.categories) {
+                        int cat_score = fuzzy_match_score(category.down(), lower_query) / 3; // Even lower priority
+                        if (cat_score > score) {
+                            score = cat_score;
+                        }
+                    }
+                }
+                
                 if (score > 0) {
                     scored_results.add(new ScoredEntry(app, score));
                 }
@@ -158,6 +186,12 @@ namespace AppLauncher {
         
         public Gee.ArrayList<AppEntry> get_all_apps() {
             return all_apps;
+        }
+        
+        public void reload() {
+            all_apps.clear();
+            config_manager.reload();
+            load_apps();
         }
     }
 }

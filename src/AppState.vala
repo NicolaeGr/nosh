@@ -4,6 +4,7 @@ namespace State {
 
         public bool quick_settings_open { get; set; default = false; }
         public bool idle_inhibitor_active { get; set; default = false; }
+        public bool app_launcher_open { get; set; default = false; }
 
         private Utils.IdleInhibitorManager idle_inhibitor_manager;
 

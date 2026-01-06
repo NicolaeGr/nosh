@@ -5,6 +5,7 @@ class App : Gtk.Application {
     private Notifications.Window notifications;
     private QuickSettings.Window quick_settings;
     private Indicators.ChangeIndicatorWindow change_indicator;
+    private AppLauncher.Window app_launcher;
 
     private void init_css() {
         var provider = new Gtk.CssProvider();
@@ -59,6 +60,7 @@ class App : Gtk.Application {
             add_window((notifications = new Notifications.Window()));
             add_window((quick_settings = new QuickSettings.Window()));
             add_window((change_indicator = new Indicators.ChangeIndicatorWindow()));
+            add_window((app_launcher = new AppLauncher.Window()));
 
             bar.present();
             //  quick_settings.present();

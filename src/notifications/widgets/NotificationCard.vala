@@ -38,9 +38,7 @@ namespace Notifications.Widgets {
             this.timeout_ms_original = timeout_ms;
 
             set_css_classes ({"NotificationCard", "p-2", "gap-1", "rounded-2xl"});
-            set_margin_top (8);
-            set_margin_start (8);
-            set_margin_end (8);
+            set_margin_bottom (8);
             hexpand = false;
 
             var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);

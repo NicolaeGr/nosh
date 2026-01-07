@@ -11,27 +11,27 @@ class Indicators.ChangeIndicator: Astal.Window {
     [GtkChild]
     private Gtk.Label value_label;
 
-    private Utils.ChangeIndicatorManager indicator_manager;
+    private Utils.SystemControlManager control_manager;
     private uint hide_timer = 0;
     private const uint HIDE_TIMEOUT = 800;
 
     public ChangeIndicator () {
         Object ();
 
-        indicator_manager = Utils.ChangeIndicatorManager.get_instance ();
+        control_manager = Utils.SystemControlManager.get_instance ();
 
-        indicator_manager.volume_changed.connect ((volume, old_vol) => {
+        control_manager.volume.volume_changed.connect ((volume, old_vol) => {
             show_volume_indicator (volume);
         });
 
-        indicator_manager.brightness_changed.connect ((brightness, old_bright) => {
+        control_manager.brightness.brightness_changed.connect ((brightness, old_bright) => {
             show_brightness_indicator (brightness);
         });
     }
 
     private void show_volume_indicator (double volume) {
         icon_widget.set_from_icon_name ("audio-volume-medium-symbolic");
-        var percent = volume / Utils.ChangeIndicatorManager.MAX_VOLUME;
+        var percent = volume / Utils.VolumeControl.MAX_VOLUME;
         progress_bar.set_fraction (percent.clamp (0, 1));
         value_label.set_label (@"$(Math.lround(volume * 100))%");
         show_indicator ();

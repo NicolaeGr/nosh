@@ -40,21 +40,17 @@ namespace AppLauncher {
             search_bar = new Widgets.SearchBar();
             search_bar.query_changed.connect(on_search_changed);
             search_bar.activate_selected.connect(on_activate_selected);
-            search_bar.move_next.connect(() => app_grid.select_next());
-            search_bar.move_previous.connect(() => app_grid.select_previous());
-            search_bar.move_down.connect(() => {
-                app_grid.select_next();
-                // Don't actually change focus, keep it on search bar
-            });
+            search_bar.arrow_up.connect(() => app_grid.move_up());
+            search_bar.arrow_down.connect(() => app_grid.move_down());
+            search_bar.arrow_left.connect(() => app_grid.move_left());
+            search_bar.arrow_right.connect(() => app_grid.move_right());
+            search_bar.exit_grid_mode.connect(on_exit_grid_mode);
             search_bar.close_requested.connect(close_launcher);
             main_container.append(search_bar);
             
             // App grid
             app_grid = new Widgets.AppGrid();
             app_grid.app_activated.connect(on_app_activated);
-            app_grid.move_up_to_search.connect(() => {
-                search_bar.grab_focus();
-            });
             main_container.append(app_grid);
             
             background.append(main_container);
@@ -91,6 +87,12 @@ namespace AppLauncher {
         
         private void on_activate_selected() {
             app_grid.activate_selected();
+        }
+        
+        private void on_exit_grid_mode() {
+            // Reset selection to first item when exiting grid mode
+            app_grid.selected_index = 0;
+            app_grid.update_selection();
         }
         
         private void on_app_activated(AppEntry entry) {

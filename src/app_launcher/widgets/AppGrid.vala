@@ -3,10 +3,10 @@ namespace AppLauncher.Widgets {
         private Gtk.ScrolledWindow scrolled_window;
         private Gtk.FlowBox flow_box;
         private Gee.ArrayList<AppEntry> apps;
-        private int selected_index = 0;
+        public int selected_index = 0;
+        private const int COLUMNS = 2;
         
         public signal void app_activated(AppEntry entry);
-        public signal void move_up_to_search();
         
         public AppGrid() {
             Object(
@@ -27,8 +27,8 @@ namespace AppLauncher.Widgets {
             
             flow_box = new Gtk.FlowBox();
             flow_box.set_valign(Gtk.Align.START);
-            flow_box.set_max_children_per_line(2);
-            flow_box.set_min_children_per_line(2);
+            flow_box.set_max_children_per_line(COLUMNS);
+            flow_box.set_min_children_per_line(COLUMNS);
             flow_box.set_column_spacing(8);
             flow_box.set_row_spacing(8);
             flow_box.set_homogeneous(true);
@@ -43,33 +43,6 @@ namespace AppLauncher.Widgets {
                     activate_app(apps[index]);
                 }
             });
-            
-            // Add key controller for arrow navigation
-            var key_controller = new Gtk.EventControllerKey();
-            key_controller.key_pressed.connect(on_key_pressed);
-            flow_box.add_controller(key_controller);
-        }
-        
-        private bool on_key_pressed(uint keyval, uint keycode, Gdk.ModifierType state) {
-            if (keyval == Gdk.Key.Down) {
-                select_next_row();
-                return true;
-            } else if (keyval == Gdk.Key.Up) {
-                if (selected_index < 2) {
-                    // If on first row, move back to search
-                    move_up_to_search();
-                    return true;
-                }
-                select_previous_row();
-                return true;
-            } else if (keyval == Gdk.Key.Left) {
-                select_previous();
-                return true;
-            } else if (keyval == Gdk.Key.Right) {
-                select_next();
-                return true;
-            }
-            return false;
         }
         
         public void set_apps(Gee.ArrayList<AppEntry> new_apps) {
@@ -124,53 +97,57 @@ namespace AppLauncher.Widgets {
             return box;
         }
         
-        public void select_next() {
+        // Navigation methods called from SearchBar
+        public void move_up() {
             if (apps.size == 0) return;
             
-            selected_index = (selected_index + 1) % apps.size;
-            var child = flow_box.get_child_at_index(selected_index);
-            if (child != null) {
-                flow_box.select_child(child);
+            int new_index = selected_index - COLUMNS;
+            if (new_index >= 0) {
+                selected_index = new_index;
+                update_selection();
             }
         }
         
-        public void select_previous() {
+        public void move_down() {
             if (apps.size == 0) return;
             
-            selected_index = selected_index - 1;
-            if (selected_index < 0) {
-                selected_index = apps.size - 1;
-            }
-            
-            var child = flow_box.get_child_at_index(selected_index);
-            if (child != null) {
-                flow_box.select_child(child);
+            int new_index = selected_index + COLUMNS;
+            if (new_index < apps.size) {
+                selected_index = new_index;
+                update_selection();
             }
         }
         
-        public void select_next_row() {
+        public void move_left() {
             if (apps.size == 0) return;
             
-            // Move down by 2 (number of columns)
-            selected_index = (selected_index + 2) % apps.size;
-            var child = flow_box.get_child_at_index(selected_index);
-            if (child != null) {
-                flow_box.select_child(child);
+            print("AppGrid: move_left called, selected_index=%d, column=%d\n", selected_index, selected_index % COLUMNS);
+            
+            // Don't move if already at leftmost column
+            if (selected_index % COLUMNS != 0) {
+                selected_index--;
+                update_selection();
             }
         }
         
-        public void select_previous_row() {
+        public void move_right() {
             if (apps.size == 0) return;
             
-            // Move up by 2 (number of columns)
-            selected_index = selected_index - 2;
-            if (selected_index < 0) {
-                selected_index = 0;
-            }
+            print("AppGrid: move_right called, selected_index=%d, column=%d, apps.size=%d\n", 
+                  selected_index, selected_index % COLUMNS, apps.size);
             
+            // Don't move if already at rightmost column or last item
+            if (selected_index % COLUMNS != COLUMNS - 1 && selected_index < apps.size - 1) {
+                selected_index++;
+                update_selection();
+            }
+        }
+        
+        public void update_selection() {
             var child = flow_box.get_child_at_index(selected_index);
             if (child != null) {
                 flow_box.select_child(child);
+                scroll_to_selected();
             }
         }
         
@@ -182,6 +159,23 @@ namespace AppLauncher.Widgets {
         
         private void activate_app(AppEntry entry) {
             app_activated(entry);
+        }
+        
+        private void scroll_to_selected() {
+            var child = flow_box.get_child_at_index(selected_index);
+            if (child != null) {
+                // Get the adjustment from scrolled window
+                var adj = scrolled_window.get_vadjustment();
+                double child_y;
+                child.translate_coordinates(flow_box, 0, 0, null, out child_y);
+                
+                // Scroll to make the selected item visible
+                if (child_y < adj.get_value()) {
+                    adj.set_value(child_y);
+                } else if (child_y + child.get_height() > adj.get_value() + adj.get_page_size()) {
+                    adj.set_value(child_y + child.get_height() - adj.get_page_size());
+                }
+            }
         }
     }
 }

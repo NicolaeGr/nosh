@@ -2,7 +2,7 @@ using Gtk;
 
 namespace QuickSettings.Widgets {
     public class VolumeSlider : Gtk.Box {
-        private AstalWp.Audio audio;
+        private Utils.VolumeControl volume_control;
         private Gtk.Scale scale;
         private Gtk.Label percentage_label;
 
@@ -14,9 +14,9 @@ namespace QuickSettings.Widgets {
             margin_start = 12;
             margin_end = 12;
 
-            audio = AstalWp.get_default ().audio;
+            volume_control = Utils.SystemControlManager.get_instance ().volume;
 
-            if (audio.default_speaker == null) {
+            if (volume_control.get () == 0 && AstalWp.get_default ().audio.default_speaker == null) {
                 return;
             }
 
@@ -42,16 +42,15 @@ namespace QuickSettings.Widgets {
             append (header);
             append (scale);
 
-            var speaker = audio.default_speaker;
-            scale.set_value (speaker.volume * 100);
+            scale.set_value (volume_control.get_percentage ());
 
             scale.value_changed.connect (() => {
-                speaker.volume = scale.get_value () / 100.0;
+                volume_control.set (scale.get_value () / 100.0);
                 update_overamp_class ();
             });
 
-            speaker.notify["volume"].connect (() => {
-                scale.set_value (speaker.volume * 100);
+            volume_control.volume_changed.connect ((volume, old_volume) => {
+                scale.set_value (volume * 100);
                 update_percentage ();
                 update_overamp_class ();
             });
@@ -61,23 +60,17 @@ namespace QuickSettings.Widgets {
         }
 
         private void update_overamp_class () {
-            var speaker = audio.default_speaker;
-            if (speaker != null) {
-                var percent = (int)(speaker.volume * 100);
-                if (percent > 100) {
-                    scale.add_css_class ("overamp");
-                } else {
-                    scale.remove_css_class ("overamp");
-                }
+            var percent = (int)volume_control.get_percentage ();
+            if (percent > 100) {
+                scale.add_css_class ("overamp");
+            } else {
+                scale.remove_css_class ("overamp");
             }
         }
 
         private void update_percentage () {
-            var speaker = audio.default_speaker;
-            if (speaker != null) {
-                var percent = (int)(speaker.volume * 100);
-                percentage_label.set_label (@"$percent%");
-            }
+            var percent = (int)volume_control.get_percentage ();
+            percentage_label.set_label (@"$percent%");
         }
     }
 }

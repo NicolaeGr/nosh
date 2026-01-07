@@ -25,59 +25,53 @@ class App : Gtk.Application {
         var argv = command_line.get_arguments();
 
         if (command_line.is_remote) {
-            // app is already running we can print to remote
-            command_line.print_literal("hello from the main instance\n");
-
-            // Handle control commands
             if (argv.length >= 2) {
-                var handler = Utils.KeybindHandler.get_instance ();
-                handler.handle_command (argv[1]);
-            }
-
-            // for example, we could toggle the visibility of the bar
-            if (argv.length >= 3 && argv[1] == "toggle" && argv[2] == "bar") {
-                bar.visible = !bar.visible;
-            }
-        } else {
-            // main instance, initialize stuff here
-            init_css();
-
-            #if !STABLE_BUILD
-            // If this is dev mode, stop the stable instance first
-            try {
-                GLib.Process.spawn_command_line_sync("systemctl --user stop nosh");
-            } catch (Error e) {
-                warning("Failed to stop stable nosh: %s\n", e.message);
-            }
-            #endif
-
-            #if STABLE_BUILD
-            bar = new TopBar.Bar(false);
-            #else
-            bar = new TopBar.Bar(true);
-            #endif
-            add_window(bar);
-            add_window((notifications = new Notifications.Window()));
-            add_window((quick_settings = new QuickSettings.Window()));
-            add_window((app_launcher = new AppLauncher.Window()));
-            add_window((change_indicator = new Indicators.ChangeIndicator()));
-
-            bar.present();
-            //  quick_settings.present();
-
-            #if !STABLE_BUILD
-            // When the app is closed, restart the stable instance if we're in dev mode
-            bar.close_request.connect(() => {
-                try {
-                    GLib.Process.spawn_command_line_async("systemctl --user start nosh");
-                } catch (Error e) {
-                    warning("Failed to start stable nosh: %s\n", e.message);
+                var handler = Utils.RequestHandler.get_instance ();
+                bool handled = handler.handle_command (argv[1]);
+                if (handled) {
+                    return 0;
                 }
-                return false;
-            });
-            #endif
+            }
+
+            command_line.print_literal("Unknown command or failed to handle command. \nIf you intended to start the main instance, it is already running.\n");
+            return 0;
         }
 
+        init_css();
+
+        #if !STABLE_BUILD
+        try {
+            GLib.Process.spawn_command_line_sync("systemctl --user stop nosh");
+        } catch (Error e) {
+            warning("Failed to stop stable nosh: %s\n", e.message);
+        }
+        #endif
+
+        #if STABLE_BUILD
+        bar = new TopBar.Bar(false);
+        #else
+        bar = new TopBar.Bar(true);
+        #endif
+
+        add_window(bar);
+        add_window((notifications = new Notifications.Window()));
+        add_window((quick_settings = new QuickSettings.Window()));
+        add_window((app_launcher = new AppLauncher.Window()));
+        add_window((change_indicator = new Indicators.ChangeIndicator()));
+
+        bar.present();
+
+        #if !STABLE_BUILD
+        bar.close_request.connect(() => {
+            try {
+                GLib.Process.spawn_command_line_async("systemctl --user start nosh");
+            } catch (Error e) {
+                warning("Failed to start stable nosh: %s\n", e.message);
+            }
+            return false;
+        });
+        #endif
+       
         return 0;
     }
 

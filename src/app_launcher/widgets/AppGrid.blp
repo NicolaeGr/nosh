@@ -1,0 +1,29 @@
+using Gtk 4.0;
+
+template $AppLauncherWidgetsAppGrid: Box {
+    orientation: vertical;
+    spacing: 0;
+    vexpand: true;
+    hexpand: true;
+
+    styles [
+        "AppGrid",
+    ]
+
+    ScrolledWindow scrolled_window {
+        hscrollbar-policy: never;
+        vscrollbar-policy: automatic;
+        vexpand: true;
+        hexpand: true;
+
+        FlowBox flow_box {
+            valign: start;
+            max-children-per-line: 2;
+            min-children-per-line: 2;
+            column-spacing: 8;
+            row-spacing: 8;
+            homogeneous: true;
+            selection-mode: single;
+        }
+    }
+}

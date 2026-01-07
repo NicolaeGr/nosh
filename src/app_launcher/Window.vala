@@ -1,43 +1,30 @@
 namespace AppLauncher {
+    [GtkTemplate (ui = "/com/nicolaegr/nosh/app_launcher/Window.ui")]
     public class Window : Astal.Window {
-        private Widgets.SearchBar search_bar;
-        private Widgets.AppGrid app_grid;
+        [GtkChild]
+        private unowned Widgets.SearchBar search_bar;
+        [GtkChild]
+        private unowned Widgets.AppGrid app_grid;
+        [GtkChild]
+        private unowned Gtk.Box background;
+        [GtkChild]
+        private unowned Gtk.Box main_container;
+        
         private AppProvider app_provider;
         private State.AppState app_state;
         
         public Window() {
-            Object(
-                anchor: Astal.WindowAnchor.TOP
-                    | Astal.WindowAnchor.BOTTOM
-                    | Astal.WindowAnchor.LEFT
-                    | Astal.WindowAnchor.RIGHT,
-                exclusivity: Astal.Exclusivity.IGNORE,
-                layer: Astal.Layer.OVERLAY,
-                keymode: Astal.Keymode.EXCLUSIVE,
-                visible: false,
-                namespace: "nosh-app-launcher"
-            );
-            
-            set_css_classes({"AppLauncher"});
-            
+            Object();
+        }
+        
+        construct {
             app_provider = AppProvider.get_instance();
             app_state = State.AppState.get_instance();
             
-            // Background overlay
-            var background = new Gtk.Box(Gtk.Orientation.VERTICAL, 0);
-            background.hexpand = true;
-            background.vexpand = true;
-            background.set_css_classes({"background"});
-            
-            // Main container with max width and aspect ratio
-            var main_container = new Gtk.Box(Gtk.Orientation.VERTICAL, 0);
-            main_container.set_css_classes({"container"});
+            // Set size request on main container
             main_container.set_size_request(500, 312); // 500px width, 16:10 = 312px height
-            main_container.valign = Gtk.Align.CENTER;
-            main_container.halign = Gtk.Align.CENTER;
             
-            // Search bar
-            search_bar = new Widgets.SearchBar();
+            // Connect search bar signals
             search_bar.query_changed.connect(on_search_changed);
             search_bar.activate_selected.connect(on_activate_selected);
             search_bar.arrow_up.connect(() => app_grid.move_up());
@@ -46,15 +33,9 @@ namespace AppLauncher {
             search_bar.arrow_right.connect(() => app_grid.move_right());
             search_bar.exit_grid_mode.connect(on_exit_grid_mode);
             search_bar.close_requested.connect(close_launcher);
-            main_container.append(search_bar);
             
-            // App grid
-            app_grid = new Widgets.AppGrid();
+            // Connect app grid signals
             app_grid.app_activated.connect(on_app_activated);
-            main_container.append(app_grid);
-            
-            background.append(main_container);
-            set_child(background);
             
             // Close on background click
             var bg_click = new Gtk.GestureClick();
@@ -81,6 +62,10 @@ namespace AppLauncher {
         }
         
         private void on_search_changed(string query) {
+            var plugin_manager = PluginManager.get_instance();
+            var plugin = plugin_manager.get_active_plugin(query);
+            search_bar.set_plugin(plugin);
+            
             var results = app_provider.search(query);
             app_grid.set_apps(results);
         }

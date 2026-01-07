@@ -3,4 +3,5 @@ vala_sources += files(
     'DatabaseManager.vala',
     'ConfigManager.vala',
     'AppProvider.vala',
+    'Plugin.vala',
 )

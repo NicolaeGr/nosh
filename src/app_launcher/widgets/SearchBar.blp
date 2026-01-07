@@ -1,0 +1,25 @@
+using Gtk 4.0;
+
+template $AppLauncherWidgetsSearchBar: Box {
+    orientation: horizontal;
+    spacing: 8;
+
+    SearchEntry search_entry {
+        placeholder-text: "Search applications...";
+        hexpand: true;
+
+        styles [
+            "SearchBar",
+        ]
+    }
+
+    Image plugin_icon {
+        visible: false;
+        pixel-size: 24;
+        valign: center;
+
+        styles [
+            "plugin-icon",
+        ]
+    }
+}

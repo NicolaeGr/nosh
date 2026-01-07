@@ -1,4 +1,5 @@
 namespace AppLauncher.Widgets {
+    [GtkTemplate (ui = "/com/nicolaegr/nosh/app_launcher/widgets/SearchBar.ui")]
     public class SearchBar : Gtk.Box {
         public signal void query_changed(string query);
         public signal void activate_selected();
@@ -7,25 +8,21 @@ namespace AppLauncher.Widgets {
         public signal void arrow_down();
         public signal void arrow_left();
         public signal void arrow_right();
-        public signal void exit_grid_mode(); // Signal to reset grid selection
+        public signal void exit_grid_mode();
         
-        private Gtk.SearchEntry search_entry;
-        private bool grid_mode = false; // Track if we're navigating the grid
+        [GtkChild]
+        private unowned Gtk.SearchEntry search_entry;
+        [GtkChild]
+        private unowned Gtk.Image plugin_icon;
+        
+        private bool grid_mode = false;
         
         public SearchBar() {
-            Object(
-                orientation: Gtk.Orientation.HORIZONTAL
-            );
-            
-            search_entry = new Gtk.SearchEntry();
-            search_entry.placeholder_text = "Search applications...";
-            search_entry.hexpand = true;
-            search_entry.set_css_classes({"SearchBar"});
-            
-            append(search_entry);
-            
+            Object();
+        }
+        
+        construct {
             search_entry.changed.connect(() => {
-                // Any text change exits grid mode and resets selection
                 if (grid_mode) {
                     grid_mode = false;
                     exit_grid_mode();
@@ -37,7 +34,6 @@ namespace AppLauncher.Widgets {
                 activate_selected();
             });
             
-            // Use capture phase to intercept arrow keys before SearchEntry processes them
             var key_controller = new Gtk.EventControllerKey();
             key_controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);
             key_controller.key_pressed.connect(on_key_pressed);
@@ -53,13 +49,10 @@ namespace AppLauncher.Widgets {
         }
         
         private bool on_key_pressed(uint keyval, uint keycode, Gdk.ModifierType state) {
-            // Always handle Ctrl shortcuts for text editing
             if ((state & Gdk.ModifierType.CONTROL_MASK) != 0) {
-                // Let Ctrl+A, Ctrl+C, Ctrl+V, etc. pass through to search entry
                 return false;
             }
             
-            // Escape key - exit grid mode if active, otherwise close
             if (keyval == Gdk.Key.Escape) {
                 if (grid_mode) {
                     grid_mode = false;
@@ -70,39 +63,41 @@ namespace AppLauncher.Widgets {
                 return true;
             }
             
-            // If in grid mode, send ALL arrow keys to grid
             if (grid_mode) {
                 if (keyval == Gdk.Key.Up) {
-                    print("SearchBar: Arrow Up in grid mode\n");
                     arrow_up();
                     return true;
                 }
                 if (keyval == Gdk.Key.Down) {
-                    print("SearchBar: Arrow Down in grid mode\n");
                     arrow_down();
                     return true;
                 }
                 if (keyval == Gdk.Key.Left) {
-                    print("SearchBar: Arrow Left in grid mode\n");
                     arrow_left();
                     return true;
                 }
                 if (keyval == Gdk.Key.Right) {
-                    print("SearchBar: Arrow Right in grid mode\n");
                     arrow_right();
                     return true;
                 }
             }
             
-            // Not in grid mode - only Down arrow enters grid mode
             if (keyval == Gdk.Key.Down) {
                 grid_mode = true;
                 arrow_down();
                 return true;
             }
             
-            // All other keys (including Up/Left/Right) work normally for text editing
             return false;
+        }
+        
+        public void set_plugin(Plugin? plugin) {
+            if (plugin != null) {
+                plugin_icon.set_from_icon_name(plugin.get_icon());
+                plugin_icon.visible = true;
+            } else {
+                plugin_icon.visible = false;
+            }
         }
         
         public void grab_focus() {

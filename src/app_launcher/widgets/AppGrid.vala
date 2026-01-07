@@ -1,7 +1,11 @@
 namespace AppLauncher.Widgets {
+    [GtkTemplate (ui = "/com/nicolaegr/nosh/app_launcher/widgets/AppGrid.ui")]
     public class AppGrid : Gtk.Box {
-        private Gtk.ScrolledWindow scrolled_window;
-        private Gtk.FlowBox flow_box;
+        [GtkChild]
+        private unowned Gtk.ScrolledWindow scrolled_window;
+        [GtkChild]
+        private unowned Gtk.FlowBox flow_box;
+        
         private Gee.ArrayList<AppEntry> apps;
         public int selected_index = 0;
         private const int COLUMNS = 2;
@@ -9,33 +13,10 @@ namespace AppLauncher.Widgets {
         public signal void app_activated(AppEntry entry);
         
         public AppGrid() {
-            Object(
-                orientation: Gtk.Orientation.VERTICAL,
-                spacing: 0,
-                vexpand: true,
-                hexpand: true
-            );
-            
-            set_css_classes({"AppGrid"});
-            
-            // Create scrolled window
-            scrolled_window = new Gtk.ScrolledWindow();
-            scrolled_window.hscrollbar_policy = Gtk.PolicyType.NEVER;
-            scrolled_window.vscrollbar_policy = Gtk.PolicyType.AUTOMATIC;
-            scrolled_window.vexpand = true;
-            scrolled_window.hexpand = true;
-            
-            flow_box = new Gtk.FlowBox();
-            flow_box.set_valign(Gtk.Align.START);
-            flow_box.set_max_children_per_line(COLUMNS);
-            flow_box.set_min_children_per_line(COLUMNS);
-            flow_box.set_column_spacing(8);
-            flow_box.set_row_spacing(8);
-            flow_box.set_homogeneous(true);
-            flow_box.set_selection_mode(Gtk.SelectionMode.SINGLE);
-            
-            scrolled_window.set_child(flow_box);
-            append(scrolled_window);
+            Object();
+        }
+        
+        construct {
             
             flow_box.child_activated.connect((child) => {
                 var index = child.get_index();
@@ -121,9 +102,6 @@ namespace AppLauncher.Widgets {
         public void move_left() {
             if (apps.size == 0) return;
             
-            print("AppGrid: move_left called, selected_index=%d, column=%d\n", selected_index, selected_index % COLUMNS);
-            
-            // Don't move if already at leftmost column
             if (selected_index % COLUMNS != 0) {
                 selected_index--;
                 update_selection();
@@ -133,10 +111,6 @@ namespace AppLauncher.Widgets {
         public void move_right() {
             if (apps.size == 0) return;
             
-            print("AppGrid: move_right called, selected_index=%d, column=%d, apps.size=%d\n", 
-                  selected_index, selected_index % COLUMNS, apps.size);
-            
-            // Don't move if already at rightmost column or last item
             if (selected_index % COLUMNS != COLUMNS - 1 && selected_index < apps.size - 1) {
                 selected_index++;
                 update_selection();
@@ -164,12 +138,10 @@ namespace AppLauncher.Widgets {
         private void scroll_to_selected() {
             var child = flow_box.get_child_at_index(selected_index);
             if (child != null) {
-                // Get the adjustment from scrolled window
                 var adj = scrolled_window.get_vadjustment();
                 double child_y;
                 child.translate_coordinates(flow_box, 0, 0, null, out child_y);
                 
-                // Scroll to make the selected item visible
                 if (child_y < adj.get_value()) {
                     adj.set_value(child_y);
                 } else if (child_y + child.get_height() > adj.get_value() + adj.get_page_size()) {

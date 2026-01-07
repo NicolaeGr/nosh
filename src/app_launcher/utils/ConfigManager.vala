@@ -162,13 +162,7 @@ namespace AppLauncher {
         
         private void add_toml_entry(string name, string? icon, string exec) {
             var entry = new AppEntry(name, icon);
-            entry.launch_func = () => {
-                try {
-                    Process.spawn_command_line_async(exec);
-                } catch (Error e) {
-                    warning("Failed to launch %s: %s", name, e.message);
-                }
-            };
+            entry.exec_command = exec;
             custom_entries.add(entry);
         }
         

@@ -1,0 +1,38 @@
+using Gtk 4.0;
+using Astal 4.0;
+
+template $AppLauncherWindow: Astal.Window {
+    anchor: top | bottom | left | right;
+    exclusivity: ignore;
+    layer: overlay;
+    keymode: exclusive;
+    visible: false;
+    namespace: "nosh-app-launcher";
+
+    styles [
+        "AppLauncher",
+    ]
+
+    Box background {
+        hexpand: true;
+        vexpand: true;
+
+        styles [
+            "background",
+        ]
+
+        Box main_container {
+            orientation: vertical;
+            valign: center;
+            halign: center;
+
+            styles [
+                "container",
+            ]
+
+            $AppLauncherWidgetsSearchBar search_bar {}
+
+            $AppLauncherWidgetsAppGrid app_grid {}
+        }
+    }
+}

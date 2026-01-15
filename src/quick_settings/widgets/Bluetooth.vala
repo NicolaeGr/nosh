@@ -8,14 +8,19 @@ namespace QuickSettings.Widgets {
             base ();
             add_css_class ("QuickSettings-bluetooth");
 
-            bluetooth = AstalBluetooth.get_default ();
+            try {
+                bluetooth = AstalBluetooth.get_default ();
+            } catch (Error e) {
+                warning ("Bluetooth not available: %s", e.message);
+                bluetooth = null;
+            }
 
             if (bluetooth == null) {
-                set_status ("Bluetooth");
-                set_icon_name ("bluetooth-disabled-symbolic");
+                this.visible = false;
                 return;
             }
 
+            this.visible = true;
             update_status ();
 
             bluetooth.notify["is-powered"].connect (() => {

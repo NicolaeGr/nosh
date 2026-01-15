@@ -11,10 +11,15 @@ namespace TopBar.Widgets {
             icon = new Gtk.Image ();
             this.set_child(icon);
 
-            var wifi = AstalNetwork.get_default ().wifi;
+            var network = AstalNetwork.get_default ();
+            var wifi = network != null ? network.wifi : null;
+            
             if (wifi != null) {
                 wifi.bind_property ("ssid", this, "tooltip-text", BindingFlags.SYNC_CREATE);
                 wifi.bind_property ("icon-name", icon, "icon-name", BindingFlags.SYNC_CREATE);
+                this.visible = true;
+            } else {
+                this.visible = false;
             }
         }
     }

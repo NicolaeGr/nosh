@@ -11,14 +11,14 @@ namespace QuickSettings.Widgets {
             add_css_class ("QuickSettings-wifi");
 
             network = AstalNetwork.get_default ();
-            wifi = network.wifi;
+            wifi = network != null ? network.wifi : null;
 
             if (wifi == null) {
-                set_status ("WiFi");
-                set_icon_name ("network-wireless-offline-symbolic");
+                this.visible = false;
                 return;
             }
 
+            this.visible = true;
             update_status ();
 
             wifi.notify["icon-name"].connect (() => {

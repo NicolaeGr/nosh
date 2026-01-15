@@ -9,6 +9,25 @@ namespace QuickSettings.Widgets {
         private Gtk.CssProvider height_provider = new Gtk.CssProvider ();
         private State.AppState app_state = State.AppState.get_instance ();
 
+        private bool is_bluetooth_available () {
+            try {
+                var connection = Bus.get_sync (BusType.SYSTEM);
+                var reply = connection.call_sync (
+                    "org.freedesktop.DBus",
+                    "/org/freedesktop/DBus",
+                    "org.freedesktop.DBus",
+                    "GetNameOwner",
+                    new Variant ("(s)", "org.bluez"),
+                    null,
+                    DBusCallFlags.NONE,
+                    500  // 500ms timeout
+                );
+                return reply != null;
+            } catch (Error e) {
+                return false;
+            }
+        }
+
         public Connectivity () {
             Object (orientation: Gtk.Orientation.VERTICAL, spacing: 0);
 
@@ -17,27 +36,34 @@ namespace QuickSettings.Widgets {
             connectivity_box.halign = Gtk.Align.FILL;
             connectivity_box.homogeneous = true;
 
-            // Create connectivity widgets
-            var network = AstalNetwork.get_default ();
-            var wifi = new WiFi ();
-            
-            var bluetooth = AstalBluetooth.get_default ();
-            var bt = new Bluetooth ();
-            
-            var kde = new KDEConnect ();
-
-            connectivity_box.append (wifi);
-            connectivity_box.append (bt);
-            connectivity_box.append (kde);
-
             append (connectivity_box);
 
+            // Create dropdowns container first
             dropdowns_container = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             dropdowns_container.set_css_classes ({"dropdowns-container"});
             dropdowns_container.halign = Gtk.Align.FILL;
             append (dropdowns_container);
 
+            // Check for hardware availability
+            var network = AstalNetwork.get_default ();
+            
+            // Check if Bluetooth service is available without triggering timeout
+            AstalBluetooth.Bluetooth? bluetooth = null;
+            if (is_bluetooth_available ()) {
+                try {
+                    bluetooth = AstalBluetooth.get_default ();
+                } catch (Error e) {
+                    bluetooth = null;
+                }
+            }
+            
+            var kde = new KDEConnect ();
+
+            // Only create widgets if hardware is available
             if (network != null && network.wifi != null) {
+                var wifi = new WiFi ();
+                connectivity_box.append (wifi);
+                
                 wifi_dropdown = new WiFiDropdown (network.wifi);
                 wifi_dropdown.visible = false;
                 dropdowns_container.append (wifi_dropdown);
@@ -47,8 +73,11 @@ namespace QuickSettings.Widgets {
                     hide_other_dropdowns (wifi_dropdown);
                 });
             }
-
+            
             if (bluetooth != null) {
+                var bt = new Bluetooth ();
+                connectivity_box.append (bt);
+                
                 bt_dropdown = new BluetoothDropdown (bluetooth);
                 bt_dropdown.visible = false;
                 dropdowns_container.append (bt_dropdown);
@@ -58,6 +87,8 @@ namespace QuickSettings.Widgets {
                     hide_other_dropdowns (bt_dropdown);
                 });
             }
+            
+            connectivity_box.append (kde);
 
             kde_dropdown = new KDEConnectDropdown ();
             kde_dropdown.visible = false;

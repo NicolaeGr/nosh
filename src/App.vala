@@ -26,8 +26,8 @@ class App : Gtk.Application {
 
         if (command_line.is_remote) {
             if (argv.length >= 2) {
-                var handler = Utils.RequestHandler.get_instance ();
-                bool handled = handler.handle_command (argv[1]);
+                var handler = Utils.RequestHandler.get_instance();
+                bool handled = handler.handle_command(argv[1]);
                 if (handled) {
                     return 0;
                 }
@@ -71,7 +71,7 @@ class App : Gtk.Application {
             return false;
         });
         #endif
-       
+
         return 0;
     }
 
@@ -81,7 +81,7 @@ class App : Gtk.Application {
         #else
         application_id = "com.nicolaegr.nosh.dev";
         #endif
-        
+
         flags = ApplicationFlags.HANDLES_COMMAND_LINE;
     }
 

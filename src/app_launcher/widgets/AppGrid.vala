@@ -30,7 +30,8 @@ namespace AppLauncher.Widgets {
             apps = new_apps;
             selected_index = 0;
             
-            // Clear existing children
+            reset_scroll_position();
+            
             var child = flow_box.get_first_child();
             while (child != null) {
                 var next = child.get_next_sibling();
@@ -38,13 +39,11 @@ namespace AppLauncher.Widgets {
                 child = next;
             }
             
-            // Add new apps
             foreach (var app in apps) {
                 var item = create_app_item(app);
                 flow_box.append(item);
             }
             
-            // Select first item
             if (apps.size > 0) {
                 var first_child = flow_box.get_child_at_index(0);
                 if (first_child != null) {
@@ -57,7 +56,6 @@ namespace AppLauncher.Widgets {
             var box = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 8);
             box.set_css_classes({"AppItem"});
             
-            // Icon
             var icon_widget = new Gtk.Image();
             if (app.icon != null) {
                 icon_widget.set_from_icon_name(app.icon);
@@ -68,7 +66,6 @@ namespace AppLauncher.Widgets {
             }
             box.append(icon_widget);
             
-            // Name
             var label = new Gtk.Label(app.name);
             label.set_ellipsize(Pango.EllipsizeMode.END);
             label.set_xalign(0);
@@ -78,7 +75,6 @@ namespace AppLauncher.Widgets {
             return box;
         }
         
-        // Navigation methods called from SearchBar
         public void move_up() {
             if (apps.size == 0) return;
             
@@ -148,6 +144,11 @@ namespace AppLauncher.Widgets {
                     adj.set_value(child_y + child.get_height() - adj.get_page_size());
                 }
             }
+        }
+        
+        private void reset_scroll_position() {
+            var adj = scrolled_window.get_vadjustment();
+            adj.set_value(0.0);
         }
     }
 }

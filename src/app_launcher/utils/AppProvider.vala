@@ -22,7 +22,6 @@ namespace AppLauncher {
         }
         
         private void load_apps() {
-            // Load system apps
             var apps = AppInfo.get_all();
             foreach (var app_info in apps) {
                 if (app_info.should_show()) {
@@ -31,7 +30,6 @@ namespace AppLauncher {
                     string? icon_name = null;
                     
                     if (icon != null) {
-                        // Handle ThemedIcon properly
                         if (icon is ThemedIcon) {
                             var themed = (ThemedIcon) icon;
                             var names = themed.get_names();
@@ -45,10 +43,8 @@ namespace AppLauncher {
                     
                     var entry = new AppEntry(name, icon_name, app_info);
                     
-                    // Load description and categories
                     entry.description = app_info.get_description();
                     
-                    // Get categories from desktop file
                     var desktop_app = app_info as GLib.DesktopAppInfo;
                     if (desktop_app != null) {
                         var categories_str = desktop_app.get_categories();
@@ -57,7 +53,6 @@ namespace AppLauncher {
                         }
                     }
                     
-                    // Load frequency from database
                     if (entry.desktop_id != null) {
                         entry.frequency = db_manager.get_frequency(entry.desktop_id);
                     }
@@ -66,13 +61,11 @@ namespace AppLauncher {
                 }
             }
             
-            // Add custom entries
             var custom = config_manager.get_custom_entries();
             foreach (var entry in custom) {
                 all_apps.add(entry);
             }
             
-            // Sort by frequency (most used first)
             all_apps.sort((a, b) => {
                 return b.frequency - a.frequency;
             });
@@ -83,7 +76,6 @@ namespace AppLauncher {
                 return all_apps;
             }
             
-            // Check if a plugin handles this query
             var plugin_entry = plugin_manager.handle_query(query);
             if (plugin_entry != null) {
                 var results = new Gee.ArrayList<AppEntry>();
@@ -97,12 +89,10 @@ namespace AppLauncher {
             foreach (var app in all_apps) {
                 int score = fuzzy_match_score(app.name.down(), lower_query);
                 
-                // Also search in description
                 if (score == 0 && app.description != null) {
                     score = fuzzy_match_score(app.description.down(), lower_query) / 2; // Lower priority
                 }
                 
-                // Also search in categories
                 if (score == 0 && app.categories != null) {
                     foreach (var category in app.categories) {
                         int cat_score = fuzzy_match_score(category.down(), lower_query) / 3; // Even lower priority
@@ -117,7 +107,6 @@ namespace AppLauncher {
                 }
             }
             
-            // Sort by score (higher is better), then by frequency
             scored_results.sort((a, b) => {
                 if (a.score != b.score) {
                     return b.score - a.score;
@@ -125,13 +114,11 @@ namespace AppLauncher {
                 return b.entry.frequency - a.entry.frequency;
             });
             
-            // Extract just the entries
             var results = new Gee.ArrayList<AppEntry>();
             foreach (var scored in scored_results) {
                 results.add(scored.entry);
             }
             
-            // If no results found and query looks like a command, add a "Run command" option
             if (results.size == 0 && is_valid_command(query)) {
                 var cmd_entry = create_command_entry(query);
                 results.add(cmd_entry);
@@ -141,12 +128,10 @@ namespace AppLauncher {
         }
         
         private bool is_valid_command(string query) {
-            // Don't allow empty or whitespace-only queries
             if (query.strip() == "") {
                 return false;
             }
             
-            // Extract the command (first word)
             string[] parts = query.strip().split(" ");
             if (parts.length == 0) {
                 return false;
@@ -154,12 +139,10 @@ namespace AppLauncher {
             
             string command = parts[0];
             
-            // Check if command contains path separator (likely a path)
             if (command.contains("/")) {
                 return true;
             }
             
-            // Check if command exists in PATH
             string? path = Environment.find_program_in_path(command);
             return path != null;
         }
@@ -181,7 +164,6 @@ namespace AppLauncher {
         }
         
         private int fuzzy_match_score(string text, string pattern) {
-            // First, check if it's a simple substring match (most common case)
             if (text.contains(pattern)) {
                 int pos = text.index_of(pattern);
                 int score = 1000; // High base score for substring match
@@ -276,7 +258,6 @@ namespace AppLauncher {
                 db_manager.increment_frequency(entry.desktop_id);
                 entry.frequency++;
                 
-                // Re-sort apps by frequency
                 all_apps.sort((a, b) => {
                     return b.frequency - a.frequency;
                 });

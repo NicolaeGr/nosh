@@ -30,16 +30,36 @@ class Indicators.ChangeIndicator: Astal.Window {
     }
 
     private void show_volume_indicator (double volume) {
-        icon_widget.set_from_icon_name ("audio-volume-medium-symbolic");
         var percent = volume / Utils.VolumeControl.MAX_VOLUME;
-        progress_bar.set_fraction (percent.clamp (0, 1));
-        value_label.set_label (@"$(Math.lround(volume * 100))%");
-        show_indicator ();
+        var percentage_value = Math.lround(volume * 100);
+        show_indicator_with_range (
+            "audio-volume-medium-symbolic",
+            @"$(percentage_value)%",
+            percent,
+            percentage_value > 100
+        );
     }
 
     private void show_brightness_indicator (double brightness) {
-        icon_widget.set_from_icon_name ("display-brightness-symbolic");
-        value_label.set_label (@"$(brightness)%");
+        var percent = brightness / 100.0;
+        show_indicator_with_range (
+            "display-brightness-symbolic",
+            @"$(brightness)%",
+            percent
+        );
+    }
+
+    private void show_indicator_with_range (string icon, string label, double fraction, bool overamplify = false) {
+        icon_widget.set_from_icon_name (icon);
+        value_label.set_label (label);
+        progress_bar.set_fraction (fraction.clamp (0, 1));
+        
+        if (overamplify) {
+            progress_bar.add_css_class ("overamp");
+        } else {
+            progress_bar.remove_css_class ("overamp");
+        }
+        
         show_indicator ();
     }
 

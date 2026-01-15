@@ -87,29 +87,9 @@ namespace QuickSettings.Widgets {
 
             append(header);
 
-            // Separator
             var separator = new Gtk.Separator(Gtk.Orientation.HORIZONTAL);
             separator.add_css_class("dropdown-separator");
             append(separator);
-
-            // Daemon status and toggle
-            //  var daemon_box = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 8);
-            //  daemon_box.add_css_class("daemon-box");
-            
-            //  status_label = new Gtk.Label("");
-            //  status_label.add_css_class("daemon-status");
-            //  status_label.set_wrap(true);
-            //  status_label.set_hexpand(true);
-            
-           
-            
-            //  daemon_box.append(status_label);
-            //  daemon_box.append(daemon_toggle);
-            //  daemon_box.set_margin_start(12);
-            //  daemon_box.set_margin_end(12);
-            //  daemon_box.set_margin_top(8);
-            //  daemon_box.set_margin_bottom(8);
-            //  append(daemon_box);
 
             var separator2 = new Gtk.Separator(Gtk.Orientation.HORIZONTAL);
             separator2.add_css_class("dropdown-separator");

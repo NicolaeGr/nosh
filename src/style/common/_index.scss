@@ -42,6 +42,17 @@ entry.flat {
   outline: unset;
 }
 
+scale.overamp slider,
+progressbar.overamp progress {
+  background-color: #ff6464;
+  border-color: #ff6464;
+
+  &:hover {
+    background-color: #ff7a7a;
+    border-color: #ff7a7a;
+  }
+}
+
 .highlight {
   // background: darker(variables.$accent-color);
   background-image: linear-gradient(

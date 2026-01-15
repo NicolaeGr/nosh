@@ -87,12 +87,6 @@ namespace AppLauncher {
 # icon = "application-x-executable"
 # exec = "$HOME/scripts/my-script.sh"
 
-# Example: Terminal in specific directory
-# [[entry]]
-# name = "Terminal (Documents)"
-# icon = "utilities-terminal"
-# exec = "alacritty --working-directory ~/Documents"
-
 # Example: Application with arguments
 # [[entry]]
 # name = "Firefox (Work Profile)"

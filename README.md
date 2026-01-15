@@ -5,9 +5,10 @@ This is my try at implementing a shell around Hyprland in astal. For starters th
 ## Features i want to implemet
 
 - [x] TopBar
-- [ ] Quick Settings
+- [x] Quick Settings
 - [x] App Launcher
-- [ ] Notification Widgets
+- [x] Notification Widgets
+- [x] System Controlls Indicator
 - [ ] Central Console for media and notes
 - [ ] PowerMenu / User Switcher
 
@@ -54,10 +55,8 @@ This is my try at implementing a shell around Hyprland in astal. For starters th
 
 The app launcher is a rofi replacement with the following features:
 
-- **500px max width** with **16:10 aspect ratio**
 - **Search bar** with fuzzy search support
 - **2-column app grid** displaying app icons and names
-- **Keyboard navigation**: Enter to launch, Tab/Shift+Tab to navigate
 - **SQLite database** tracking app usage frequency
 - **Smart sorting**: Most frequently used apps appear first
 - **TOML config support** for custom entries
@@ -66,14 +65,9 @@ The app launcher is a rofi replacement with the following features:
 ### Usage
 
 Trigger the app launcher with:
+
 ```sh
 nosh app-launcher
-```
-
-You can bind this to a key in your window manager (e.g., Hyprland):
-
-```
-bind = $mainMod, D, exec, nosh app-launcher
 ```
 
 ### Custom Entries
@@ -84,17 +78,26 @@ To use the config file, remove or comment out the first line (`# EXAMPLE_CONFIG`
 
 ```toml
 [[entry]]
-name = "My Custom App"
+name = "Custom App"
 icon = "application-x-executable"
-exec = "/path/to/my/app"
+exec = "/path/to/executable"
 
 [[entry]]
-name = "Terminal in Home"
+name = "Firefox (Work Profile)"
 icon = "utilities-terminal"
-exec = "alacritty --working-directory ~"
+exec = "firefox -P work"
 ```
 
 ### Data Storage
 
 - App usage data is stored in `~/.local/share/nosh/app_launcher.db`
 - Custom config is read from `~/.config/nosh/app_launcher.toml`
+
+## System controlls
+
+The system controlls module provides an unified way to manage system settings while indicating their updated status in a floating widget on the bottom of the screen.
+
+### Available controlls
+
+- Brightness
+- Volume

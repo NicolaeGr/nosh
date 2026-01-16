@@ -21,50 +21,43 @@ namespace AppLauncher {
         }
         
         public void launch() {
-            if (exec_command != null) {
-                try {
-                    string expanded = exec_command.replace("$HOME", Environment.get_home_dir());
-                    
-                    string[]? argv = null;
-                    Shell.parse_argv(expanded, out argv);
-                    
-                    if (argv != null) {
-                        Pid child_pid;
-                        Process.spawn_async(
-                            null,
-                            argv,
-                            null,
-                            SpawnFlags.SEARCH_PATH | 
-                            SpawnFlags.DO_NOT_REAP_CHILD | 
-                            SpawnFlags.STDOUT_TO_DEV_NULL | 
-                            SpawnFlags.STDERR_TO_DEV_NULL,
-                            null,
-                            out child_pid
-                        );
-                        
-                        ChildWatch.add(child_pid, (pid, status) => {
-                            Process.close_pid(pid);
-                        });
-                    }
-                } catch (ShellError e) {
-                    critical("ShellError for %s: %s", name, e.message);
-                } catch (SpawnError e) {
-                    critical("SpawnError for %s: %s", name, e.message);
-                } catch (Error e) {
-                    critical("Error launching %s: %s", name, e.message);
-                }
-            } else if (launch_func != null) {
+            if (launch_func != null) {
                 try {
                     launch_func();
                 } catch (Error e) {
                     critical("Failed to launch custom entry %s: %s", name, e.message);
                 }
+                return;
+            }
+            
+            string? command = null;
+            
+            if (exec_command != null) {
+                command = exec_command.replace("$HOME", Environment.get_home_dir());
             } else if (app_info != null) {
-                try {
-                    app_info.launch(null, null);
-                } catch (Error e) {
-                    critical("Failed to launch %s: %s", name, e.message);
+                command = app_info.get_commandline();
+            }
+            
+            if (command == null) {
+                if (app_info != null) {
+                    try {
+                        app_info.launch(null, null);
+                    } catch (Error e) {
+                        critical("Failed to launch %s: %s", name, e.message);
+                    }
                 }
+                return;
+            }
+            
+            try {
+                string[] argv = { 
+                    "sh", "-c", 
+                    "setsid -f sh -c '" + command.replace("'", "'\\''") + "' >/dev/null 2>&1 </dev/null" 
+                };
+                
+                Process.spawn_async(null, argv, null, SpawnFlags.SEARCH_PATH, null, null);
+            } catch (Error e) {
+                critical("Failed to launch %s: %s", name, e.message);
             }
         }
     }

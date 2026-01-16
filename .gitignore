@@ -6,7 +6,7 @@
 .direnv
 
 # Build
-result/
+*result/
 bin/
 build/
 builddir/

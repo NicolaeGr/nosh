@@ -106,15 +106,13 @@ css = custom_target(
 )
 
 gresource_content = run_command(
-  'cat', files('gresource.xml'),
+  'cat',
+  files('gresource.xml'),
   capture: true,
   check: true,
 ).stdout()
 
-final_gresource_content = gresource_content.replace(
-  '<!-- UI_FILES_PLACEHOLDER -->',
-  '\n'.join(all_entries)
-)
+final_gresource_content = gresource_content.replace('<!-- UI_FILES_PLACEHOLDER -->', '\n'.join(all_entries))
 
 generated_gresource = custom_target(
   'generated-gresource',
@@ -137,14 +135,14 @@ resource = import('gnome').compile_resources(
 executable(
   meson.project_name(),
   dependencies: dependencies,
-  sources: [vala_sources, resource, wl_inhibit_src, wl_inhibit_inc] ,
+  sources: [vala_sources, resource, wl_inhibit_src, wl_inhibit_inc],
   c_args: [
     '-I' + meson.current_build_dir(),
-    '-fno-semantic-interposition', 
+    '-fno-semantic-interposition',
   ],
   vala_args: stable_build ? ['-D', 'STABLE_BUILD'] : [],
   link_args: [
-    '-lm', 
+    '-lm',
     '-Wl,-O2',
   ],
   install: true,

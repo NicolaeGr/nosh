@@ -32,6 +32,7 @@ wl_inhibit_src = custom_target(
 add_project_arguments(
   '--vapidir=' + meson.current_source_dir() / 'utils' / 'Zwp',
   '--pkg=idle-inhibit',
+  '--pkg=posix',
   language: 'vala',
 )
 

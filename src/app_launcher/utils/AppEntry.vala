@@ -20,44 +20,56 @@ namespace AppLauncher {
             this.desktop_id = app_info != null ? app_info.get_id() : null;
         }
         
+       
         public void launch() {
             if (launch_func != null) {
-                try {
-                    launch_func();
-                } catch (Error e) {
-                    critical("Failed to launch custom entry %s: %s", name, e.message);
-                }
+                launch_func();
                 return;
             }
-            
-            string? command = null;
             
             if (exec_command != null) {
-                command = exec_command.replace("$HOME", Environment.get_home_dir());
-            } else if (app_info != null) {
-                command = app_info.get_commandline();
-            }
-            
-            if (command == null) {
-                if (app_info != null) {
-                    try {
-                        app_info.launch(null, null);
-                    } catch (Error e) {
-                        critical("Failed to launch %s: %s", name, e.message);
-                    }
-                }
+                launch_command(exec_command);
                 return;
             }
             
+            if (app_info != null) {
+                launch_desktop_app(app_info);
+                return;
+            }
+            
+            warning("AppEntry '%s' has no launch method defined", name);
+        }
+        
+        private void launch_command(string command) {
             try {
-                string[] argv = { 
-                    "sh", "-c", 
-                    "setsid -f sh -c '" + command.replace("'", "'\\''") + "' >/dev/null 2>&1 </dev/null" 
-                };
+                string expanded = command.replace("$HOME", Environment.get_home_dir());
                 
-                Process.spawn_async(null, argv, null, SpawnFlags.SEARCH_PATH, null, null);
+                string[] argv;
+                Shell.parse_argv(expanded, out argv);
+                
+                Process.spawn_async(
+                    null,                                          
+                    argv,                                          
+                    null,                                           
+                    SpawnFlags.SEARCH_PATH |
+                    SpawnFlags.DO_NOT_REAP_CHILD |
+                    SpawnFlags.STDOUT_TO_DEV_NULL |
+                    SpawnFlags.STDERR_TO_DEV_NULL,
+                    () => {
+                        Posix.setsid();
+                    },
+                    null                                          
+                );
             } catch (Error e) {
-                critical("Failed to launch %s: %s", name, e.message);
+                critical("Failed to launch command '%s': %s", command, e.message);
+            }
+        }
+        
+        private void launch_desktop_app(AppInfo app) {
+            try {
+                app.launch(null, null);
+            } catch (Error e) {
+                critical("Failed to launch desktop app '%s': %s", name, e.message);
             }
         }
     }

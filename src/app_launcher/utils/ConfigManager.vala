@@ -23,7 +23,6 @@ namespace AppLauncher {
         private void load_config() {
             var file = File.new_for_path(config_path);
             if (!file.query_exists()) {
-                // Create the config directory and example file
                 var config_dir = Environment.get_user_config_dir();
                 var nosh_config_dir = Path.build_filename(config_dir, "nosh");
                 create_example_config(nosh_config_dir, config_path);
@@ -34,7 +33,6 @@ namespace AppLauncher {
                 FileInfo info = file.query_info(FileAttribute.TIME_MODIFIED, FileQueryInfoFlags.NONE);
                 uint64 modified_time = info.get_attribute_uint64(FileAttribute.TIME_MODIFIED);
                 
-                // Only reload if file has been modified since last read
                 if (modified_time == last_modified_time && custom_entries.size > 0) {
                     return;
                 }
@@ -46,9 +44,7 @@ namespace AppLauncher {
                 file.load_contents(null, out contents_bytes, null);
                 string contents = (string) contents_bytes;
                 
-                // Check if this is an example file (first line is the flag)
                 if (contents.has_prefix("# EXAMPLE_CONFIG")) {
-                    // Don't parse example config
                     return;
                 }
                 
@@ -59,7 +55,6 @@ namespace AppLauncher {
         }
         
         private void create_example_config(string config_dir, string config_path) {
-            // Create config directory if it doesn't exist
             var dir = File.new_for_path(config_dir);
             try {
                 dir.make_directory_with_parents();
@@ -70,7 +65,6 @@ namespace AppLauncher {
                 }
             }
             
-            // Create example config file
             string example_config = """# EXAMPLE_CONFIG
 # This is an example configuration file for the app launcher.
 # To use this file, remove or comment out the first line (# EXAMPLE_CONFIG).
@@ -103,7 +97,6 @@ namespace AppLauncher {
         }
         
         private void parse_toml(string contents) {
-            // Simple TOML parser for [[entry]] sections
             string[] lines = contents.split("\n");
             string? current_name = null;
             string? current_icon = null;
@@ -113,7 +106,6 @@ namespace AppLauncher {
                 line = line.strip();
                 
                 if (line.has_prefix("[[entry]]")) {
-                    // Save previous entry if exists
                     if (current_name != null && current_exec != null) {
                         add_toml_entry(current_name, current_icon, current_exec);
                     }
@@ -138,7 +130,6 @@ namespace AppLauncher {
                 }
             }
             
-            // Save last entry
             if (current_name != null && current_exec != null) {
                 add_toml_entry(current_name, current_icon, current_exec);
             }

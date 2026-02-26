@@ -39,6 +39,7 @@ namespace AppLauncher {
         
         private void register_default_plugins() {
             register(new RunCommandPlugin());
+            register(new RestartNoshPlugin());
         }
         
         public void register(Plugin plugin) {

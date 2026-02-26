@@ -2,7 +2,6 @@ using Gtk;
 
 namespace QuickSettings.Widgets {
     public class QuickToggleButton : Gtk.Button {
-        private State.AppState app_state = State.AppState.get_instance ();
         public string toggle_type { get; set; }
         public bool active { get; set; default = false; }
 
@@ -20,10 +19,10 @@ namespace QuickSettings.Widgets {
 
             var icon = new Gtk.Image.from_icon_name (icon_name);
             icon.set_icon_size (Gtk.IconSize.LARGE);
-            icon.set_css_classes ({"icon"});
+            icon.set_css_classes ({ "icon" });
 
             var label = new Gtk.Label (label_text);
-            label.set_css_classes ({"QuickSettings-label"});
+            label.set_css_classes ({ "QuickSettings-label" });
             label.set_wrap (true);
             label.set_justify (Gtk.Justification.CENTER);
 
@@ -31,7 +30,7 @@ namespace QuickSettings.Widgets {
             content.append (label);
             set_child (content);
 
-            set_css_classes ({"QuickSettings-toggle-button"});
+            set_css_classes ({ "QuickSettings-toggle-button" });
 
             clicked.connect (() => {
                 active = !active;

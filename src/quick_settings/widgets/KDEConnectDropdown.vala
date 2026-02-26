@@ -2,13 +2,12 @@ namespace QuickSettings.Widgets {
     public class KDEConnectDropdown : Gtk.Box {
         private KdeConnect.Manager kde_manager;
         private Gtk.Box devices_box;
-        private Gtk.Label status_label;
         private Gtk.Switch daemon_toggle;
 
         public KDEConnectDropdown() {
             Object(
-                orientation: Gtk.Orientation.VERTICAL,
-                spacing: 0
+                   orientation: Gtk.Orientation.VERTICAL,
+                   spacing: 0
             );
         }
 
@@ -16,7 +15,7 @@ namespace QuickSettings.Widgets {
             add_css_class("dropdown");
             add_css_class("kde-connect-dropdown");
             set_size_request(300, -1);
-            
+
             // Refresh on visibility
             notify["visible"].connect(() => {
                 if (get_visible()) {
@@ -47,7 +46,7 @@ namespace QuickSettings.Widgets {
             header_buttons.margin_start = 6;
 
             daemon_toggle = new Gtk.Switch();
-            daemon_toggle.set_css_classes ({"small-switch"});
+            daemon_toggle.set_css_classes({ "small-switch" });
             daemon_toggle.active = false;
             daemon_toggle.halign = Gtk.Align.START;
             daemon_toggle.valign = Gtk.Align.CENTER;
@@ -112,32 +111,27 @@ namespace QuickSettings.Widgets {
         }
 
         private async void load_and_display_devices() {
-            try {
-                // Check if daemon is running first
-                if (!kde_manager.is_running()) {
-                    warning("KDE: Daemon not running, attempting to reconnect...");
-                    yield kde_manager.init_daemon();
-                }
-                
-                var devices = yield kde_manager.get_active_devices();
-                
-                while (devices_box.get_first_child() != null) {
-                    devices_box.remove(devices_box.get_first_child());
-                }
+            if (!kde_manager.is_running()) {
+                warning("KDE: Daemon not running, attempting to reconnect...");
+                yield kde_manager.init_daemon();
+            }
 
-                if (devices.length() == 0) {
-                    var no_devices = new Gtk.Label("No devices found");
-                    no_devices.add_css_class("no-devices");
-                    devices_box.append(no_devices);
-                    return;
-                }
+            var devices = yield kde_manager.get_active_devices();
 
-                foreach (var device in devices) {
-                    var card = create_device_card(device);
-                    devices_box.append(card);
-                }
-            } catch (Error e) {
-                warning(@"KDE: Error loading devices: $(e.message)");
+            while (devices_box.get_first_child() != null) {
+                devices_box.remove(devices_box.get_first_child());
+            }
+
+            if (devices.length() == 0) {
+                var no_devices = new Gtk.Label("No devices found");
+                no_devices.add_css_class("no-devices");
+                devices_box.append(no_devices);
+                return;
+            }
+
+            foreach (var device in devices) {
+                var card = create_device_card(device);
+                devices_box.append(card);
             }
         }
 
@@ -152,47 +146,47 @@ namespace QuickSettings.Widgets {
 
         private Gtk.Widget create_device_card(KdeConnect.Device device) {
             string device_id = device.id;
-            
+
             var card = new Gtk.Box(Gtk.Orientation.VERTICAL, 0);
             card.add_css_class("device-card");
 
             var top_grid = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 8);
             top_grid.add_css_class("device-top");
-            
+
             var device_icon = new Gtk.Image.from_icon_name("phone-symbolic");
             device_icon.set_icon_size(Gtk.IconSize.LARGE);
             device_icon.add_css_class("device-icon");
-            
+
             var title_section = new Gtk.Box(Gtk.Orientation.VERTICAL, 2);
             title_section.set_hexpand(true);
-            
+
             var device_name = new Gtk.Label(device.name);
             device_name.add_css_class("device-name");
             device_name.set_ellipsize(Pango.EllipsizeMode.END);
             device_name.set_halign(Gtk.Align.START);
-            
+
             var status_row = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 12);
             status_row.set_homogeneous(false);
-            
+
             var reachable_status = new Gtk.Label(device.is_reachable ? "Reachable" : "Offline");
             reachable_status.add_css_class("status-label");
             reachable_status.add_css_class(device.is_reachable ? "status-online" : "status-offline");
             reachable_status.set_halign(Gtk.Align.START);
-            
+
             var trust_status = new Gtk.Label(device.is_trusted ? "Trusted" : "Untrusted");
             trust_status.add_css_class("status-label");
             trust_status.add_css_class(device.is_trusted ? "status-trusted" : "status-untrusted");
             trust_status.set_halign(Gtk.Align.START);
-            
+
             status_row.append(reachable_status);
             status_row.append(trust_status);
-            
+
             title_section.append(device_name);
             title_section.append(status_row);
-            
+
             var battery_label = new Gtk.Label(@"$(device.charge)%");
             battery_label.add_css_class("battery-level");
-            
+
             top_grid.append(device_icon);
             top_grid.append(title_section);
             top_grid.append(battery_label);
@@ -200,13 +194,13 @@ namespace QuickSettings.Widgets {
             top_grid.set_margin_end(8);
             top_grid.set_margin_top(6);
             top_grid.set_margin_bottom(6);
-            
+
             card.append(top_grid);
 
             var buttons_box = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 2);
             buttons_box.add_css_class("device-buttons");
             buttons_box.set_homogeneous(true);
-            
+
             var send_clipboard_btn = new Gtk.Button.from_icon_name("edit-copy-symbolic");
             send_clipboard_btn.set_tooltip_text("Send clipboard");
             send_clipboard_btn.add_css_class("device-action-btn");
@@ -235,49 +229,30 @@ namespace QuickSettings.Widgets {
             buttons_box.set_margin_end(8);
             buttons_box.set_margin_top(0);
             buttons_box.set_margin_bottom(6);
-            
+
             card.append(buttons_box);
 
             return card;
         }
 
         private async void send_clipboard_to_device(string device_id) {
-            try {
-                warning(@"KDE: Sending clipboard to device $device_id");
-                // TODO: Implement clipboard send
-            } catch (Error e) {
-                warning(@"KDE: Error sending clipboard: $(e.message)");
-            }
+            warning(@"KDE: Sending clipboard to device $device_id");
+            // TODO: Implement clipboard send
         }
 
         private async void copy_clipboard_from_device(string device_id) {
-            try {
-                warning(@"KDE: Copying clipboard from device $device_id");
-                // TODO: Implement clipboard copy
-            } catch (Error e) {
-                warning(@"KDE: Error copying clipboard: $(e.message)");
-            }
+            warning(@"KDE: Copying clipboard from device $device_id");
+            // TODO: Implement clipboard copy
         }
 
         private async void send_file_to_device(string device_id) {
-            try {
-                warning(@"KDE: Sending file to device $device_id");
-                // TODO: Implement file send dialog
-            } catch (Error e) {
-                warning(@"KDE: Error sending file: $(e.message)");
-            }
+            warning(@"KDE: Sending file to device $device_id");
+            // TODO: Implement file send dialog
         }
 
         private async void toggle_daemon(bool enabled) {
-            try {
-                warning(@"KDE: Setting daemon to $enabled");
-                yield kde_manager.set_daemon_state(enabled);
-            } catch (Error e) {
-                warning(@"KDE: Error toggling daemon: $(e.message)");
-                // Reset toggle on error
-                daemon_toggle.set_active(!enabled);
-            }
+            warning(@"KDE: Setting daemon to $enabled");
+            yield kde_manager.set_daemon_state(enabled);
         }
     }
 }
-

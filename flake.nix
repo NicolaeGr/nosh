@@ -120,8 +120,14 @@
 
             startAfter = mkOption {
               type = types.listOf types.str;
-              default = [ "hyprland-session.target" ];
+              default = [ "wayland-session@Hyprland.target" ];
               description = "Systemd targets to start after";
+            };
+
+            wantedBy = mkOption {
+              type = types.listOf types.str;
+              default = [ "default.target" ];
+              description = "Systemd targets to be wanted by";
             };
 
             package = mkOption {
@@ -151,7 +157,7 @@
               };
 
               Install = {
-                WantedBy = [ "hyprland-session.target" ];
+                WantedBy = cfg.wantedBy;
               };
             };
           };

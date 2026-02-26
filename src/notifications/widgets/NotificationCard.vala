@@ -18,16 +18,14 @@ namespace Notifications.Widgets {
         public signal void hover_enter ();
         public signal void hover_leave ();
 
-        public NotificationCard (
-            string title,
+        public NotificationCard (string title,
             string description,
             string icon_name,
             AstalNotifd.Notification? notification = null,
-            uint timeout_ms = 5000
-        ) {
+            uint timeout_ms = 5000) {
             Object (
-                orientation: Gtk.Orientation.VERTICAL,
-                spacing: 4
+                    orientation : Gtk.Orientation.VERTICAL,
+                    spacing : 4
             );
 
             this.notification = notification;
@@ -37,12 +35,12 @@ namespace Notifications.Widgets {
             this.icon_name = icon_name;
             this.timeout_ms_original = timeout_ms;
 
-            set_css_classes ({"NotificationCard", "p-2", "gap-1", "rounded-2xl"});
+            set_css_classes ({ "NotificationCard", "p-2", "gap-1", "rounded-2xl" });
             set_margin_bottom (8);
             hexpand = false;
 
             var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            header.set_css_classes ({"gap-2", "header"});
+            header.set_css_classes ({ "gap-2", "header" });
 
             Gtk.Image app_icon;
             if (notification != null && notification.image != null && notification.image.length > 0) {
@@ -62,7 +60,7 @@ namespace Notifications.Widgets {
             }
 
             var title_label = new Gtk.Label (title);
-            title_label.set_css_classes ({"heading"});
+            title_label.set_css_classes ({ "heading" });
             title_label.set_halign (Align.START);
             title_label.set_hexpand (true);
             title_label.set_ellipsize (Pango.EllipsizeMode.END);
@@ -70,15 +68,15 @@ namespace Notifications.Widgets {
 
             var now = new GLib.DateTime.now_local ();
             var time_label = new Gtk.Label (now.format ("%H:%M"));
-            time_label.set_css_classes ({"heading"});
+            time_label.set_css_classes ({ "heading" });
             time_label.set_halign (Align.END);
 
             var buttons_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
-            buttons_box.set_css_classes ({"gap-1"});
+            buttons_box.set_css_classes ({ "gap-1" });
 
             var expand_button = new Gtk.Button ();
             expand_button.set_icon_name ("pan-down-symbolic");
-            expand_button.set_css_classes ({"min-w-0",  "min-h-0","square-icon" });
+            expand_button.set_css_classes ({ "min-w-0", "min-h-0", "square-icon" });
             expand_button.clicked.connect (() => {
                 is_expanded = !is_expanded;
                 content_revealer.set_reveal_child (is_expanded);
@@ -87,7 +85,7 @@ namespace Notifications.Widgets {
 
             var close_button = new Gtk.Button ();
             close_button.set_icon_name ("window-close-symbolic");
-            close_button.set_css_classes ({"min-w-0",  "min-h-0", "square-icon" });
+            close_button.set_css_classes ({ "min-w-0", "min-h-0", "square-icon" });
             close_button.clicked.connect (() => {
                 this.dismiss ();
             });
@@ -103,23 +101,23 @@ namespace Notifications.Widgets {
             var content_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             content_box.set_spacing (8);
 
-            var desc_label = new Gtk.Label("");
-            desc_label.set_use_markup(true);
-            desc_label.set_markup(description);
-            desc_label.set_wrap(true);
-            desc_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR);
-            desc_label.set_halign(Gtk.Align.START);
-                    
-            desc_label.set_max_width_chars(40);    
-            desc_label.set_ellipsize(Pango.EllipsizeMode.END);
-            desc_label.set_lines(3);             
-            
+            var desc_label = new Gtk.Label ("");
+            desc_label.set_use_markup (true);
+            desc_label.set_markup (description);
+            desc_label.set_wrap (true);
+            desc_label.set_wrap_mode (Pango.WrapMode.WORD_CHAR);
+            desc_label.set_halign (Gtk.Align.START);
+
+            desc_label.set_max_width_chars (40);
+            desc_label.set_ellipsize (Pango.EllipsizeMode.END);
+            desc_label.set_lines (3);
+
             var main_content = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
-            main_content.set_css_classes ({"gap-2"});
+            main_content.set_css_classes ({ "gap-2" });
             main_content.append (desc_label);
 
             actions_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
-            actions_box.set_css_classes ({"gap-1", "mt-2"});
+            actions_box.set_css_classes ({ "gap-1", "mt-2" });
             actions_box.set_halign (Align.FILL);
             actions_box.set_homogeneous (true);
 
@@ -131,7 +129,7 @@ namespace Notifications.Widgets {
             content_revealer.set_transition_duration (200);
             content_revealer.set_transition_type (Gtk.RevealerTransitionType.SLIDE_DOWN);
             content_revealer.set_child (content_box);
-            content_revealer.set_css_classes ({"m-0", "p-0"});
+            content_revealer.set_css_classes ({ "m-0", "p-0" });
 
             append (header);
             append (content_revealer);
@@ -172,7 +170,7 @@ namespace Notifications.Widgets {
         public void resume_timer () {
             if (pause_start_time > 0 && timeout_ms_original > 0) {
                 uint64 elapsed = (GLib.get_monotonic_time () - pause_start_time) / 1000;
-                uint remaining = (elapsed < timeout_ms_original) ? (uint)(timeout_ms_original - elapsed) : 0;
+                uint remaining = (elapsed < timeout_ms_original) ? (uint) (timeout_ms_original - elapsed) : 0;
                 pause_start_time = 0;
                 set_dismiss_timer (remaining);
             }
@@ -180,7 +178,7 @@ namespace Notifications.Widgets {
 
         public Gtk.Button add_action (string label) {
             var button = new Gtk.Button.with_label (label);
-            button.set_css_classes ({"text-button", "rounded-md"});
+            button.set_css_classes ({ "text-button", "rounded-md" });
             actions_box.append (button);
             return button;
         }
@@ -196,8 +194,8 @@ namespace Notifications.Widgets {
             }
 
             add_css_class ("notification-card-dismiss");
-            
-            var timeout = Timeout.add (250, () => {
+
+            Timeout.add (250, () => {
                 dismissed ();
                 return Source.REMOVE;
             });

@@ -1,15 +1,15 @@
 using Gtk;
 
 [GtkTemplate (ui = "/com/nicolaegr/nosh/indicators/ChangeIndicator.ui")]
-class Indicators.ChangeIndicator: Astal.Window {
+class Indicators.ChangeIndicator : Astal.Window {
     [GtkChild]
-    private Gtk.Image icon_widget;
+    private unowned Gtk.Image icon_widget;
 
     [GtkChild]
-    private Gtk.ProgressBar progress_bar;
+    private unowned Gtk.ProgressBar progress_bar;
 
     [GtkChild]
-    private Gtk.Label value_label;
+    private unowned Gtk.Label value_label;
 
     private Utils.SystemControlManager control_manager;
     private uint hide_timer = 0;
@@ -31,21 +31,21 @@ class Indicators.ChangeIndicator: Astal.Window {
 
     private void show_volume_indicator (double volume) {
         var percent = volume / Utils.VolumeControl.MAX_VOLUME;
-        var percentage_value = Math.lround(volume * 100);
+        var percentage_value = Math.lround (volume * 100);
         show_indicator_with_range (
-            "audio-volume-medium-symbolic",
-            @"$(percentage_value)%",
-            percent,
-            percentage_value > 100
+                                   "audio-volume-medium-symbolic",
+                                   @"$(percentage_value)%",
+                                   percent,
+                                   percentage_value > 100
         );
     }
 
     private void show_brightness_indicator (double brightness) {
         var percent = brightness / 100.0;
         show_indicator_with_range (
-            "display-brightness-symbolic",
-            @"$(brightness)%",
-            percent
+                                   "display-brightness-symbolic",
+                                   @"$(brightness)%",
+                                   percent
         );
     }
 
@@ -53,13 +53,13 @@ class Indicators.ChangeIndicator: Astal.Window {
         icon_widget.set_from_icon_name (icon);
         value_label.set_label (label);
         progress_bar.set_fraction (fraction.clamp (0, 1));
-        
+
         if (overamplify) {
             progress_bar.add_css_class ("overamp");
         } else {
             progress_bar.remove_css_class ("overamp");
         }
-        
+
         show_indicator ();
     }
 

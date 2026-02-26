@@ -8,12 +8,7 @@ namespace QuickSettings.Widgets {
             base ();
             add_css_class ("QuickSettings-bluetooth");
 
-            try {
-                bluetooth = AstalBluetooth.get_default ();
-            } catch (Error e) {
-                warning ("Bluetooth not available: %s", e.message);
-                bluetooth = null;
-            }
+            bluetooth = AstalBluetooth.get_default ();
 
             if (bluetooth == null) {
                 this.visible = false;

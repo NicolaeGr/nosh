@@ -56,56 +56,51 @@ namespace TopBar.Widgets {
             } catch (Error e) {
                 warning ("Error reading stats with top: %s", e.message);
             }
-            return true; 
+            return true;
         }
 
         private void parse_cpu_line (string line) {
-            try {
-                var parts = line.split (",");
 
-                foreach (var part in parts) {
-                    if (part.contains (" id")) {
-                        var idle_str = part
-                             .replace ("id", "")
-                             .replace ("%", "")
-                             .strip ();
+            var parts = line.split (",");
 
-                        double idle = double.parse (idle_str);
-                        uint cpu_percent = (uint) (100.0 - idle);
+            foreach (var part in parts) {
+                if (part.contains (" id")) {
+                    var idle_str = part
+                         .replace ("id", "")
+                         .replace ("%", "")
+                         .strip ();
 
-                        update_label (cpu_label, " ", cpu_percent);
-                        return;
-                    }
+                    double idle = double.parse (idle_str);
+                    uint cpu_percent = (uint) (100.0 - idle);
+
+                    update_label (cpu_label, " ", cpu_percent);
+                    return;
                 }
-            } catch (Error e) {
-                warning ("Error parsing CPU line: %s", e.message);
             }
         }
 
         private void parse_mem_line (string line) {
-            try {
-                var parts = line.split (",");
 
-                if (parts.length >= 3) {
-                    var total_part = parts[0]
-                         .split (":")[1]
-                         .replace ("total", "")
-                         .strip ();
 
-                    var used_part = parts[2]
-                         .replace ("used", "")
-                         .strip ();
+            var parts = line.split (",");
 
-                    double total = double.parse (total_part);
-                    double used = double.parse (used_part);
+            if (parts.length >= 3) {
+                var total_part = parts[0]
+                     .split (":")[1]
+                     .replace ("total", "")
+                     .strip ();
 
-                    if (total > 0) {
-                        uint mem_percent = (uint) ((used / total) * 100.0);
-                        update_label (mem_label, " ", mem_percent);
-                    }
+                var used_part = parts[2]
+                     .replace ("used", "")
+                     .strip ();
+
+                double total = double.parse (total_part);
+                double used = double.parse (used_part);
+
+                if (total > 0) {
+                    uint mem_percent = (uint) ((used / total) * 100.0);
+                    update_label (mem_label, " ", mem_percent);
                 }
-            } catch (Error e) {
-                warning ("Error parsing memory line: %s", e.message);
             }
         }
 

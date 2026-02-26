@@ -13,14 +13,14 @@ namespace QuickSettings.Widgets {
             try {
                 var connection = Bus.get_sync (BusType.SYSTEM);
                 var reply = connection.call_sync (
-                    "org.freedesktop.DBus",
-                    "/org/freedesktop/DBus",
-                    "org.freedesktop.DBus",
-                    "GetNameOwner",
-                    new Variant ("(s)", "org.bluez"),
-                    null,
-                    DBusCallFlags.NONE,
-                    500  // 500ms timeout
+                                                  "org.freedesktop.DBus",
+                                                  "/org/freedesktop/DBus",
+                                                  "org.freedesktop.DBus",
+                                                  "GetNameOwner",
+                                                  new Variant ("(s)", "org.bluez"),
+                                                  null,
+                                                  DBusCallFlags.NONE,
+                                                  500 // 500ms timeout
                 );
                 return reply != null;
             } catch (Error e) {
@@ -32,7 +32,7 @@ namespace QuickSettings.Widgets {
             Object (orientation: Gtk.Orientation.VERTICAL, spacing: 0);
 
             var connectivity_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            connectivity_box.set_css_classes ({"item-row"});
+            connectivity_box.set_css_classes ({ "item-row" });
             connectivity_box.halign = Gtk.Align.FILL;
             connectivity_box.homogeneous = true;
 
@@ -40,30 +40,26 @@ namespace QuickSettings.Widgets {
 
             // Create dropdowns container first
             dropdowns_container = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-            dropdowns_container.set_css_classes ({"dropdowns-container"});
+            dropdowns_container.set_css_classes ({ "dropdowns-container" });
             dropdowns_container.halign = Gtk.Align.FILL;
             append (dropdowns_container);
 
             // Check for hardware availability
             var network = AstalNetwork.get_default ();
-            
+
             // Check if Bluetooth service is available without triggering timeout
             AstalBluetooth.Bluetooth? bluetooth = null;
             if (is_bluetooth_available ()) {
-                try {
-                    bluetooth = AstalBluetooth.get_default ();
-                } catch (Error e) {
-                    bluetooth = null;
-                }
+                bluetooth = AstalBluetooth.get_default ();
             }
-            
+
             var kde = new KDEConnect ();
 
             // Only create widgets if hardware is available
             if (network != null && network.wifi != null) {
                 var wifi = new WiFi ();
                 connectivity_box.append (wifi);
-                
+
                 wifi_dropdown = new WiFiDropdown (network.wifi);
                 wifi_dropdown.visible = false;
                 dropdowns_container.append (wifi_dropdown);
@@ -73,11 +69,11 @@ namespace QuickSettings.Widgets {
                     hide_other_dropdowns (wifi_dropdown);
                 });
             }
-            
+
             if (bluetooth != null) {
                 var bt = new Bluetooth ();
                 connectivity_box.append (bt);
-                
+
                 bt_dropdown = new BluetoothDropdown (bluetooth);
                 bt_dropdown.visible = false;
                 dropdowns_container.append (bt_dropdown);
@@ -87,7 +83,7 @@ namespace QuickSettings.Widgets {
                     hide_other_dropdowns (bt_dropdown);
                 });
             }
-            
+
             connectivity_box.append (kde);
 
             kde_dropdown = new KDEConnectDropdown ();
@@ -111,55 +107,43 @@ namespace QuickSettings.Widgets {
             if (dropdown.visible) {
                 Gtk.Requisition min_size, natural_size;
                 dropdown.get_preferred_size (out min_size, out natural_size);
-                int current_height = dropdown.get_allocated_height ();
+                int current_height = dropdown.get_height ();
                 if (current_height <= 0) {
                     current_height = natural_size.height;
                 }
-                
-                try {
-                    var css = "* { max-height: %dpx !important; }".printf (current_height);
-                    height_provider.load_from_data (css.data);
-                    dropdown.get_style_context ().add_provider (height_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
-                } catch (Error e) {
-                    warning ("Failed to set height: %s", e.message);
-                }
-                
+
+                var css = "* { max-height: %dpx !important; }".printf (current_height);
+                height_provider.load_from_bytes (new GLib.Bytes (css.data));
+                dropdown.add_css_class ("height-limit");
+
+
                 dropdown.remove_css_class ("visible");
-                
+
                 GLib.Timeout.add (10, () => {
-                    try {
-                        height_provider.load_from_data ("* { max-height: 0 !important; }".data);
-                        dropdown.get_style_context ().add_provider (height_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
-                    } catch (Error e) {
-                        warning ("Failed to animate close: %s", e.message);
-                    }
+                    height_provider.load_from_bytes (new GLib.Bytes ("* { max-height: 0 !important; }".data));
                     return false;
                 });
-                
+
                 GLib.Timeout.add (310, () => {
                     dropdown.visible = false;
                     return false;
                 });
             } else {
                 dropdown.visible = true;
-                
+
                 GLib.Idle.add (() => {
                     Gtk.Requisition min_size, natural_size;
                     dropdown.get_preferred_size (out min_size, out natural_size);
-                    
-                    int allocated_height = dropdown.get_allocated_height ();
+
+                    int allocated_height = dropdown.get_height ();
                     int height = natural_size.height > 0 ? natural_size.height : allocated_height;
-                    
+
                     if (height > 0) {
-                        try {
-                            var css = "* { max-height: %dpx !important; }".printf (height + 50); 
-                            height_provider.load_from_data (css.data);
-                            dropdown.get_style_context ().add_provider (height_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
-                        } catch (Error e) {
-                            warning ("Failed to set dropdown height: %s", e.message);
-                        }
+                        var css = "* { max-height: %dpx !important; }".printf (height + 50);
+                        height_provider.load_from_bytes (new GLib.Bytes (css.data));
+                        dropdown.add_css_class ("height-limit");
                     }
-                    
+
                     dropdown.add_css_class ("visible");
                     return false;
                 });
@@ -182,5 +166,3 @@ namespace QuickSettings.Widgets {
         }
     }
 }
-
-

@@ -44,21 +44,17 @@ namespace AppLauncher {
             try {
                 string expanded = command.replace("$HOME", Environment.get_home_dir());
                 
-                string[] argv;
-                Shell.parse_argv(expanded, out argv);
+                string[] argv = { "hyprctl", "dispatch", "exec", "--", expanded };
                 
                 Process.spawn_async(
-                    null,                                          
-                    argv,                                          
-                    null,                                           
+                    null,
+                    argv,
+                    null,
                     SpawnFlags.SEARCH_PATH |
-                    SpawnFlags.DO_NOT_REAP_CHILD |
                     SpawnFlags.STDOUT_TO_DEV_NULL |
                     SpawnFlags.STDERR_TO_DEV_NULL,
-                    () => {
-                        Posix.setsid();
-                    },
-                    null                                          
+                    null,
+                    null
                 );
             } catch (Error e) {
                 critical("Failed to launch command '%s': %s", command, e.message);
@@ -66,10 +62,22 @@ namespace AppLauncher {
         }
         
         private void launch_desktop_app(AppInfo app) {
-            try {
-                app.launch(null, null);
-            } catch (Error e) {
-                critical("Failed to launch desktop app '%s': %s", name, e.message);
+            var command = app.get_commandline();
+            if (command != null) {
+                // Remove % placeholders from the .desktop Exec line
+                try {
+                    var regex = new Regex("%[fFuUdDnNvmick]");
+                    command = regex.replace_literal(command, -1, 0, "");
+                    launch_command(command.strip());
+                } catch (Error e) {
+                    critical("Regex error: %s", e.message);
+                }
+            } else {
+                try {
+                    app.launch(null, null);
+                } catch (Error e) {
+                    critical("Failed to launch desktop app '%s': %s", name, e.message);
+                }
             }
         }
     }

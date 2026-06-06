@@ -112,7 +112,7 @@
         with lib;
         let
           cfg = config.programs.nosh;
-          nosh = self.packages.${pkgs.system}.default;
+          nosh = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
         in
         {
           options.programs.nosh = {

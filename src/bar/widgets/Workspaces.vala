@@ -28,31 +28,27 @@ namespace TopBar.Widgets {
         }
 
         private void init_hyprland () {
-            try {
-                hypr = AstalHyprland.get_default ();
 
-                if (hypr == null) {
-                    schedule_reconnect ();
-                    return;
-                }
+            hypr = AstalHyprland.get_default ();
 
-                // Disconnect old handlers
-                if (workspaces_handler > 0)hypr.disconnect (workspaces_handler);
-                if (urgent_handler > 0)hypr.disconnect (urgent_handler);
-
-                workspaces_handler = hypr.notify["workspaces"].connect (sync);
-                urgent_handler = hypr.urgent.connect (on_urgent);
-
-                sync ();
-
-                // Cancel any pending reconnect timer
-                if (reconnect_timeout > 0) {
-                    GLib.Source.remove (reconnect_timeout);
-                    reconnect_timeout = 0;
-                }
-            } catch (Error e) {
-                warning ("Failed to initialize Hyprland: %s", e.message);
+            if (hypr == null) {
                 schedule_reconnect ();
+                return;
+            }
+
+            // Disconnect old handlers
+            if (workspaces_handler > 0)hypr.disconnect (workspaces_handler);
+            if (urgent_handler > 0)hypr.disconnect (urgent_handler);
+
+            workspaces_handler = hypr.notify["workspaces"].connect (sync);
+            urgent_handler = hypr.urgent.connect (on_urgent);
+
+            sync ();
+
+            // Cancel any pending reconnect timer
+            if (reconnect_timeout > 0) {
+                GLib.Source.remove (reconnect_timeout);
+                reconnect_timeout = 0;
             }
         }
 
@@ -147,7 +143,16 @@ namespace TopBar.Widgets {
             }
 
             btn.clicked.connect (() => {
-                ws.focus ();
+                // ws.focus (); // TODO: Fix this when Hyprland API is updated
+
+                var dispatch = "dispatch hl.dsp.focus({ workspace = \"" + ws.id.to_string () + "\" })";
+                hypr.message_async (dispatch, (_, res) => {
+                    var err = hypr.message_async.end (res);
+                    if (err != "ok") {
+                        print ("Dispatch error: " + err + "\n");
+                    }
+                });
+
                 // Clear urgent state when clicking the workspace
                 btn.remove_css_class ("urgent");
                 urgent_workspaces.remove (ws.id);

@@ -91,6 +91,26 @@
         {
           options.services.nosh = {
             enable = mkEnableOption "NOSH - Hyprland shell";
+
+            hjemModule = {
+              enable = mkEnableOption "Enable NOSH systemd service for hjem";
+
+              startAfter = mkOption {
+                type = types.listOf types.str;
+                default = [ "graphical-session.target" ];
+              };
+
+              wantedBy = mkOption {
+                type = types.listOf types.str;
+                default = [ "graphical-session.target" ];
+              };
+
+              package = mkOption {
+                type = types.package;
+                default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+                description = "The nosh package to use";
+              };
+            };
           };
 
           config = mkIf cfg.enable {
@@ -98,6 +118,33 @@
 
             environment.systemPackages = [
               pkgs.brightnessctl
+            ];
+
+            hjem.extraModules = mkIf cfg.hjemModule.enable [
+              {
+                systemd.services."nosh" = {
+                  description = "NOSH - Hyprland Shell";
+                  after = cfg.hjemModule.startAfter;
+                  wantedBy = cfg.hjemModule.wantedBy;
+                  partOf = [ "graphical-session.target" ];
+
+                  unitConfig = {
+                    ConditionEnvironment = "HYPRLAND_INSTANCE_SIGNATURE";
+                  };
+
+                  serviceConfig = {
+                    Type = "simple";
+                    ExecStart = "${cfg.hjemModule.package}/bin/nosh";
+                    Restart = "on-failure";
+                    RestartSec = 5;
+
+                    Environment = [
+                      "QT_QPA_PLATFORM=wayland"
+                      "WAYLAND_DISPLAY=wayland-1"
+                    ];
+                  };
+                };
+              }
             ];
           };
         };
@@ -120,13 +167,13 @@
 
             startAfter = mkOption {
               type = types.listOf types.str;
-              default = [ "wayland-session@Hyprland.target" ];
+              default = [ "graphical-session.target" ];
               description = "Systemd targets to start after";
             };
 
             wantedBy = mkOption {
               type = types.listOf types.str;
-              default = [ "default.target" ];
+              default = [ "graphical-session.target" ];
               description = "Systemd targets to be wanted by";
             };
 
@@ -142,6 +189,8 @@
               Unit = {
                 Description = "NOSH - Hyprland Shell";
                 After = cfg.startAfter;
+                PartOf = [ "graphical-session.target" ];
+                ConditionEnvironment = "HYPRLAND_INSTANCE_SIGNATURE";
               };
 
               Service = {

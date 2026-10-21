@@ -3,6 +3,7 @@ pub mod client;
 pub mod dispatch;
 pub mod events;
 pub mod json;
+pub mod monitor;
 
 pub use backend::HyprlandWorkspaceBackend;
 pub use client::HyprlandClient;
@@ -11,3 +12,4 @@ pub use events::{parse_event, HyprlandEvent};
 pub use json::{
     build_workspace_state, HyprClient, HyprMonitor, HyprStatus, HyprVersion, HyprWorkspace,
 };
+pub use monitor::HyprlandMonitorBackend;

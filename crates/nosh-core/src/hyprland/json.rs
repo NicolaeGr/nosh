@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::Deserialize;
 
-use crate::model::{normalize_address, MonitorModel, WorkspaceCapabilities, WorkspaceModel};
+use crate::model::{normalize_address, WorkspaceCapabilities, WorkspaceModel, WorkspaceMonitor};
+use crate::monitors::{MonitorId, MonitorLayout, MonitorModel, Transform};
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -89,7 +90,7 @@ pub fn build_workspace_state(
     clients: &[HyprClient],
 ) -> (
     Vec<WorkspaceModel>,
-    Vec<MonitorModel>,
+    Vec<WorkspaceMonitor>,
     BTreeMap<String, String>,
     Option<String>,
 ) {
@@ -101,7 +102,7 @@ pub fn build_workspace_state(
     let monitor_models = monitors
         .iter()
         .filter(|monitor| !monitor.disabled)
-        .map(|monitor| MonitorModel {
+        .map(|monitor| WorkspaceMonitor {
             id: monitor.id,
             connector: monitor.name.clone(),
             focused: monitor.focused,
@@ -151,6 +152,56 @@ pub fn build_workspace_state(
 /// Special workspaces never reach the bar.
 pub fn is_normal_workspace(workspace: &HyprWorkspace) -> bool {
     workspace.id > 0 && !workspace.name.starts_with("special:")
+}
+
+/// Maps a raw `j/monitors` response to the core monitor layout.
+///
+/// Disabled monitors stay in the list with `enabled = false`; callers that
+/// operate on the enabled layout filter them out. The layout is sorted by
+/// compositor id so numeric targets have a stable meaning.
+pub fn build_monitor_layout(monitors: &[HyprMonitor]) -> MonitorLayout {
+    let mut models: Vec<MonitorModel> = monitors.iter().map(monitor_model).collect();
+    models.sort_by_key(|monitor| monitor.id.compositor_id);
+
+    let mut layout = MonitorLayout {
+        monitors: models,
+        primary: None,
+    };
+    let _ = layout.apply_primary(None);
+    layout
+}
+
+fn monitor_model(monitor: &HyprMonitor) -> MonitorModel {
+    MonitorModel {
+        id: MonitorId {
+            compositor_id: monitor.id,
+            connector: monitor.name.clone(),
+            description: monitor.description.clone(),
+            make: monitor.make.clone(),
+            model: monitor.model.clone(),
+            serial: monitor.serial.clone(),
+        },
+        enabled: !monitor.disabled,
+        focused: monitor.focused,
+        primary: false,
+        x: monitor.x,
+        y: monitor.y,
+        width: monitor.width,
+        height: monitor.height,
+        scale: monitor.scale,
+        transform: Transform::from_value(monitor.transform).unwrap_or_default(),
+        refresh_rate: monitor.refresh_rate,
+        mirror_of: mirror_source(monitor),
+    }
+}
+
+fn mirror_source(monitor: &HyprMonitor) -> Option<String> {
+    monitor
+        .mirror_of
+        .as_deref()
+        .map(str::trim)
+        .filter(|source| !source.is_empty() && !source.eq_ignore_ascii_case("none"))
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -276,5 +327,98 @@ mod tests {
         let (_, _, map, _) = build_workspace_state(&[], &[], None, &clients);
 
         assert_eq!(map.get("abc").map(String::as_str), Some("2"));
+    }
+
+    #[test]
+    fn monitor_json_maps_every_model_field() {
+        let json = r#"[{
+            "id": 3,
+            "name": "DP-2",
+            "description": "Dell Inc. DELL U2720Q",
+            "make": "Dell Inc.",
+            "model": "DELL U2720Q",
+            "serial": "ABC123",
+            "width": 3840,
+            "height": 2160,
+            "refreshRate": 59.997,
+            "x": 2560,
+            "y": -100,
+            "scale": 1.5,
+            "transform": 2,
+            "focused": true,
+            "disabled": false,
+            "mirrorOf": "DP-1"
+        }]"#;
+        let monitors: Vec<HyprMonitor> = serde_json::from_str(json).unwrap();
+
+        let layout = build_monitor_layout(&monitors);
+        let monitor = &layout.monitors[0];
+
+        assert_eq!(monitor.id.compositor_id, 3);
+        assert_eq!(monitor.connector(), "DP-2");
+        assert_eq!(monitor.id.description, "Dell Inc. DELL U2720Q");
+        assert_eq!(monitor.id.make, "Dell Inc.");
+        assert_eq!(monitor.id.model, "DELL U2720Q");
+        assert_eq!(monitor.id.serial, "ABC123");
+        assert!(monitor.enabled);
+        assert!(monitor.focused);
+        assert!(monitor.primary);
+        assert_eq!((monitor.x, monitor.y), (2560, -100));
+        assert_eq!((monitor.width, monitor.height), (3840, 2160));
+        assert_eq!(monitor.scale, 1.5);
+        assert_eq!(monitor.transform, Transform::Rotate180);
+        assert_eq!(monitor.refresh_rate, 59.997);
+        assert_eq!(monitor.mirror_of.as_deref(), Some("DP-1"));
+    }
+
+    #[test]
+    fn disabled_monitors_remain_visible_but_are_not_enabled() {
+        let monitors = vec![
+            monitor(0, "DP-1", true, false),
+            monitor(1, "HDMI-A-1", false, true),
+        ];
+
+        let layout = build_monitor_layout(&monitors);
+
+        assert_eq!(layout.monitors.len(), 2);
+        assert_eq!(layout.enabled().count(), 1);
+        assert!(!layout.monitor("HDMI-A-1").unwrap().enabled);
+    }
+
+    #[test]
+    fn the_hyprland_mirror_none_sentinel_is_not_a_mirror() {
+        let json = r#"[{"id":0,"name":"DP-1","mirrorOf":"none"}]"#;
+        let monitors: Vec<HyprMonitor> = serde_json::from_str(json).unwrap();
+
+        assert_eq!(build_monitor_layout(&monitors).monitors[0].mirror_of, None);
+    }
+
+    #[test]
+    fn a_missing_mirror_field_is_not_a_mirror() {
+        let json = r#"[{"id":0,"name":"DP-1"}]"#;
+        let monitors: Vec<HyprMonitor> = serde_json::from_str(json).unwrap();
+
+        assert_eq!(build_monitor_layout(&monitors).monitors[0].mirror_of, None);
+    }
+
+    #[test]
+    fn the_mapped_layout_uses_focus_then_the_first_enabled_monitor() {
+        let focused = vec![
+            monitor(0, "DP-1", false, false),
+            monitor(1, "HDMI-A-1", true, false),
+        ];
+        assert_eq!(
+            build_monitor_layout(&focused).primary.as_deref(),
+            Some("HDMI-A-1")
+        );
+
+        let unfocused = vec![
+            monitor(2, "DP-2", false, false),
+            monitor(1, "HDMI-A-1", false, false),
+        ];
+        assert_eq!(
+            build_monitor_layout(&unfocused).primary.as_deref(),
+            Some("HDMI-A-1")
+        );
     }
 }

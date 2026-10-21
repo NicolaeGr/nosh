@@ -34,8 +34,12 @@ pub struct WorkspaceModel {
     pub capabilities: WorkspaceCapabilities,
 }
 
+/// The lightweight monitor view used by the workspace service.
+///
+/// The full monitor model lives in [`crate::monitors`]. Keeping this type
+/// separate avoids coupling workspace filtering to layout details.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MonitorModel {
+pub struct WorkspaceMonitor {
     pub id: i32,
     pub connector: String,
     pub focused: bool,
@@ -44,7 +48,7 @@ pub struct MonitorModel {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WorkspaceSnapshot {
     pub workspaces: Vec<WorkspaceModel>,
-    pub monitors: Vec<MonitorModel>,
+    pub monitors: Vec<WorkspaceMonitor>,
     pub focused_workspace: Option<String>,
 }
 

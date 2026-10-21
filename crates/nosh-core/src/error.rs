@@ -40,6 +40,30 @@ pub enum BackendError {
     NoBackend,
 }
 
+/// A monitor layout operation failed. These errors are short and safe to
+/// surface to the user; a missing monitor never stops the service.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum MonitorError {
+    #[error("monitor {0:?} was not found")]
+    TargetNotFound(String),
+    #[error("no monitor layout is available")]
+    NoLayout,
+    #[error("no monitor was specified and there is no primary")]
+    NoTarget,
+    #[error("the monitor backend is read-only")]
+    ReadOnly,
+    #[error("monitor {0} needs a resolution before it can be enabled")]
+    MissingResolution(String),
+    #[error("no enabled monitor can be used as a mirror source")]
+    NoMirrorSource,
+    #[error("unknown monitor placement policy: {0}")]
+    UnknownPolicy(String),
+    #[error("unknown layout preset: {0}")]
+    UnknownPreset(String),
+    #[error("monitor write failed: {0}")]
+    Write(String),
+}
+
 /// A Hyprland event line that does not match the documented payload shape.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EventParseError {

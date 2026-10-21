@@ -186,6 +186,7 @@ impl WorkspaceService {
             let snapshot = Snapshot {
                 workspaces: Some(initial.snapshot()),
                 workspace_backend: Some(resolved.name),
+                ..Snapshot::default()
             };
             if events.send(Event::Snapshot(snapshot)).await.is_err() {
                 return;
@@ -324,6 +325,7 @@ async fn handle_command(backend: &BackendRef, command: Command) -> Result<(), Ba
         Command::WorkspaceMoveToMonitor { workspace, monitor } => {
             backend.move_to_monitor(&workspace, &monitor).await
         }
+        _ => Ok(()),
     }
 }
 

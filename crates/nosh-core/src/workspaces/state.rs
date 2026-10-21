@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::{
-    normalize_address, sort_workspaces, MonitorModel, WorkspaceModel, WorkspaceSnapshot,
+    normalize_address, sort_workspaces, WorkspaceModel, WorkspaceMonitor, WorkspaceSnapshot,
 };
 
 /// The authoritative workspace list, focus, and urgent set.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WorkspaceState {
     pub workspaces: Vec<WorkspaceModel>,
-    pub monitors: Vec<MonitorModel>,
+    pub monitors: Vec<WorkspaceMonitor>,
     pub focused_workspace: Option<String>,
     pub urgent: BTreeSet<String>,
     client_workspaces: BTreeMap<String, String>,
@@ -20,7 +20,7 @@ impl WorkspaceState {
     pub fn replace(
         &mut self,
         mut workspaces: Vec<WorkspaceModel>,
-        mut monitors: Vec<MonitorModel>,
+        mut monitors: Vec<WorkspaceMonitor>,
         clients: BTreeMap<String, String>,
         focused: Option<String>,
     ) {
@@ -138,7 +138,7 @@ mod tests {
 
         state.replace(
             vec![workspace("1"), workspace("2")],
-            vec![MonitorModel {
+            vec![WorkspaceMonitor {
                 id: 0,
                 connector: "DP-1".to_string(),
                 focused: true,

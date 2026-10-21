@@ -2,9 +2,11 @@ use std::thread;
 
 use async_channel::{Receiver, Sender};
 
+use crate::audio::model::{volume_icon, AudioEndpoint, AudioModel, EndpointKind};
+use crate::audio::service::{AudioService, AudioServiceConfig};
 use crate::command::Command;
 use crate::error::CoreError;
-use crate::event::{Event, MonitorEvent, Snapshot, WorkspaceEvent};
+use crate::event::{AudioEvent, Event, MonitorEvent, Snapshot, WorkspaceEvent};
 use crate::monitors::service::{MonitorService, MonitorServiceConfig};
 use crate::workspaces::service::{WorkspaceService, WorkspaceServiceConfig};
 
@@ -12,6 +14,7 @@ use crate::workspaces::service::{WorkspaceService, WorkspaceServiceConfig};
 pub struct CoreSettings {
     pub workspaces: WorkspaceServiceConfig,
     pub monitors: MonitorServiceConfig,
+    pub audio: AudioServiceConfig,
 }
 
 /// Handle to the core thread.
@@ -40,6 +43,7 @@ impl Core {
         let (service_events, service_event_receiver) = async_channel::unbounded();
         let (workspace_commands, workspace_receiver) = async_channel::unbounded();
         let (monitor_commands, monitor_receiver) = async_channel::unbounded();
+        let (audio_commands, audio_receiver) = async_channel::unbounded();
 
         let thread = thread::Builder::new()
             .name("nosh-core".to_string())
@@ -49,6 +53,7 @@ impl Core {
                         public_commands,
                         workspace_commands,
                         monitor_commands,
+                        audio_commands,
                     ));
                     let merger = tokio::spawn(merge_events(service_event_receiver, event_sender));
 
@@ -56,11 +61,13 @@ impl Core {
                         .run(workspace_receiver, service_events.clone());
                     let monitors = MonitorService::from_env_with(settings.monitors)
                         .run(monitor_receiver, service_events.clone());
-                    // Both service futures own a clone. Dropping the original
-                    // lets the merger finish once both services return.
+                    let audio = AudioService::from_env_with(settings.audio)
+                        .run(audio_receiver, service_events.clone());
+                    // The services own a clone. Dropping the original lets the
+                    // merger finish once every service returns.
                     drop(service_events);
 
-                    tokio::join!(workspaces, monitors);
+                    tokio::join!(workspaces, monitors, audio);
                     router.abort();
                     let _ = merger.await;
                 });
@@ -107,9 +114,12 @@ async fn route_commands(
     commands: Receiver<Command>,
     workspace_commands: Sender<Command>,
     monitor_commands: Sender<Command>,
+    audio_commands: Sender<Command>,
 ) {
     while let Ok(command) = commands.recv().await {
-        let sender = if command.is_monitor() {
+        let sender = if command.is_audio() {
+            &audio_commands
+        } else if command.is_monitor() {
             &monitor_commands
         } else {
             &workspace_commands
@@ -162,6 +172,12 @@ fn merge_snapshot(accumulator: &mut Snapshot, incoming: Snapshot) {
     if incoming.monitor_backend.is_some() {
         accumulator.monitor_backend = incoming.monitor_backend;
     }
+    if incoming.audio.is_some() {
+        accumulator.audio = incoming.audio;
+    }
+    if incoming.audio_backend.is_some() {
+        accumulator.audio_backend = incoming.audio_backend;
+    }
 }
 
 fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
@@ -177,8 +193,93 @@ fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
         Event::Monitors(MonitorEvent::LayoutChanged(layout)) => {
             accumulator.monitors = Some(layout.clone());
         }
+        Event::Audio(event) => absorb_audio(accumulator, event),
         _ => {}
     }
+}
+
+fn absorb_audio(accumulator: &mut Snapshot, event: &AudioEvent) {
+    match event {
+        AudioEvent::Snapshot(model) => accumulator.audio = Some(model.clone()),
+        AudioEvent::VolumeChanged {
+            kind, id, volume, ..
+        } => {
+            let Some(model) = accumulator.audio.as_mut() else {
+                return;
+            };
+            let Some(updated) = update_endpoint(model, *kind, *id, |endpoint| {
+                endpoint.volume = *volume;
+                endpoint.icon_name =
+                    volume_icon(*kind, endpoint.volume, endpoint.muted).to_string();
+            }) else {
+                return;
+            };
+            if model
+                .default_for(*kind)
+                .is_some_and(|default| default.id == *id)
+            {
+                if let Some(default) = model.default_for_mut(*kind) {
+                    *default = updated;
+                }
+            }
+        }
+        AudioEvent::MuteChanged {
+            kind, id, muted, ..
+        } => {
+            let Some(model) = accumulator.audio.as_mut() else {
+                return;
+            };
+            let Some(updated) = update_endpoint(model, *kind, *id, |endpoint| {
+                endpoint.muted = *muted;
+                endpoint.icon_name =
+                    volume_icon(*kind, endpoint.volume, endpoint.muted).to_string();
+            }) else {
+                return;
+            };
+            if model
+                .default_for(*kind)
+                .is_some_and(|default| default.id == *id)
+            {
+                if let Some(default) = model.default_for_mut(*kind) {
+                    *default = updated;
+                }
+            }
+        }
+        AudioEvent::DefaultChanged { kind, endpoint } => {
+            let Some(model) = accumulator.audio.as_mut() else {
+                return;
+            };
+            match kind {
+                EndpointKind::Sink => {
+                    model.default_sink = Some(endpoint.clone());
+                    for sink in &mut model.sinks {
+                        sink.is_default = sink.id == endpoint.id;
+                    }
+                }
+                EndpointKind::Source => {
+                    model.default_source = Some(endpoint.clone());
+                    for source in &mut model.sources {
+                        source.is_default = source.id == endpoint.id;
+                    }
+                }
+            }
+        }
+        AudioEvent::BackendChanged { backend } => {
+            accumulator.audio_backend = Some(*backend);
+        }
+        AudioEvent::WriteFailed(_) | AudioEvent::ReadFailed(_) | AudioEvent::Unavailable => {}
+    }
+}
+
+fn update_endpoint(
+    model: &mut AudioModel,
+    kind: EndpointKind,
+    id: u32,
+    update: impl FnOnce(&mut AudioEndpoint),
+) -> Option<AudioEndpoint> {
+    let endpoint = model.endpoint_mut(kind, id)?;
+    update(endpoint);
+    Some(endpoint.clone())
 }
 
 #[cfg(test)]
@@ -196,8 +297,14 @@ mod tests {
         let (public_tx, public_rx) = async_channel::unbounded();
         let (workspace_tx, workspace_rx) = async_channel::unbounded();
         let (monitor_tx, monitor_rx) = async_channel::unbounded();
+        let (audio_tx, audio_rx) = async_channel::unbounded();
 
-        let task = tokio::spawn(route_commands(public_rx, workspace_tx, monitor_tx));
+        let task = tokio::spawn(route_commands(
+            public_rx,
+            workspace_tx,
+            monitor_tx,
+            audio_tx,
+        ));
 
         public_tx
             .send(Command::WorkspaceActivate("1".to_string()))
@@ -214,6 +321,7 @@ mod tests {
             })
             .await
             .unwrap();
+        public_tx.send(Command::AudioSetVolume(0.5)).await.unwrap();
 
         assert_eq!(
             tokio::time::timeout(Duration::from_secs(1), workspace_rx.recv())
@@ -240,6 +348,14 @@ mod tests {
             }
         );
         assert!(workspace_rx.try_recv().is_err());
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), audio_rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            Command::AudioSetVolume(0.5)
+        );
+        assert!(monitor_rx.try_recv().is_err());
 
         drop(public_tx);
         task.await.unwrap();
@@ -395,6 +511,76 @@ mod tests {
                     Some("DP-2")
                 );
                 assert_eq!(snapshot.monitor_backend, Some("hyprland"));
+            }
+            other => panic!("expected a merged snapshot, got {other:?}"),
+        }
+
+        drop(service_tx);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn audio_updates_are_reflected_in_the_next_full_snapshot() {
+        use crate::audio::model::{AudioEndpoint, AudioModel, EndpointKind};
+
+        let (service_tx, service_rx) = async_channel::unbounded();
+        let (public_tx, public_rx) = async_channel::unbounded();
+        let task = tokio::spawn(merge_events(service_rx, public_tx));
+
+        let sink = AudioEndpoint {
+            id: 1,
+            name: "sink".to_string(),
+            description: "Sink".to_string(),
+            volume: 0.3,
+            muted: false,
+            icon_name: "audio-volume-low-symbolic".to_string(),
+            is_default: true,
+        };
+        let audio = AudioModel {
+            default_sink: Some(sink.clone()),
+            sinks: vec![sink],
+            ..AudioModel::default()
+        };
+
+        service_tx
+            .send(Event::Audio(AudioEvent::Snapshot(audio)))
+            .await
+            .unwrap();
+        service_tx
+            .send(Event::Audio(AudioEvent::VolumeChanged {
+                kind: EndpointKind::Sink,
+                id: 1,
+                volume: 0.7,
+                old: 0.3,
+                origin: crate::audio::model::ChangeOrigin::External,
+            }))
+            .await
+            .unwrap();
+        service_tx
+            .send(Event::Snapshot(Snapshot::default()))
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            public_rx.recv().await.unwrap(),
+            Event::Audio(AudioEvent::Snapshot(_))
+        ));
+        assert!(matches!(
+            public_rx.recv().await.unwrap(),
+            Event::Audio(AudioEvent::VolumeChanged { .. })
+        ));
+        let event = public_rx.recv().await.unwrap();
+        match event {
+            Event::Snapshot(snapshot) => {
+                let audio = snapshot.audio.expect("audio was not absorbed");
+                assert_eq!(audio.sinks[0].volume, 0.7);
+                assert_eq!(
+                    audio
+                        .default_sink
+                        .expect("the default sink was lost")
+                        .volume,
+                    0.7
+                );
             }
             other => panic!("expected a merged snapshot, got {other:?}"),
         }

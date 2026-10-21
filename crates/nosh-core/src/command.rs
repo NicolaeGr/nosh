@@ -10,6 +10,11 @@ use crate::monitors::MonitorLayout;
 /// `Eq`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
+    AudioSetVolume(f64),
+    AudioStepVolume(f64),
+    AudioSetSourceVolume(f64),
+    AudioSetMuted(bool),
+    AudioSetDefault(u32),
     WorkspaceActivate(String),
     WorkspaceMoveToMonitor {
         workspace: String,
@@ -32,6 +37,18 @@ pub enum Command {
 }
 
 impl Command {
+    /// Whether the audio service owns this command.
+    pub fn is_audio(&self) -> bool {
+        matches!(
+            self,
+            Self::AudioSetVolume(_)
+                | Self::AudioStepVolume(_)
+                | Self::AudioSetSourceVolume(_)
+                | Self::AudioSetMuted(_)
+                | Self::AudioSetDefault(_)
+        )
+    }
+
     /// Whether the monitor service owns this command.
     pub fn is_monitor(&self) -> bool {
         matches!(
@@ -75,5 +92,17 @@ mod tests {
             monitor: "DP-1".to_string(),
         }
         .is_monitor());
+    }
+
+    #[test]
+    fn audio_commands_are_classified_for_routing() {
+        assert!(Command::AudioSetVolume(0.5).is_audio());
+        assert!(Command::AudioStepVolume(-0.05).is_audio());
+        assert!(Command::AudioSetSourceVolume(0.5).is_audio());
+        assert!(Command::AudioSetMuted(true).is_audio());
+        assert!(Command::AudioSetDefault(3).is_audio());
+
+        assert!(!Command::WorkspaceActivate("1".to_string()).is_audio());
+        assert!(!Command::MonitorSetPrimary("DP-1".to_string()).is_audio());
     }
 }

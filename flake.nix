@@ -24,7 +24,11 @@
             rustfmt
             clippy
             rust-analyzer
+            pkg-config
+            libpulseaudio
           ];
+
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libpulseaudio ];
 
           shellHook = "";
         };

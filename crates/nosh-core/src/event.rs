@@ -1,3 +1,4 @@
+use crate::audio::model::{AudioEndpoint, AudioModel, ChangeOrigin, EndpointKind};
 use crate::model::WorkspaceSnapshot;
 use crate::monitors::MonitorLayout;
 
@@ -8,6 +9,7 @@ pub enum Event {
     Snapshot(Snapshot),
     Workspaces(WorkspaceEvent),
     Monitors(MonitorEvent),
+    Audio(AudioEvent),
     ServiceAvailability(Service, bool),
 }
 
@@ -17,6 +19,8 @@ pub struct Snapshot {
     pub workspace_backend: Option<&'static str>,
     pub monitors: Option<MonitorLayout>,
     pub monitor_backend: Option<&'static str>,
+    pub audio: Option<AudioModel>,
+    pub audio_backend: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -24,6 +28,7 @@ pub struct Snapshot {
 pub enum Service {
     Workspaces,
     Monitors,
+    Audio,
 }
 
 #[derive(Debug, Clone)]
@@ -57,6 +62,37 @@ pub enum MonitorEvent {
     LayoutChanged(MonitorLayout),
     /// A write was rejected or could not be delivered.
     ApplyFailed(String),
+    BackendChanged {
+        backend: &'static str,
+    },
+    Unavailable,
+}
+
+#[derive(Debug, Clone)]
+pub enum AudioEvent {
+    /// Fresh state after startup or a backend reconnect.
+    Snapshot(AudioModel),
+    VolumeChanged {
+        kind: EndpointKind,
+        id: u32,
+        volume: f64,
+        old: f64,
+        origin: ChangeOrigin,
+    },
+    MuteChanged {
+        kind: EndpointKind,
+        id: u32,
+        muted: bool,
+        origin: ChangeOrigin,
+    },
+    DefaultChanged {
+        kind: EndpointKind,
+        endpoint: AudioEndpoint,
+    },
+    /// A write was rejected or could not be delivered.
+    WriteFailed(String),
+    /// A read failed after a change notification.
+    ReadFailed(String),
     BackendChanged {
         backend: &'static str,
     },

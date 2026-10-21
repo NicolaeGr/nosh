@@ -279,6 +279,7 @@ Install the CSS and icons according to the chosen resource strategy. If everythi
   power-profiles-daemon,
   wireplumber,
   pipewire,
+  libpulseaudio,
   sqlite,
   pam,
   ddcutil,
@@ -293,7 +294,7 @@ buildRustPackage {
   nativeBuildInputs = [ pkg-config sass ];
   buildInputs = [
     gtk4 gtk4-layer-shell glib networkmanager bluez upower
-    power-profiles-daemon wireplumber pipewire sqlite pam ddcutil brightnessctl
+    power-profiles-daemon wireplumber pipewire libpulseaudio sqlite pam ddcutil brightnessctl
   ];
   postInstall = ''
     install -Dm644 data/com.nicolaegr.nosh.gschema.xml \

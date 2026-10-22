@@ -23,8 +23,8 @@ The surface is a dummy surface. It has no buffer and no visible content. The inh
 `TopBar.Widgets.IdleInhibitor` is a `Gtk.Button` with class `square-icon`, an image child, and a tooltip.
 
 - If unavailable: insensitive, icon `dialog-error`, tooltip `Error: Idle inhibitor not available`.
-- Active: icon `caffeine-cup-full`, tooltip `Active`.
-- Inactive: icon `caffeine-cup-empty`, tooltip `Inactive`.
+- Active: icon `my-caffeine-on-symbolic`, tooltip `Active`.
+- Inactive: icon `my-caffeine-off-symbolic`, tooltip `Inactive`.
 - Click toggles `AppState.idle_inhibitor_active`.
 
 The state is not persisted. A restart starts inactive.
@@ -33,16 +33,16 @@ The state is not persisted. A restart starts inactive.
 
 The current nosh code is an idle inhibitor, not an idle indicator. The naming is easy to confuse.
 
-| Topic | nosh direct code | Astal IdleNotify |
-| --- | --- | --- |
-| Protocol | `zwp_idle_inhibit_manager_v1` | `ext-idle-notify-v1` |
-| Purpose | Prevent the compositor from going idle | Report that a seat has been idle for a timeout |
-| Object | A `zwp_idle_inhibitor_v1` attached to a `wl_surface` | A `Notification` object with `idled` and `resumed` signals |
-| Direction | The shell tells the compositor to stay awake | The compositor tells the shell that the user is idle |
-| State | Active or inactive inhibitor | Idle or resumed notification, with a timeout |
-| Connection | Opens a second `Wl.Display` from `WAYLAND_DISPLAY` | Uses the shared `AstalWl.Registry` |
-| Reconnect | None | Registry tracks global removal |
-| Size | About 149 Vala lines plus a small vapi | About 130 Vala lines plus protocol bindings |
+| Topic      | nosh direct code                                     | Astal IdleNotify                                           |
+| ---------- | ---------------------------------------------------- | ---------------------------------------------------------- |
+| Protocol   | `zwp_idle_inhibit_manager_v1`                        | `ext-idle-notify-v1`                                       |
+| Purpose    | Prevent the compositor from going idle               | Report that a seat has been idle for a timeout             |
+| Object     | A `zwp_idle_inhibitor_v1` attached to a `wl_surface` | A `Notification` object with `idled` and `resumed` signals |
+| Direction  | The shell tells the compositor to stay awake         | The compositor tells the shell that the user is idle       |
+| State      | Active or inactive inhibitor                         | Idle or resumed notification, with a timeout               |
+| Connection | Opens a second `Wl.Display` from `WAYLAND_DISPLAY`   | Uses the shared `AstalWl.Registry`                         |
+| Reconnect  | None                                                 | Registry tracks global removal                             |
+| Size       | About 149 Vala lines plus a small vapi               | About 130 Vala lines plus protocol bindings                |
 
 The two features are complementary. Use the inhibitor for the bar button and the No Sleep toggle. Add idle detection only if the shell gains auto-lock, screen blanking, or a hide-when-idle bar. Do not try to replace one with the other.
 
@@ -101,8 +101,8 @@ Do not persist the inhibitor across restarts by default. A shell restart should 
 `IdleInhibitor` is a `gtk::Button` with class `square-icon`, a centered `gtk::Image`, and a tooltip.
 
 - Unavailable: `set_sensitive(false)`, icon `dialog-error`, tooltip `Error: Idle inhibitor not available`.
-- Active: icon `caffeine-cup-full`, tooltip `Active`.
-- Inactive: icon `caffeine-cup-empty`, tooltip `Inactive`.
+- Active: icon `my-caffeine-on-symbolic`, tooltip `Active`.
+- Inactive: icon `my-caffeine-off-symbolic`, tooltip `Inactive`.
 - Click sends `Command::IdleInhibitToggle`.
 - The button state follows the core event, not the click. If the command fails, the icon stays unchanged.
 

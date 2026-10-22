@@ -1,6 +1,8 @@
+mod idle_inhibitor;
 mod stats;
 mod workspaces;
 
+pub use idle_inhibitor::IdleInhibitor;
 pub use stats::SystemStats;
 pub use workspaces::Workspaces;
 
@@ -10,13 +12,14 @@ use gtk::gdk;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
-use nosh_core::{Core, SystemStats as StatsSnapshot, WorkspaceSnapshot};
+use nosh_core::{Core, IdleInhibitState, SystemStats as StatsSnapshot, WorkspaceSnapshot};
 
 pub struct BarWindow {
     connector: String,
     window: gtk::ApplicationWindow,
     workspaces: Workspaces,
     stats: SystemStats,
+    idle_inhibitor: IdleInhibitor,
 }
 
 impl BarWindow {
@@ -55,8 +58,9 @@ impl BarWindow {
         bar.add_css_class("min-h-6");
         bar.set_hexpand(true);
 
-        let workspaces = Workspaces::new(core);
+        let workspaces = Workspaces::new(Rc::clone(&core));
         let stats = SystemStats::new();
+        let idle_inhibitor = IdleInhibitor::new(core);
 
         let left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         left.set_halign(gtk::Align::Start);
@@ -74,6 +78,7 @@ impl BarWindow {
         right.set_hexpand(true);
         right.add_css_class("Right");
         right.append(stats.widget());
+        right.append(idle_inhibitor.widget());
         right.append(&placeholder("right"));
         bar.set_end_widget(Some(&right));
 
@@ -84,6 +89,7 @@ impl BarWindow {
             window,
             workspaces,
             stats,
+            idle_inhibitor,
         }
     }
 
@@ -101,6 +107,10 @@ impl BarWindow {
 
     pub fn set_stats(&mut self, stats: &StatsSnapshot) {
         self.stats.render(stats);
+    }
+
+    pub fn set_idle_inhibit(&mut self, state: &IdleInhibitState) {
+        self.idle_inhibitor.render(state);
     }
 }
 

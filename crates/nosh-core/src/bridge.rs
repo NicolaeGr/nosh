@@ -9,9 +9,11 @@ use crate::brightness::service::{BrightnessService, BrightnessServiceConfig};
 use crate::command::Command;
 use crate::error::CoreError;
 use crate::event::{
-    AudioEvent, BatteryEvent, BrightnessEvent, Event, MonitorEvent, Snapshot, SystemStatsEvent,
-    WorkspaceEvent,
+    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, Snapshot,
+    SystemStatsEvent, WorkspaceEvent,
 };
+use crate::idle_inhibit::model::IdleInhibitState;
+use crate::idle_inhibit::service::{IdleInhibitService, IdleInhibitServiceConfig};
 use crate::monitors::service::{MonitorService, MonitorServiceConfig};
 use crate::stats::service::{SystemStatsService, SystemStatsServiceConfig};
 use crate::workspaces::service::{WorkspaceService, WorkspaceServiceConfig};
@@ -24,6 +26,7 @@ pub struct CoreSettings {
     pub brightness: BrightnessServiceConfig,
     pub battery: BatteryServiceConfig,
     pub stats: SystemStatsServiceConfig,
+    pub idle_inhibit: IdleInhibitServiceConfig,
 }
 
 /// Handle to the core thread.
@@ -56,6 +59,7 @@ impl Core {
         let (brightness_commands, brightness_receiver) = async_channel::unbounded();
         let (battery_commands, battery_receiver) = async_channel::unbounded();
         let (stats_commands, stats_receiver) = async_channel::unbounded();
+        let (idle_inhibit_commands, idle_inhibit_receiver) = async_channel::unbounded();
 
         let thread = thread::Builder::new()
             .name("nosh-core".to_string())
@@ -63,12 +67,15 @@ impl Core {
                 runtime.block_on(async move {
                     let router = tokio::spawn(route_commands(
                         public_commands,
-                        workspace_commands,
-                        monitor_commands,
-                        audio_commands,
-                        brightness_commands,
-                        battery_commands,
-                        stats_commands,
+                        ServiceSenders {
+                            workspaces: workspace_commands,
+                            monitors: monitor_commands,
+                            audio: audio_commands,
+                            brightness: brightness_commands,
+                            _battery: battery_commands,
+                            _stats: stats_commands,
+                            idle_inhibit: idle_inhibit_commands,
+                        },
                     ));
                     let merger = tokio::spawn(merge_events(service_event_receiver, event_sender));
 
@@ -84,11 +91,21 @@ impl Core {
                         .run(battery_receiver, service_events.clone());
                     let stats = SystemStatsService::from_env_with(settings.stats)
                         .run(stats_receiver, service_events.clone());
+                    let idle_inhibit = IdleInhibitService::from_env_with(settings.idle_inhibit)
+                        .run(idle_inhibit_receiver, service_events.clone());
                     // The services own a clone. Dropping the original lets the
                     // merger finish once every service returns.
                     drop(service_events);
 
-                    tokio::join!(workspaces, monitors, audio, brightness, battery, stats);
+                    tokio::join!(
+                        workspaces,
+                        monitors,
+                        audio,
+                        brightness,
+                        battery,
+                        stats,
+                        idle_inhibit
+                    );
                     router.abort();
                     let _ = merger.await;
                 });
@@ -130,27 +147,31 @@ impl Drop for Core {
 /// Routes each public command to the service that handles it.
 ///
 /// Each service needs exclusive access to its command receiver, so the public
-/// channel fans out to one service channel per service. The battery takes no
-/// commands; its sender is held here so that its receiver closes when the
-/// public channel closes.
-async fn route_commands(
-    commands: Receiver<Command>,
-    workspace_commands: Sender<Command>,
-    monitor_commands: Sender<Command>,
-    audio_commands: Sender<Command>,
-    brightness_commands: Sender<Command>,
-    _battery_commands: Sender<Command>,
-    _stats_commands: Sender<Command>,
-) {
+/// channel fans out to one service channel per service. The battery and stats
+/// services take no commands; their senders are held here so that their
+/// receivers close when the public channel closes.
+struct ServiceSenders {
+    workspaces: Sender<Command>,
+    monitors: Sender<Command>,
+    audio: Sender<Command>,
+    brightness: Sender<Command>,
+    _battery: Sender<Command>,
+    _stats: Sender<Command>,
+    idle_inhibit: Sender<Command>,
+}
+
+async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
     while let Ok(command) = commands.recv().await {
         let sender = if command.is_audio() {
-            &audio_commands
+            &senders.audio
         } else if command.is_brightness() {
-            &brightness_commands
+            &senders.brightness
         } else if command.is_monitor() {
-            &monitor_commands
+            &senders.monitors
+        } else if command.is_idle_inhibit() {
+            &senders.idle_inhibit
         } else {
-            &workspace_commands
+            &senders.workspaces
         };
 
         if sender.send(command).await.is_err() {
@@ -214,6 +235,12 @@ fn merge_snapshot(accumulator: &mut Snapshot, incoming: Snapshot) {
     if incoming.system_stats.is_some() {
         accumulator.system_stats = incoming.system_stats;
     }
+    if incoming.idle_inhibit.is_some() {
+        accumulator.idle_inhibit = incoming.idle_inhibit;
+    }
+    if incoming.idle_inhibit_backend.is_some() {
+        accumulator.idle_inhibit_backend = incoming.idle_inhibit_backend;
+    }
 }
 
 fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
@@ -233,6 +260,7 @@ fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
         Event::Brightness(event) => absorb_brightness(accumulator, event),
         Event::Battery(event) => absorb_battery(accumulator, event),
         Event::SystemStats(event) => absorb_system_stats(accumulator, event),
+        Event::IdleInhibit(event) => absorb_idle_inhibit(accumulator, event),
         _ => {}
     }
 }
@@ -249,6 +277,20 @@ fn absorb_battery(accumulator: &mut Snapshot, event: &BatteryEvent) {
 fn absorb_system_stats(accumulator: &mut Snapshot, event: &SystemStatsEvent) {
     match event {
         SystemStatsEvent::Changed(stats) => accumulator.system_stats = Some(*stats),
+    }
+}
+
+fn absorb_idle_inhibit(accumulator: &mut Snapshot, event: &IdleInhibitEvent) {
+    match event {
+        IdleInhibitEvent::Snapshot { available, active } => {
+            accumulator.idle_inhibit = Some(IdleInhibitState::new(*available, *active));
+        }
+        IdleInhibitEvent::Changed { active } => {
+            if let Some(state) = accumulator.idle_inhibit.as_mut() {
+                state.active = *active;
+            }
+        }
+        IdleInhibitEvent::Unavailable => accumulator.idle_inhibit = None,
     }
 }
 
@@ -382,15 +424,19 @@ mod tests {
         let (brightness_tx, brightness_rx) = async_channel::unbounded();
         let (battery_tx, _battery_rx) = async_channel::unbounded();
         let (stats_tx, _stats_rx) = async_channel::unbounded();
+        let (idle_inhibit_tx, idle_inhibit_rx) = async_channel::unbounded();
 
         let task = tokio::spawn(route_commands(
             public_rx,
-            workspace_tx,
-            monitor_tx,
-            audio_tx,
-            brightness_tx,
-            battery_tx,
-            stats_tx,
+            ServiceSenders {
+                workspaces: workspace_tx,
+                monitors: monitor_tx,
+                audio: audio_tx,
+                brightness: brightness_tx,
+                _battery: battery_tx,
+                _stats: stats_tx,
+                idle_inhibit: idle_inhibit_tx,
+            },
         ));
 
         public_tx
@@ -410,6 +456,7 @@ mod tests {
             .unwrap();
         public_tx.send(Command::AudioSetVolume(0.5)).await.unwrap();
         public_tx.send(Command::BrightnessSet(40.0)).await.unwrap();
+        public_tx.send(Command::IdleInhibitToggle).await.unwrap();
 
         assert_eq!(
             tokio::time::timeout(Duration::from_secs(1), workspace_rx.recv())
@@ -452,6 +499,13 @@ mod tests {
             Command::BrightnessSet(40.0)
         );
         assert!(audio_rx.try_recv().is_err());
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), idle_inhibit_rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            Command::IdleInhibitToggle
+        );
 
         drop(public_tx);
         task.await.unwrap();
@@ -677,6 +731,57 @@ mod tests {
                         .volume,
                     0.7
                 );
+            }
+            other => panic!("expected a merged snapshot, got {other:?}"),
+        }
+
+        drop(service_tx);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn idle_inhibit_updates_are_reflected_in_the_next_full_snapshot() {
+        let (service_tx, service_rx) = async_channel::unbounded();
+        let (public_tx, public_rx) = async_channel::unbounded();
+        let task = tokio::spawn(merge_events(service_rx, public_tx));
+
+        service_tx
+            .send(Event::IdleInhibit(IdleInhibitEvent::Snapshot {
+                available: true,
+                active: false,
+            }))
+            .await
+            .unwrap();
+        service_tx
+            .send(Event::IdleInhibit(IdleInhibitEvent::Changed {
+                active: true,
+            }))
+            .await
+            .unwrap();
+        service_tx
+            .send(Event::Snapshot(Snapshot {
+                idle_inhibit_backend: Some("wayland"),
+                ..Snapshot::default()
+            }))
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            public_rx.recv().await.unwrap(),
+            Event::IdleInhibit(IdleInhibitEvent::Snapshot { .. })
+        ));
+        assert!(matches!(
+            public_rx.recv().await.unwrap(),
+            Event::IdleInhibit(IdleInhibitEvent::Changed { .. })
+        ));
+        match public_rx.recv().await.unwrap() {
+            Event::Snapshot(snapshot) => {
+                let state = snapshot
+                    .idle_inhibit
+                    .expect("the idle inhibitor state was not absorbed");
+                assert!(state.available);
+                assert!(state.active);
+                assert_eq!(snapshot.idle_inhibit_backend, Some("wayland"));
             }
             other => panic!("expected a merged snapshot, got {other:?}"),
         }

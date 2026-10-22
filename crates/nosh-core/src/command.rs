@@ -44,6 +44,15 @@ pub enum Command {
         connector: String,
         enabled: bool,
     },
+    IdleInhibitSet(bool),
+    IdleInhibitToggle,
+}
+
+/// The idle inhibitor command behind a routed [`Command`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdleInhibitCommand {
+    Set(bool),
+    Toggle,
 }
 
 impl Command {
@@ -83,6 +92,20 @@ impl Command {
                 | Self::MonitorSetPrimary(_)
                 | Self::MonitorSetEnabled { .. }
         )
+    }
+
+    /// Whether the idle inhibitor service handles this command.
+    pub fn is_idle_inhibit(&self) -> bool {
+        self.idle_inhibit().is_some()
+    }
+
+    /// The idle inhibitor command, if this is one.
+    pub fn idle_inhibit(&self) -> Option<IdleInhibitCommand> {
+        match self {
+            Self::IdleInhibitSet(value) => Some(IdleInhibitCommand::Set(*value)),
+            Self::IdleInhibitToggle => Some(IdleInhibitCommand::Toggle),
+            _ => None,
+        }
     }
 }
 
@@ -146,5 +169,22 @@ mod tests {
 
         assert!(!Command::WorkspaceActivate("1".to_string()).is_audio());
         assert!(!Command::MonitorSetPrimary("DP-1".to_string()).is_audio());
+    }
+
+    #[test]
+    fn idle_inhibit_commands_are_classified_for_routing() {
+        assert!(Command::IdleInhibitSet(true).is_idle_inhibit());
+        assert!(Command::IdleInhibitToggle.is_idle_inhibit());
+        assert_eq!(
+            Command::IdleInhibitSet(false).idle_inhibit(),
+            Some(IdleInhibitCommand::Set(false))
+        );
+        assert_eq!(
+            Command::IdleInhibitToggle.idle_inhibit(),
+            Some(IdleInhibitCommand::Toggle)
+        );
+
+        assert!(!Command::AudioSetVolume(0.5).is_idle_inhibit());
+        assert!(!Command::BrightnessSet(50.0).is_idle_inhibit());
     }
 }

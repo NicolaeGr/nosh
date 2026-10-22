@@ -1,6 +1,7 @@
 use crate::audio::model::{AudioEndpoint, AudioModel, EndpointKind};
 use crate::battery::model::BatteryModel;
 use crate::brightness::model::{BrightnessDevice, BrightnessDeviceId};
+use crate::idle_inhibit::model::IdleInhibitState;
 use crate::monitors::MonitorLayout;
 use crate::origin::ChangeOrigin;
 use crate::stats::model::SystemStats;
@@ -21,6 +22,7 @@ pub enum Event {
     Brightness(BrightnessEvent),
     Battery(BatteryEvent),
     SystemStats(SystemStatsEvent),
+    IdleInhibit(IdleInhibitEvent),
     ServiceAvailability(Service, bool),
 }
 
@@ -35,6 +37,8 @@ pub struct Snapshot {
     pub brightness: Option<Vec<crate::brightness::model::BrightnessDevice>>,
     pub battery: Option<BatteryModel>,
     pub system_stats: Option<SystemStats>,
+    pub idle_inhibit: Option<IdleInhibitState>,
+    pub idle_inhibit_backend: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -46,6 +50,7 @@ pub enum Service {
     Brightness,
     Battery,
     SystemStats,
+    IdleInhibit,
 }
 
 #[derive(Debug, Clone)]
@@ -149,4 +154,18 @@ pub enum BatteryEvent {
 pub enum SystemStatsEvent {
     /// A fresh CPU and memory sample.
     Changed(SystemStats),
+}
+
+/// The idle inhibitor state.
+///
+/// This feature prevents the compositor from going idle. It is not an idle
+/// notifier and has no idle or resumed events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdleInhibitEvent {
+    /// Fresh state after startup, a reconnect, or the protocol appearing.
+    Snapshot { available: bool, active: bool },
+    /// The compositor accepted a new inhibitor state.
+    Changed { active: bool },
+    /// The protocol is missing or the connection is down. The state is inactive.
+    Unavailable,
 }

@@ -1,167 +1,188 @@
 @define-color brown_2 #9a6a4a;
 
 window.Bar {
-  border: none;
-  box-shadow: none;
-  background-color: rgba(0, 0, 0, 0.1);
+    border: none;
+    box-shadow: none;
+    background-color: rgba(0, 0, 0, 0.1);
+    color: @theme_fg_color;
 }
 
 window.Bar.secondary-instance {
-  border-top: 1px solid alpha(@brown_2, 0.8);
+    border-top: 1px solid alpha(@brown_2, 0.8);
 }
 
 .Bar {
-  min-height: 24px;
+    min-height: 24px;
 }
 
 .min-h-6 {
-  min-height: 24px;
+    min-height: 24px;
 }
 
 .min-h-2 {
-  min-height: 8px;
+    min-height: 8px;
 }
 
 .min-w-8 {
-  min-width: 32px;
+    min-width: 32px;
 }
 
 .p-0 {
-  padding: 0;
+    padding: 0;
 }
 
 .p-1 {
-  padding: 4px;
+    padding: 4px;
 }
 
 .px-1 {
-  padding-left: 4px;
-  padding-right: 4px;
+    padding-left: 4px;
+    padding-right: 4px;
 }
 
 .py-0 {
-  padding-top: 0;
-  padding-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 .mx-0 {
-  margin-left: 0;
-  margin-right: 0;
+    margin-left: 0;
+    margin-right: 0;
 }
 
 .mx-1 {
-  margin-left: 4px;
-  margin-right: 4px;
+    margin-left: 4px;
+    margin-right: 4px;
 }
 
 .mr-2 {
-  margin-right: 8px;
+    margin-right: 8px;
 }
 
 .gap-1 {
-  border-spacing: 4px;
+    border-spacing: 4px;
 }
 
 .text-xs {
-  font-size: 12px;
+    font-size: 12px;
 }
 
 .text-sm {
-  font-size: 14px;
+    font-size: 14px;
 }
 
 .font-semibold {
-  font-weight: 600;
+    font-weight: 600;
 }
 
 .font-bold {
-  font-weight: 700;
+    font-weight: 700;
 }
 
 .opacity-60 {
-  opacity: 0.6;
+    opacity: 0.6;
 }
 
 .transition-all {
-  transition-property: all;
-  transition-duration: 200ms;
-  transition-timing-function: ease-in-out;
+    transition-property: all;
+    transition-duration: 200ms;
+    transition-timing-function: ease-in-out;
 }
 
 .duration-200 {
-  transition-duration: 200ms;
+    transition-duration: 200ms;
 }
 
 .ease-in-out {
-  transition-timing-function: ease-in-out;
+    transition-timing-function: ease-in-out;
 }
 
 .Workspaces {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-top-left-radius: 0;
-  border-bottom-right-radius: 0;
-  border-top-right-radius: 14px;
-  border-bottom-left-radius: 14px;
+    background-color: rgba(255, 255, 255, 0.08);
+    border-top-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-top-right-radius: 14px;
+    border-bottom-left-radius: 14px;
 }
 
 .Workspaces button {
-  font-family: monospace;
-  background-color: transparent;
-  box-shadow: none;
-  border: 2px solid transparent;
-  border-top-left-radius: 0;
-  border-bottom-right-radius: 0;
-  border-top-right-radius: 10px;
-  border-bottom-left-radius: 10px;
+    font-family: monospace;
+    background-color: transparent;
+    box-shadow: none;
+    border: 2px solid transparent;
+    border-top-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 10px;
 }
 
 .Workspaces button:hover {
-  border-bottom-color: @accent_bg_color;
-  border-left-color: @accent_bg_color;
-  transform: scale(1.05);
+    border-bottom-color: @accent_bg_color;
+    border-left-color: @accent_bg_color;
+    transform: scale(1.05);
 }
 
 .Workspaces button.focused {
-  color: @accent_bg_color;
-  background-color: alpha(@accent_bg_color, 0.15);
-  border-bottom-color: @accent_bg_color;
-  border-left-color: @accent_bg_color;
+    color: @accent_bg_color;
+    background-color: alpha(@accent_bg_color, 0.15);
+    border-bottom-color: @accent_bg_color;
+    border-left-color: @accent_bg_color;
 }
 
 .Workspaces button.urgent {
-  border-right-color: @error_color;
-  border-top-color: @error_color;
+    border-right-color: @error_color;
+    border-top-color: @error_color;
 }
 
 .Placeholder {
-  opacity: 0.7;
+    opacity: 0.7;
+}
+
+.square-icon {
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
+    margin-left: 4px;
+    margin-right: 4px;
+    background-color: transparent;
+    box-shadow: none;
+    border: 2px solid transparent;
+    border-radius: 10px;
+}
+
+.square-icon:hover {
+    border-color: @accent_bg_color;
+}
+
+.square-icon:disabled {
+    opacity: 0.6;
 }
 
 .SystemStats {
-  margin-left: 8px;
-  margin-right: 8px;
+    margin-left: 8px;
+    margin-right: 8px;
 }
 
 .SystemStats label {
-  font-weight: 700;
-  min-width: 32px;
-  transition-property: color;
-  transition-duration: 200ms;
-  transition-timing-function: ease-in-out;
+    font-weight: 700;
+    min-width: 32px;
+    transition-property: color;
+    transition-duration: 200ms;
+    transition-timing-function: ease-in-out;
 }
 
 .level-low {
-  color: #22c55e;
+    color: #22c55e;
 }
 
 .level-medium {
-  color: #eab308;
+    color: #eab308;
 }
 
 .level-high {
-  color: #f97316;
+    color: #f97316;
 }
 
 .level-critical {
-  color: #ef4444;
+    color: #ef4444;
 }

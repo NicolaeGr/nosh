@@ -230,8 +230,8 @@ Icons:
 
 ```text
 unavailable -> dialog-error, "Error: Idle inhibitor not available"
-active      -> caffeine-cup-full, "Active"
-inactive    -> caffeine-cup-empty, "Inactive"
+active      -> my-caffeine-on-symbolic, "Active"
+inactive    -> my-caffeine-off-symbolic, "Inactive"
 ```
 
 ## Quick settings
@@ -562,24 +562,24 @@ Confirm opens the auth dialog, then sends the matching `PowerService` command. E
 
 ## CSS class map
 
-| Widget | Classes |
-| --- | --- |
-| Bar | `Bar min-h-6 px-1 py-0 mx-1 text-sm font-bold` |
-| Secondary bar | `secondary-instance` |
-| Workspaces | `Workspaces p-1 mr-2 gap-1` |
-| Workspace button | `min-w-8 min-h-2 p-0 mx-0 text-xs font-semibold opacity-60 transition-all duration-200 ease-in-out` |
-| Square icon | `square-icon` |
-| System stats | `SystemStats`, labels `cpu-stat`, `mem-stat`, `level-*` |
-| Quick settings | `QuickSettings`, `background`, `card`, `item-row`, `divider`, `dropdowns-container` |
-| Large button | `large-button`, `icon`, `status` |
-| Toggle | `QuickSettings-toggle-button`, `QuickSettings-label`, `active` |
-| Slider | `slider`, `numeric`, `volume`, `overamp` |
-| Dropdown | `dropdown`, `header`, `divider`, `visible` |
-| Notifications | `Notifications-outer`, `NotificationsContainer`, `notifications-stack`, `pointer-events-none` |
+| Widget            | Classes                                                                                                                |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Bar               | `Bar min-h-6 px-1 py-0 mx-1 text-sm font-bold`                                                                         |
+| Secondary bar     | `secondary-instance`                                                                                                   |
+| Workspaces        | `Workspaces p-1 mr-2 gap-1`                                                                                            |
+| Workspace button  | `min-w-8 min-h-2 p-0 mx-0 text-xs font-semibold opacity-60 transition-all duration-200 ease-in-out`                    |
+| Square icon       | `square-icon`                                                                                                          |
+| System stats      | `SystemStats`, labels `cpu-stat`, `mem-stat`, `level-*`                                                                |
+| Quick settings    | `QuickSettings`, `background`, `card`, `item-row`, `divider`, `dropdowns-container`                                    |
+| Large button      | `large-button`, `icon`, `status`                                                                                       |
+| Toggle            | `QuickSettings-toggle-button`, `QuickSettings-label`, `active`                                                         |
+| Slider            | `slider`, `numeric`, `volume`, `overamp`                                                                               |
+| Dropdown          | `dropdown`, `header`, `divider`, `visible`                                                                             |
+| Notifications     | `Notifications-outer`, `NotificationsContainer`, `notifications-stack`, `pointer-events-none`                          |
 | Notification card | `NotificationCard p-2 gap-1 rounded-2xl`, `header`, `heading`, `notification-card-appear`, `notification-card-dismiss` |
-| App launcher | `AppLauncher`, `background`, `container`, `SearchBar`, `AppGrid`, `AppItem` |
-| Change indicator | `ChangeIndicator`, `indicator-card`, `indicator-icon`, `indicator-value`, `indicator-bar` |
-| Power menu | `PowerMenu`, `background`, `power-card` |
+| App launcher      | `AppLauncher`, `background`, `container`, `SearchBar`, `AppGrid`, `AppItem`                                            |
+| Change indicator  | `ChangeIndicator`, `indicator-card`, `indicator-icon`, `indicator-value`, `indicator-bar`                              |
+| Power menu        | `PowerMenu`, `background`, `power-card`                                                                                |
 
 Do not rename these classes. Users target them in their own stylesheets.
 

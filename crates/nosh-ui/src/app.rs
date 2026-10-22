@@ -7,7 +7,10 @@ use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
-use nosh_core::{Core, Event, SystemStats, SystemStatsEvent, WorkspaceEvent, WorkspaceSnapshot};
+use nosh_core::{
+    Core, Event, IdleInhibitEvent, IdleInhibitState, SystemStats, SystemStatsEvent, WorkspaceEvent,
+    WorkspaceSnapshot,
+};
 
 use crate::bar::BarWindow;
 
@@ -27,6 +30,7 @@ struct Ui {
     core: Rc<Core>,
     workspaces: RefCell<WorkspaceSnapshot>,
     stats: RefCell<SystemStats>,
+    idle_inhibit: RefCell<IdleInhibitState>,
     bars: RefCell<BTreeMap<String, BarWindow>>,
 }
 
@@ -37,6 +41,7 @@ impl Ui {
             core,
             workspaces: RefCell::new(WorkspaceSnapshot::default()),
             stats: RefCell::new(SystemStats::default()),
+            idle_inhibit: RefCell::new(IdleInhibitState::default()),
             bars: RefCell::new(BTreeMap::new()),
         }
     }
@@ -73,6 +78,7 @@ impl Ui {
             );
             bar.set_workspaces(&self.workspaces.borrow());
             bar.set_stats(&self.stats.borrow());
+            bar.set_idle_inhibit(&self.idle_inhibit.borrow());
             bar.present();
             self.bars.borrow_mut().insert(connector, bar);
         }
@@ -100,6 +106,13 @@ impl Ui {
         }
     }
 
+    fn render_idle_inhibit(&self) {
+        let state = *self.idle_inhibit.borrow();
+        for bar in self.bars.borrow_mut().values_mut() {
+            bar.set_idle_inhibit(&state);
+        }
+    }
+
     fn apply(&self, event: Event) {
         match event {
             Event::Snapshot(snapshot) => {
@@ -111,14 +124,35 @@ impl Ui {
                     *self.stats.borrow_mut() = stats;
                     self.render_stats();
                 }
+                if let Some(state) = snapshot.idle_inhibit {
+                    *self.idle_inhibit.borrow_mut() = state;
+                    self.render_idle_inhibit();
+                }
             }
             Event::Workspaces(event) => self.apply_workspace_event(event),
             Event::SystemStats(SystemStatsEvent::Changed(stats)) => {
                 *self.stats.borrow_mut() = stats;
                 self.render_stats();
             }
+            Event::IdleInhibit(event) => self.apply_idle_inhibit_event(event),
             _ => {}
         }
+    }
+
+    fn apply_idle_inhibit_event(&self, event: IdleInhibitEvent) {
+        match event {
+            IdleInhibitEvent::Snapshot { available, active } => {
+                *self.idle_inhibit.borrow_mut() = IdleInhibitState::new(available, active);
+            }
+            IdleInhibitEvent::Changed { active } => {
+                self.idle_inhibit.borrow_mut().active = active;
+            }
+            IdleInhibitEvent::Unavailable => {
+                *self.idle_inhibit.borrow_mut() = IdleInhibitState::default();
+            }
+        }
+
+        self.render_idle_inhibit();
     }
 
     fn apply_workspace_event(&self, event: WorkspaceEvent) {

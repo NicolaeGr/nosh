@@ -13,6 +13,7 @@ pub mod command;
 pub mod error;
 pub mod event;
 pub mod hyprland;
+pub mod idle_inhibit;
 pub mod monitors;
 pub mod origin;
 pub mod paths;
@@ -39,13 +40,17 @@ pub use brightness::{
     CommandBackend, CommandDeviceConfig, DdcBackend, DdcDisplay, DdcutilBackend,
     SysfsLogindBackend, BRIGHTNESS_STEP, DIM_PERCENT, GAMMA,
 };
-pub use command::Command;
+pub use command::{Command, IdleInhibitCommand};
 pub use error::{
     BackendError, BrightnessError, CoreError, EventParseError, MonitorError, PathError, StatsError,
 };
 pub use event::{
-    AudioEvent, BatteryEvent, BrightnessEvent, Event, MonitorEvent, Service, Snapshot,
-    SystemStatsEvent, WorkspaceEvent,
+    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, Service,
+    Snapshot, SystemStatsEvent, WorkspaceEvent,
+};
+pub use idle_inhibit::{
+    IdleInhibitBackend, IdleInhibitService, IdleInhibitServiceConfig, IdleInhibitState,
+    InhibitBackendEvent, InhibitCommand, InhibitSession, WaylandBackend,
 };
 pub use monitors::{
     extend, mirror, panning, preset_layout, resolve_target, score, select_monitor, single, Corner,

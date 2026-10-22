@@ -4,10 +4,13 @@ use async_channel::{Receiver, Sender};
 
 use crate::audio::model::{volume_icon, AudioEndpoint, AudioModel, EndpointKind};
 use crate::audio::service::{AudioService, AudioServiceConfig};
+use crate::battery::service::{BatteryService, BatteryServiceConfig};
 use crate::brightness::service::{BrightnessService, BrightnessServiceConfig};
 use crate::command::Command;
 use crate::error::CoreError;
-use crate::event::{AudioEvent, BrightnessEvent, Event, MonitorEvent, Snapshot, WorkspaceEvent};
+use crate::event::{
+    AudioEvent, BatteryEvent, BrightnessEvent, Event, MonitorEvent, Snapshot, WorkspaceEvent,
+};
 use crate::monitors::service::{MonitorService, MonitorServiceConfig};
 use crate::workspaces::service::{WorkspaceService, WorkspaceServiceConfig};
 
@@ -17,6 +20,7 @@ pub struct CoreSettings {
     pub monitors: MonitorServiceConfig,
     pub audio: AudioServiceConfig,
     pub brightness: BrightnessServiceConfig,
+    pub battery: BatteryServiceConfig,
 }
 
 /// Handle to the core thread.
@@ -47,6 +51,7 @@ impl Core {
         let (monitor_commands, monitor_receiver) = async_channel::unbounded();
         let (audio_commands, audio_receiver) = async_channel::unbounded();
         let (brightness_commands, brightness_receiver) = async_channel::unbounded();
+        let (battery_commands, battery_receiver) = async_channel::unbounded();
 
         let thread = thread::Builder::new()
             .name("nosh-core".to_string())
@@ -58,6 +63,7 @@ impl Core {
                         monitor_commands,
                         audio_commands,
                         brightness_commands,
+                        battery_commands,
                     ));
                     let merger = tokio::spawn(merge_events(service_event_receiver, event_sender));
 
@@ -69,11 +75,13 @@ impl Core {
                         .run(audio_receiver, service_events.clone());
                     let brightness = BrightnessService::from_env_with(settings.brightness)
                         .run(brightness_receiver, service_events.clone());
+                    let battery = BatteryService::from_env_with(settings.battery)
+                        .run(battery_receiver, service_events.clone());
                     // The services own a clone. Dropping the original lets the
                     // merger finish once every service returns.
                     drop(service_events);
 
-                    tokio::join!(workspaces, monitors, audio, brightness);
+                    tokio::join!(workspaces, monitors, audio, brightness, battery);
                     router.abort();
                     let _ = merger.await;
                 });
@@ -115,13 +123,16 @@ impl Drop for Core {
 /// Routes each public command to the service that handles it.
 ///
 /// Each service needs exclusive access to its command receiver, so the public
-/// channel fans out to four service channels.
+/// channel fans out to one service channel per service. The battery takes no
+/// commands; its sender is held here so that its receiver closes when the
+/// public channel closes.
 async fn route_commands(
     commands: Receiver<Command>,
     workspace_commands: Sender<Command>,
     monitor_commands: Sender<Command>,
     audio_commands: Sender<Command>,
     brightness_commands: Sender<Command>,
+    _battery_commands: Sender<Command>,
 ) {
     while let Ok(command) = commands.recv().await {
         let sender = if command.is_audio() {
@@ -189,6 +200,9 @@ fn merge_snapshot(accumulator: &mut Snapshot, incoming: Snapshot) {
     if incoming.brightness.is_some() {
         accumulator.brightness = incoming.brightness;
     }
+    if incoming.battery.is_some() {
+        accumulator.battery = incoming.battery;
+    }
 }
 
 fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
@@ -206,7 +220,17 @@ fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
         }
         Event::Audio(event) => absorb_audio(accumulator, event),
         Event::Brightness(event) => absorb_brightness(accumulator, event),
+        Event::Battery(event) => absorb_battery(accumulator, event),
         _ => {}
+    }
+}
+
+fn absorb_battery(accumulator: &mut Snapshot, event: &BatteryEvent) {
+    match event {
+        BatteryEvent::Snapshot(model) | BatteryEvent::Changed(model) => {
+            accumulator.battery = Some(model.clone());
+        }
+        BatteryEvent::Unavailable => accumulator.battery = None,
     }
 }
 
@@ -338,6 +362,7 @@ mod tests {
         let (monitor_tx, monitor_rx) = async_channel::unbounded();
         let (audio_tx, audio_rx) = async_channel::unbounded();
         let (brightness_tx, brightness_rx) = async_channel::unbounded();
+        let (battery_tx, _battery_rx) = async_channel::unbounded();
 
         let task = tokio::spawn(route_commands(
             public_rx,
@@ -345,6 +370,7 @@ mod tests {
             monitor_tx,
             audio_tx,
             brightness_tx,
+            battery_tx,
         ));
 
         public_tx

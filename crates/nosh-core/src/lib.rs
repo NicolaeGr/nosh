@@ -6,6 +6,7 @@
 
 pub mod audio;
 pub mod backoff;
+pub mod battery;
 pub mod bridge;
 pub mod brightness;
 pub mod command;
@@ -24,6 +25,11 @@ pub use audio::{
     AudioCapabilities, AudioEndpoint, AudioModel, AudioService, AudioServiceConfig, EndpointKind,
     StaticAudioBackend, WpctlBackend, BAR_MAX_VOLUME, MAX_SOURCE_VOLUME, MAX_VOLUME, VOLUME_STEP,
 };
+pub use battery::{
+    icon_name, normalize_percentage, tooltip, BatteryBackend, BatteryBackendEvent,
+    BatteryBackendRef, BatteryCandidate, BatteryModel, BatteryProperties, BatteryService,
+    BatteryServiceConfig, BatteryState, ResolvedBattery, UpowerBackend,
+};
 pub use bridge::{Core, CoreSettings};
 pub use brightness::{
     clamp_percent, percent_from_raw, raw_from_percent, BrightnessBackend, BrightnessCandidate,
@@ -37,7 +43,8 @@ pub use error::{
     BackendError, BrightnessError, CoreError, EventParseError, MonitorError, PathError,
 };
 pub use event::{
-    AudioEvent, BrightnessEvent, Event, MonitorEvent, Service, Snapshot, WorkspaceEvent,
+    AudioEvent, BatteryEvent, BrightnessEvent, Event, MonitorEvent, Service, Snapshot,
+    WorkspaceEvent,
 };
 pub use monitors::{
     extend, mirror, panning, preset_layout, resolve_target, score, select_monitor, single, Corner,

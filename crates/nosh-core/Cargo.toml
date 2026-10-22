@@ -10,12 +10,14 @@ description = "System state for the nosh shell, without GTK"
 async-channel.workspace = true
 async-trait.workspace = true
 bitflags.workspace = true
+futures-util.workspace = true
 libpulse-binding = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+zbus.workspace = true
 
 [features]
 default = ["audio-pulse"]

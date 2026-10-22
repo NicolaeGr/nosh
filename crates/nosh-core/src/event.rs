@@ -1,10 +1,15 @@
 use crate::audio::model::{AudioEndpoint, AudioModel, EndpointKind};
+use crate::battery::model::BatteryModel;
 use crate::brightness::model::{BrightnessDevice, BrightnessDeviceId};
 use crate::monitors::MonitorLayout;
 use crate::origin::ChangeOrigin;
 use crate::workspaces::model::WorkspaceSnapshot;
 
 /// Every service publishes state through this enum.
+///
+/// A snapshot carries the complete state of every service, so it is much
+/// larger than a single-service event by design.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum Event {
     /// Complete state for every service that has started.
@@ -13,6 +18,7 @@ pub enum Event {
     Monitors(MonitorEvent),
     Audio(AudioEvent),
     Brightness(BrightnessEvent),
+    Battery(BatteryEvent),
     ServiceAvailability(Service, bool),
 }
 
@@ -25,6 +31,7 @@ pub struct Snapshot {
     pub audio: Option<AudioModel>,
     pub audio_backend: Option<&'static str>,
     pub brightness: Option<Vec<crate::brightness::model::BrightnessDevice>>,
+    pub battery: Option<BatteryModel>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -34,6 +41,7 @@ pub enum Service {
     Monitors,
     Audio,
     Brightness,
+    Battery,
 }
 
 #[derive(Debug, Clone)]
@@ -120,5 +128,15 @@ pub enum BrightnessEvent {
         target: f64,
     },
     Restored,
+    Unavailable,
+}
+
+#[derive(Debug, Clone)]
+pub enum BatteryEvent {
+    /// Fresh state after startup or a reconnect.
+    Snapshot(BatteryModel),
+    /// One or more display device properties changed. The model is complete.
+    Changed(BatteryModel),
+    /// UPower is missing or reports no battery.
     Unavailable,
 }

@@ -3,6 +3,7 @@ use crate::battery::model::BatteryModel;
 use crate::brightness::model::{BrightnessDevice, BrightnessDeviceId};
 use crate::monitors::MonitorLayout;
 use crate::origin::ChangeOrigin;
+use crate::stats::model::SystemStats;
 use crate::workspaces::model::WorkspaceSnapshot;
 
 /// Every service publishes state through this enum.
@@ -19,6 +20,7 @@ pub enum Event {
     Audio(AudioEvent),
     Brightness(BrightnessEvent),
     Battery(BatteryEvent),
+    SystemStats(SystemStatsEvent),
     ServiceAvailability(Service, bool),
 }
 
@@ -32,6 +34,7 @@ pub struct Snapshot {
     pub audio_backend: Option<&'static str>,
     pub brightness: Option<Vec<crate::brightness::model::BrightnessDevice>>,
     pub battery: Option<BatteryModel>,
+    pub system_stats: Option<SystemStats>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -42,6 +45,7 @@ pub enum Service {
     Audio,
     Brightness,
     Battery,
+    SystemStats,
 }
 
 #[derive(Debug, Clone)]
@@ -139,4 +143,10 @@ pub enum BatteryEvent {
     Changed(BatteryModel),
     /// UPower is missing or reports no battery.
     Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemStatsEvent {
+    /// A fresh CPU and memory sample.
+    Changed(SystemStats),
 }

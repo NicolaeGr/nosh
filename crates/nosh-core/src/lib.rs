@@ -16,6 +16,7 @@ pub mod hyprland;
 pub mod monitors;
 pub mod origin;
 pub mod paths;
+pub mod stats;
 pub mod workspaces;
 
 #[cfg(feature = "audio-pulse")]
@@ -40,11 +41,11 @@ pub use brightness::{
 };
 pub use command::Command;
 pub use error::{
-    BackendError, BrightnessError, CoreError, EventParseError, MonitorError, PathError,
+    BackendError, BrightnessError, CoreError, EventParseError, MonitorError, PathError, StatsError,
 };
 pub use event::{
     AudioEvent, BatteryEvent, BrightnessEvent, Event, MonitorEvent, Service, Snapshot,
-    WorkspaceEvent,
+    SystemStatsEvent, WorkspaceEvent,
 };
 pub use monitors::{
     extend, mirror, panning, preset_layout, resolve_target, score, select_monitor, single, Corner,
@@ -53,6 +54,11 @@ pub use monitors::{
 };
 pub use origin::ChangeOrigin;
 pub use paths::{HyprlandPaths, NoshPaths};
+pub use stats::{
+    cpu_percent, parse_cpu_stat, parse_meminfo, CpuTimes, MemoryInfo, ProcStatsSource, StatsSource,
+    StatsSourceRef, SystemStats, SystemStatsService, SystemStatsServiceConfig, DEFAULT_INTERVAL,
+    MEMINFO_PATH, STAT_PATH,
+};
 pub use workspaces::{
     normalize_address, resolve_workspace, sort_workspaces, ResolvedWorkspace,
     StaticWorkspaceBackend, WorkspaceBackend, WorkspaceBackendEvent, WorkspaceBackendRef,

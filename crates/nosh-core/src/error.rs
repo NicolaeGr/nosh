@@ -86,6 +86,15 @@ pub enum BrightnessError {
     Snapshot(String),
 }
 
+/// A system stats read or parse failed.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum StatsError {
+    #[error("cannot read {path}: {message}")]
+    Read { path: String, message: String },
+    #[error("cannot parse {path}: {message}")]
+    Parse { path: String, message: String },
+}
+
 /// A Hyprland event line that does not match the documented payload shape.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EventParseError {

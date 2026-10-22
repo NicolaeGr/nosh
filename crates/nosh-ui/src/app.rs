@@ -8,8 +8,9 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::{
-    Core, Event, IdleInhibitEvent, IdleInhibitState, SystemStats, SystemStatsEvent, WorkspaceEvent,
-    WorkspaceSnapshot,
+    volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel, Core,
+    EndpointKind, Event, IdleInhibitEvent, IdleInhibitState, SystemStats, SystemStatsEvent,
+    WorkspaceEvent, WorkspaceSnapshot,
 };
 
 use crate::bar::BarWindow;
@@ -30,6 +31,8 @@ struct Ui {
     core: Rc<Core>,
     workspaces: RefCell<WorkspaceSnapshot>,
     stats: RefCell<SystemStats>,
+    audio: RefCell<AudioModel>,
+    battery: RefCell<BatteryModel>,
     idle_inhibit: RefCell<IdleInhibitState>,
     bars: RefCell<BTreeMap<String, BarWindow>>,
 }
@@ -41,6 +44,8 @@ impl Ui {
             core,
             workspaces: RefCell::new(WorkspaceSnapshot::default()),
             stats: RefCell::new(SystemStats::default()),
+            audio: RefCell::new(AudioModel::default()),
+            battery: RefCell::new(BatteryModel::default()),
             idle_inhibit: RefCell::new(IdleInhibitState::default()),
             bars: RefCell::new(BTreeMap::new()),
         }
@@ -78,6 +83,8 @@ impl Ui {
             );
             bar.set_workspaces(&self.workspaces.borrow());
             bar.set_stats(&self.stats.borrow());
+            bar.set_audio(&self.audio.borrow());
+            bar.set_battery(&self.battery.borrow());
             bar.set_idle_inhibit(&self.idle_inhibit.borrow());
             bar.present();
             self.bars.borrow_mut().insert(connector, bar);
@@ -113,6 +120,20 @@ impl Ui {
         }
     }
 
+    fn render_audio(&self) {
+        let model = self.audio.borrow();
+        for bar in self.bars.borrow_mut().values_mut() {
+            bar.set_audio(&model);
+        }
+    }
+
+    fn render_battery(&self) {
+        let model = self.battery.borrow();
+        for bar in self.bars.borrow_mut().values_mut() {
+            bar.set_battery(&model);
+        }
+    }
+
     fn apply(&self, event: Event) {
         match event {
             Event::Snapshot(snapshot) => {
@@ -124,6 +145,14 @@ impl Ui {
                     *self.stats.borrow_mut() = stats;
                     self.render_stats();
                 }
+                if let Some(audio) = snapshot.audio {
+                    *self.audio.borrow_mut() = audio;
+                    self.render_audio();
+                }
+                if let Some(battery) = snapshot.battery {
+                    *self.battery.borrow_mut() = battery;
+                    self.render_battery();
+                }
                 if let Some(state) = snapshot.idle_inhibit {
                     *self.idle_inhibit.borrow_mut() = state;
                     self.render_idle_inhibit();
@@ -134,9 +163,67 @@ impl Ui {
                 *self.stats.borrow_mut() = stats;
                 self.render_stats();
             }
+            Event::Audio(event) => self.apply_audio_event(event),
+            Event::Battery(event) => self.apply_battery_event(event),
             Event::IdleInhibit(event) => self.apply_idle_inhibit_event(event),
             _ => {}
         }
+    }
+
+    fn apply_audio_event(&self, event: AudioEvent) {
+        {
+            let mut model = self.audio.borrow_mut();
+            match event {
+                AudioEvent::Snapshot(snapshot) => *model = snapshot,
+                AudioEvent::VolumeChanged {
+                    kind, id, volume, ..
+                } => update_endpoint(&mut model, kind, id, |endpoint| {
+                    endpoint.volume = volume;
+                    endpoint.icon_name =
+                        volume_icon(kind, endpoint.volume, endpoint.muted).to_string();
+                }),
+                AudioEvent::MuteChanged {
+                    kind, id, muted, ..
+                } => update_endpoint(&mut model, kind, id, |endpoint| {
+                    endpoint.muted = muted;
+                    endpoint.icon_name =
+                        volume_icon(kind, endpoint.volume, endpoint.muted).to_string();
+                }),
+                AudioEvent::DefaultChanged { kind, endpoint } => match kind {
+                    EndpointKind::Sink => {
+                        for sink in &mut model.sinks {
+                            sink.is_default = sink.id == endpoint.id;
+                        }
+                        model.default_sink = Some(endpoint);
+                    }
+                    EndpointKind::Source => {
+                        for source in &mut model.sources {
+                            source.is_default = source.id == endpoint.id;
+                        }
+                        model.default_source = Some(endpoint);
+                    }
+                },
+                AudioEvent::Unavailable => *model = AudioModel::default(),
+                AudioEvent::WriteFailed(_)
+                | AudioEvent::ReadFailed(_)
+                | AudioEvent::BackendChanged { .. } => {}
+            }
+        }
+
+        self.render_audio();
+    }
+
+    fn apply_battery_event(&self, event: BatteryEvent) {
+        match event {
+            BatteryEvent::Snapshot(model) | BatteryEvent::Changed(model) => {
+                *self.battery.borrow_mut() = model;
+            }
+            BatteryEvent::Unavailable => {
+                *self.battery.borrow_mut() = BatteryModel::default();
+            }
+        }
+
+        self.render_battery();
     }
 
     fn apply_idle_inhibit_event(&self, event: IdleInhibitEvent) {
@@ -184,6 +271,29 @@ impl Ui {
         }
 
         self.render_workspaces();
+    }
+}
+
+fn update_endpoint(
+    model: &mut AudioModel,
+    kind: EndpointKind,
+    id: u32,
+    update: impl Fn(&mut AudioEndpoint),
+) {
+    let endpoints = match kind {
+        EndpointKind::Sink => &mut model.sinks,
+        EndpointKind::Source => &mut model.sources,
+    };
+
+    if let Some(endpoint) = endpoints.iter_mut().find(|endpoint| endpoint.id == id) {
+        update(endpoint);
+    }
+
+    if let Some(endpoint) = model
+        .default_for_mut(kind)
+        .filter(|endpoint| endpoint.id == id)
+    {
+        update(endpoint);
     }
 }
 

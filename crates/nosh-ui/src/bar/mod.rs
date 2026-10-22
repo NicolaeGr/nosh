@@ -1,9 +1,13 @@
+mod battery;
 mod idle_inhibitor;
 mod stats;
+mod volume;
 mod workspaces;
 
+pub use battery::Battery;
 pub use idle_inhibitor::IdleInhibitor;
 pub use stats::SystemStats;
+pub use volume::Volume;
 pub use workspaces::Workspaces;
 
 use std::rc::Rc;
@@ -12,7 +16,10 @@ use gtk::gdk;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
-use nosh_core::{Core, IdleInhibitState, SystemStats as StatsSnapshot, WorkspaceSnapshot};
+use nosh_core::{
+    AudioModel, BatteryModel, Core, IdleInhibitState, SystemStats as StatsSnapshot,
+    WorkspaceSnapshot,
+};
 
 pub struct BarWindow {
     connector: String,
@@ -20,6 +27,8 @@ pub struct BarWindow {
     workspaces: Workspaces,
     stats: SystemStats,
     idle_inhibitor: IdleInhibitor,
+    battery: Battery,
+    volume: Volume,
 }
 
 impl BarWindow {
@@ -60,7 +69,9 @@ impl BarWindow {
 
         let workspaces = Workspaces::new(Rc::clone(&core));
         let stats = SystemStats::new();
-        let idle_inhibitor = IdleInhibitor::new(core);
+        let idle_inhibitor = IdleInhibitor::new(Rc::clone(&core));
+        let battery = Battery::new();
+        let volume = Volume::new(core);
 
         let left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         left.set_halign(gtk::Align::Start);
@@ -79,6 +90,8 @@ impl BarWindow {
         right.add_css_class("Right");
         right.append(stats.widget());
         right.append(idle_inhibitor.widget());
+        right.append(battery.widget());
+        right.append(volume.widget());
         right.append(&placeholder("right"));
         bar.set_end_widget(Some(&right));
 
@@ -90,6 +103,8 @@ impl BarWindow {
             workspaces,
             stats,
             idle_inhibitor,
+            battery,
+            volume,
         }
     }
 
@@ -111,6 +126,14 @@ impl BarWindow {
 
     pub fn set_idle_inhibit(&mut self, state: &IdleInhibitState) {
         self.idle_inhibitor.render(state);
+    }
+
+    pub fn set_battery(&mut self, model: &BatteryModel) {
+        self.battery.render(model);
+    }
+
+    pub fn set_audio(&mut self, model: &AudioModel) {
+        self.volume.render(model);
     }
 }
 

@@ -7,7 +7,7 @@ use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
-use nosh_core::{Core, Event, WorkspaceEvent, WorkspaceSnapshot};
+use nosh_core::{Core, Event, SystemStats, SystemStatsEvent, WorkspaceEvent, WorkspaceSnapshot};
 
 use crate::bar::BarWindow;
 
@@ -26,6 +26,7 @@ struct Ui {
     app: gtk::Application,
     core: Rc<Core>,
     workspaces: RefCell<WorkspaceSnapshot>,
+    stats: RefCell<SystemStats>,
     bars: RefCell<BTreeMap<String, BarWindow>>,
 }
 
@@ -35,6 +36,7 @@ impl Ui {
             app,
             core,
             workspaces: RefCell::new(WorkspaceSnapshot::default()),
+            stats: RefCell::new(SystemStats::default()),
             bars: RefCell::new(BTreeMap::new()),
         }
     }
@@ -70,6 +72,7 @@ impl Ui {
                 Rc::clone(&self.core),
             );
             bar.set_workspaces(&self.workspaces.borrow());
+            bar.set_stats(&self.stats.borrow());
             bar.present();
             self.bars.borrow_mut().insert(connector, bar);
         }
@@ -90,6 +93,13 @@ impl Ui {
         }
     }
 
+    fn render_stats(&self) {
+        let stats = *self.stats.borrow();
+        for bar in self.bars.borrow_mut().values_mut() {
+            bar.set_stats(&stats);
+        }
+    }
+
     fn apply(&self, event: Event) {
         match event {
             Event::Snapshot(snapshot) => {
@@ -97,8 +107,16 @@ impl Ui {
                     *self.workspaces.borrow_mut() = workspaces;
                     self.render_workspaces();
                 }
+                if let Some(stats) = snapshot.system_stats {
+                    *self.stats.borrow_mut() = stats;
+                    self.render_stats();
+                }
             }
             Event::Workspaces(event) => self.apply_workspace_event(event),
+            Event::SystemStats(SystemStatsEvent::Changed(stats)) => {
+                *self.stats.borrow_mut() = stats;
+                self.render_stats();
+            }
             _ => {}
         }
     }

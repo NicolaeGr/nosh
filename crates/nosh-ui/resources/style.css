@@ -136,3 +136,32 @@ window.Bar.secondary-instance {
 .Placeholder {
   opacity: 0.7;
 }
+
+.SystemStats {
+  margin-left: 8px;
+  margin-right: 8px;
+}
+
+.SystemStats label {
+  font-weight: 700;
+  min-width: 32px;
+  transition-property: color;
+  transition-duration: 200ms;
+  transition-timing-function: ease-in-out;
+}
+
+.level-low {
+  color: #22c55e;
+}
+
+.level-medium {
+  color: #eab308;
+}
+
+.level-high {
+  color: #f97316;
+}
+
+.level-critical {
+  color: #ef4444;
+}

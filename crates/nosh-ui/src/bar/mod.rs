@@ -1,5 +1,7 @@
+mod stats;
 mod workspaces;
 
+pub use stats::SystemStats;
 pub use workspaces::Workspaces;
 
 use std::rc::Rc;
@@ -8,12 +10,13 @@ use gtk::gdk;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
-use nosh_core::{Core, WorkspaceSnapshot};
+use nosh_core::{Core, SystemStats as StatsSnapshot, WorkspaceSnapshot};
 
 pub struct BarWindow {
     connector: String,
     window: gtk::ApplicationWindow,
     workspaces: Workspaces,
+    stats: SystemStats,
 }
 
 impl BarWindow {
@@ -53,6 +56,7 @@ impl BarWindow {
         bar.set_hexpand(true);
 
         let workspaces = Workspaces::new(core);
+        let stats = SystemStats::new();
 
         let left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         left.set_halign(gtk::Align::Start);
@@ -69,6 +73,7 @@ impl BarWindow {
         right.set_halign(gtk::Align::End);
         right.set_hexpand(true);
         right.add_css_class("Right");
+        right.append(stats.widget());
         right.append(&placeholder("right"));
         bar.set_end_widget(Some(&right));
 
@@ -78,6 +83,7 @@ impl BarWindow {
             connector,
             window,
             workspaces,
+            stats,
         }
     }
 
@@ -91,6 +97,10 @@ impl BarWindow {
 
     pub fn set_workspaces(&mut self, snapshot: &WorkspaceSnapshot) {
         self.workspaces.render(snapshot, &self.connector);
+    }
+
+    pub fn set_stats(&mut self, stats: &StatsSnapshot) {
+        self.stats.render(stats);
     }
 }
 

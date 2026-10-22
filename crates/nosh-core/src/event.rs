@@ -1,4 +1,5 @@
 use crate::audio::model::{AudioEndpoint, AudioModel, ChangeOrigin, EndpointKind};
+use crate::brightness::model::BrightnessEvent;
 use crate::model::WorkspaceSnapshot;
 use crate::monitors::MonitorLayout;
 
@@ -10,6 +11,7 @@ pub enum Event {
     Workspaces(WorkspaceEvent),
     Monitors(MonitorEvent),
     Audio(AudioEvent),
+    Brightness(BrightnessEvent),
     ServiceAvailability(Service, bool),
 }
 
@@ -21,6 +23,7 @@ pub struct Snapshot {
     pub monitor_backend: Option<&'static str>,
     pub audio: Option<AudioModel>,
     pub audio_backend: Option<&'static str>,
+    pub brightness: Option<Vec<crate::brightness::model::BrightnessDevice>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -29,6 +32,7 @@ pub enum Service {
     Workspaces,
     Monitors,
     Audio,
+    Brightness,
 }
 
 #[derive(Debug, Clone)]

@@ -1,3 +1,4 @@
+use crate::brightness::model::BrightnessDeviceId;
 use crate::monitors::LayoutPreset;
 use crate::monitors::MonitorLayout;
 
@@ -15,6 +16,18 @@ pub enum Command {
     AudioSetSourceVolume(f64),
     AudioSetMuted(bool),
     AudioSetDefault(u32),
+    BrightnessSet(f64),
+    BrightnessStep(f64),
+    BrightnessSetTarget {
+        device: BrightnessDeviceId,
+        percent: f64,
+    },
+    BrightnessSnapshot,
+    BrightnessDim {
+        value: f64,
+    },
+    BrightnessRestore,
+    BrightnessRescan,
     WorkspaceActivate(String),
     WorkspaceMoveToMonitor {
         workspace: String,
@@ -46,6 +59,20 @@ impl Command {
                 | Self::AudioSetSourceVolume(_)
                 | Self::AudioSetMuted(_)
                 | Self::AudioSetDefault(_)
+        )
+    }
+
+    /// Whether the brightness service owns this command.
+    pub fn is_brightness(&self) -> bool {
+        matches!(
+            self,
+            Self::BrightnessSet(_)
+                | Self::BrightnessStep(_)
+                | Self::BrightnessSetTarget { .. }
+                | Self::BrightnessSnapshot
+                | Self::BrightnessDim { .. }
+                | Self::BrightnessRestore
+                | Self::BrightnessRescan
         )
     }
 
@@ -92,6 +119,24 @@ mod tests {
             monitor: "DP-1".to_string(),
         }
         .is_monitor());
+    }
+
+    #[test]
+    fn brightness_commands_are_classified_for_routing() {
+        assert!(Command::BrightnessSet(50.0).is_brightness());
+        assert!(Command::BrightnessStep(5.0).is_brightness());
+        assert!(Command::BrightnessSetTarget {
+            device: BrightnessDeviceId::Backlight("intel_backlight".to_string()),
+            percent: 40.0,
+        }
+        .is_brightness());
+        assert!(Command::BrightnessSnapshot.is_brightness());
+        assert!(Command::BrightnessDim { value: 10.0 }.is_brightness());
+        assert!(Command::BrightnessRestore.is_brightness());
+        assert!(Command::BrightnessRescan.is_brightness());
+
+        assert!(!Command::AudioSetVolume(0.5).is_brightness());
+        assert!(!Command::MonitorSetPrimary("DP-1".to_string()).is_brightness());
     }
 
     #[test]

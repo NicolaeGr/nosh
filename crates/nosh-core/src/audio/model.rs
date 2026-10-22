@@ -34,13 +34,7 @@ impl EndpointKind {
     }
 }
 
-/// Why a value changed. The change indicator only shows `User`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChangeOrigin {
-    User,
-    External,
-    Initial,
-}
+pub use crate::origin::ChangeOrigin;
 
 /// One sink or source.
 #[derive(Debug, Clone, PartialEq)]

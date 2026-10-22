@@ -4,6 +4,8 @@ use async_channel::{Receiver, Sender};
 
 use crate::audio::model::{volume_icon, AudioEndpoint, AudioModel, EndpointKind};
 use crate::audio::service::{AudioService, AudioServiceConfig};
+use crate::brightness::model::BrightnessEvent;
+use crate::brightness::service::{BrightnessService, BrightnessServiceConfig};
 use crate::command::Command;
 use crate::error::CoreError;
 use crate::event::{AudioEvent, Event, MonitorEvent, Snapshot, WorkspaceEvent};
@@ -15,6 +17,7 @@ pub struct CoreSettings {
     pub workspaces: WorkspaceServiceConfig,
     pub monitors: MonitorServiceConfig,
     pub audio: AudioServiceConfig,
+    pub brightness: BrightnessServiceConfig,
 }
 
 /// Handle to the core thread.
@@ -44,6 +47,7 @@ impl Core {
         let (workspace_commands, workspace_receiver) = async_channel::unbounded();
         let (monitor_commands, monitor_receiver) = async_channel::unbounded();
         let (audio_commands, audio_receiver) = async_channel::unbounded();
+        let (brightness_commands, brightness_receiver) = async_channel::unbounded();
 
         let thread = thread::Builder::new()
             .name("nosh-core".to_string())
@@ -54,6 +58,7 @@ impl Core {
                         workspace_commands,
                         monitor_commands,
                         audio_commands,
+                        brightness_commands,
                     ));
                     let merger = tokio::spawn(merge_events(service_event_receiver, event_sender));
 
@@ -63,11 +68,13 @@ impl Core {
                         .run(monitor_receiver, service_events.clone());
                     let audio = AudioService::from_env_with(settings.audio)
                         .run(audio_receiver, service_events.clone());
+                    let brightness = BrightnessService::from_env_with(settings.brightness)
+                        .run(brightness_receiver, service_events.clone());
                     // The services own a clone. Dropping the original lets the
                     // merger finish once every service returns.
                     drop(service_events);
 
-                    tokio::join!(workspaces, monitors, audio);
+                    tokio::join!(workspaces, monitors, audio, brightness);
                     router.abort();
                     let _ = merger.await;
                 });
@@ -115,10 +122,13 @@ async fn route_commands(
     workspace_commands: Sender<Command>,
     monitor_commands: Sender<Command>,
     audio_commands: Sender<Command>,
+    brightness_commands: Sender<Command>,
 ) {
     while let Ok(command) = commands.recv().await {
         let sender = if command.is_audio() {
             &audio_commands
+        } else if command.is_brightness() {
+            &brightness_commands
         } else if command.is_monitor() {
             &monitor_commands
         } else {
@@ -178,6 +188,9 @@ fn merge_snapshot(accumulator: &mut Snapshot, incoming: Snapshot) {
     if incoming.audio_backend.is_some() {
         accumulator.audio_backend = incoming.audio_backend;
     }
+    if incoming.brightness.is_some() {
+        accumulator.brightness = incoming.brightness;
+    }
 }
 
 fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
@@ -194,7 +207,35 @@ fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
             accumulator.monitors = Some(layout.clone());
         }
         Event::Audio(event) => absorb_audio(accumulator, event),
+        Event::Brightness(event) => absorb_brightness(accumulator, event),
         _ => {}
+    }
+}
+
+fn absorb_brightness(accumulator: &mut Snapshot, event: &BrightnessEvent) {
+    match event {
+        BrightnessEvent::Snapshot(devices) => accumulator.brightness = Some(devices.clone()),
+        BrightnessEvent::DeviceChanged {
+            device, percent, ..
+        } => {
+            let Some(devices) = accumulator.brightness.as_mut() else {
+                return;
+            };
+            if let Some(entry) = devices.iter_mut().find(|entry| &entry.id == device) {
+                entry.percent = *percent;
+                entry.pending_percent = None;
+                entry.available = true;
+            }
+        }
+        BrightnessEvent::Pending { device, target } => {
+            let Some(devices) = accumulator.brightness.as_mut() else {
+                return;
+            };
+            if let Some(entry) = devices.iter_mut().find(|entry| &entry.id == device) {
+                entry.pending_percent = Some(*target);
+            }
+        }
+        BrightnessEvent::Restored | BrightnessEvent::Unavailable => {}
     }
 }
 
@@ -298,12 +339,14 @@ mod tests {
         let (workspace_tx, workspace_rx) = async_channel::unbounded();
         let (monitor_tx, monitor_rx) = async_channel::unbounded();
         let (audio_tx, audio_rx) = async_channel::unbounded();
+        let (brightness_tx, brightness_rx) = async_channel::unbounded();
 
         let task = tokio::spawn(route_commands(
             public_rx,
             workspace_tx,
             monitor_tx,
             audio_tx,
+            brightness_tx,
         ));
 
         public_tx
@@ -322,6 +365,7 @@ mod tests {
             .await
             .unwrap();
         public_tx.send(Command::AudioSetVolume(0.5)).await.unwrap();
+        public_tx.send(Command::BrightnessSet(40.0)).await.unwrap();
 
         assert_eq!(
             tokio::time::timeout(Duration::from_secs(1), workspace_rx.recv())
@@ -356,6 +400,14 @@ mod tests {
             Command::AudioSetVolume(0.5)
         );
         assert!(monitor_rx.try_recv().is_err());
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), brightness_rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            Command::BrightnessSet(40.0)
+        );
+        assert!(audio_rx.try_recv().is_err());
 
         drop(public_tx);
         task.await.unwrap();

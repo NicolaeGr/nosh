@@ -64,6 +64,28 @@ pub enum MonitorError {
     Write(String),
 }
 
+/// A brightness device failed to probe, read, or write.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum BrightnessError {
+    #[error("brightness backend is unavailable: {0}")]
+    Unavailable(String),
+    #[error("brightness backend does not support {capability} for {device}")]
+    Unsupported {
+        capability: &'static str,
+        device: String,
+    },
+    #[error("brightness device {0} was not found")]
+    NotFound(String),
+    #[error("brightness command failed: {0}")]
+    Command(String),
+    #[error("cannot parse brightness output: {0}")]
+    Parse(String),
+    #[error("brightness operation timed out")]
+    Timeout,
+    #[error("brightness snapshot failed: {0}")]
+    Snapshot(String),
+}
+
 /// A Hyprland event line that does not match the documented payload shape.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EventParseError {

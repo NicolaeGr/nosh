@@ -25,10 +25,16 @@
             clippy
             rust-analyzer
             pkg-config
+            gtk4
+            gtk4-layer-shell
             libpulseaudio
           ];
 
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libpulseaudio ];
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+            pkgs.gtk4
+            pkgs.gtk4-layer-shell
+            pkgs.libpulseaudio
+          ];
 
           shellHook = "";
         };

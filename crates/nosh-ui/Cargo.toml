@@ -1,0 +1,24 @@
+[package]
+name = "nosh-ui"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "GTK4 user interface for the nosh shell"
+
+[[bin]]
+name = "nosh"
+path = "src/main.rs"
+
+[dependencies]
+async-channel.workspace = true
+gtk4.workspace = true
+gtk4-layer-shell.workspace = true
+nosh-core = { path = "../nosh-core" }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[features]
+default = ["dev"]
+dev = []
+stable = []

@@ -54,7 +54,7 @@ impl FromStr for Corner {
     }
 }
 
-/// The exact score from the feature spec.
+/// The placement score for a corner. Higher scores win.
 pub fn score(monitor: &MonitorModel, corner: Corner) -> i64 {
     let left = monitor.x as i64;
     let top = monitor.y as i64;
@@ -105,10 +105,9 @@ impl FromStr for MonitorPolicy {
     }
 }
 
-/// Chooses the enabled monitor for a corner under the given policy.
+/// Chooses the enabled monitor for a corner under the policy.
 ///
-/// When no monitor is enabled the whole list is used, which matches the spec's
-/// fallback to the primary or first monitor.
+/// When no monitor is enabled, returns the primary or the first monitor.
 pub fn select_monitor<'a>(
     layout: &'a MonitorLayout,
     corner: Corner,
@@ -116,8 +115,8 @@ pub fn select_monitor<'a>(
 ) -> Option<&'a MonitorModel> {
     let candidates: Vec<&MonitorModel> = layout.enabled().collect();
     if candidates.is_empty() {
-        // With nothing enabled the spec asks for the primary or first monitor,
-        // not a score over disabled geometry.
+        // With nothing enabled, prefer the primary or first monitor instead of
+        // scoring disabled geometry.
         return layout
             .primary
             .as_deref()

@@ -4,11 +4,10 @@ use async_channel::{Receiver, Sender};
 
 use crate::audio::model::{volume_icon, AudioEndpoint, AudioModel, EndpointKind};
 use crate::audio::service::{AudioService, AudioServiceConfig};
-use crate::brightness::model::BrightnessEvent;
 use crate::brightness::service::{BrightnessService, BrightnessServiceConfig};
 use crate::command::Command;
 use crate::error::CoreError;
-use crate::event::{AudioEvent, Event, MonitorEvent, Snapshot, WorkspaceEvent};
+use crate::event::{AudioEvent, BrightnessEvent, Event, MonitorEvent, Snapshot, WorkspaceEvent};
 use crate::monitors::service::{MonitorService, MonitorServiceConfig};
 use crate::workspaces::service::{WorkspaceService, WorkspaceServiceConfig};
 
@@ -113,10 +112,10 @@ impl Drop for Core {
     }
 }
 
-/// Routes each public command to the service that owns it.
+/// Routes each public command to the service that handles it.
 ///
-/// The services each need exclusive access to their command receiver, so the
-/// public channel is fanned out to two service channels.
+/// Each service needs exclusive access to its command receiver, so the public
+/// channel fans out to four service channels.
 async fn route_commands(
     commands: Receiver<Command>,
     workspace_commands: Sender<Command>,
@@ -141,13 +140,12 @@ async fn route_commands(
     }
 }
 
-/// Merges the two services' partial snapshots into one accumulator and
-/// forwards every event in order.
+/// Merges partial snapshots from the services into one accumulator and forwards
+/// every event in order.
 ///
-/// Typed updates refresh the accumulator, so the next full snapshot carries
-/// the latest state from both services. A snapshot field is only replaced when
-/// the incoming value is `Some`; a partial snapshot never erases the other
-/// service.
+/// Typed updates refresh the accumulator, so the next full snapshot carries the
+/// latest state. A snapshot field is replaced only when the incoming value is
+/// `Some`, so a partial snapshot never erases the state of another service.
 async fn merge_events(events: Receiver<Event>, public: Sender<Event>) {
     let mut snapshot = Snapshot::default();
 
@@ -329,9 +327,9 @@ mod tests {
 
     use super::*;
     use crate::event::Service;
-    use crate::model::WorkspaceSnapshot;
     use crate::monitors::LayoutPreset;
     use crate::monitors::MonitorLayout;
+    use crate::workspaces::model::WorkspaceSnapshot;
 
     #[tokio::test]
     async fn commands_are_routed_to_the_matching_service() {
@@ -604,7 +602,7 @@ mod tests {
                 id: 1,
                 volume: 0.7,
                 old: 0.3,
-                origin: crate::audio::model::ChangeOrigin::External,
+                origin: crate::origin::ChangeOrigin::External,
             }))
             .await
             .unwrap();

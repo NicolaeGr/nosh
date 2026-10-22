@@ -17,7 +17,7 @@ use crate::monitors::backend::{
 use crate::monitors::model::{MonitorCapabilities, MonitorLayout};
 use crate::monitors::preset::{preset_layout, resolve_target, LayoutPreset};
 
-/// A backend that never produces monitors. It keeps the shell running on a
+/// A backend that reports no monitors. It keeps the shell running on a
 /// compositor without a monitor adapter.
 pub struct StaticMonitorBackend;
 
@@ -189,9 +189,8 @@ impl MonitorService {
                     return;
                 }
             }
-            // The static fallback keeps the service alive but cannot report real
-            // monitors. Treat that as unavailable, not fatal, and keep the
-            // recovery loop probing for Hyprland.
+            // The static fallback reports no monitors. Mark the service
+            // unavailable but keep the recovery loop probing for Hyprland.
             let fallback_only = resolved.name == "static";
             if fallback_only && emit_unavailable(&events).await.is_err() {
                 return;
@@ -390,8 +389,8 @@ struct MonitorState {
 }
 
 impl MonitorState {
-    /// Takes a fresh read, preserving the core-owned primary when it still
-    /// exists.
+    /// Takes a fresh read and keeps the previous primary when it is still
+    /// enabled.
     fn adopt(&mut self, mut layout: MonitorLayout) -> MonitorLayout {
         self.primary = layout.apply_primary(self.primary.as_deref());
         self.layout = Some(layout.clone());
@@ -582,9 +581,9 @@ async fn fail(events: &Sender<Event>, error: MonitorError) {
         .await;
 }
 
-/// Re-probes the read candidates that sit before the selected backend. A
-/// candidate must pass repeated probes for the whole stability window before
-/// the service switches back to it.
+/// Re-probes the read candidates ahead of the selected backend. A candidate must
+/// pass probes for the full stability window before the service switches back to
+/// it.
 async fn recovery_loop(
     candidates: Vec<MonitorCandidate>,
     config: MonitorServiceConfig,

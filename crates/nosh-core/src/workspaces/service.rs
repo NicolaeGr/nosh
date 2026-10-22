@@ -4,17 +4,17 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 
-use crate::backends::{BackendEvent, BackendRef, WorkspaceBackend};
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::BackendError;
 use crate::event::{Event, Service, Snapshot, WorkspaceEvent};
 use crate::hyprland::HyprlandWorkspaceBackend;
-use crate::model::WorkspaceCapabilities;
-use crate::resolver::{resolve, Candidate, Resolved};
+use crate::workspaces::backend::{WorkspaceBackend, WorkspaceBackendEvent, WorkspaceBackendRef};
+use crate::workspaces::model::WorkspaceCapabilities;
+use crate::workspaces::resolver::{resolve_workspace, ResolvedWorkspace, WorkspaceCandidate};
 use crate::workspaces::state::WorkspaceState;
 
-/// A backend that never produces workspaces. It keeps the shell running on a
+/// A backend that reports no workspaces. It keeps the shell running on a
 /// compositor without a workspace adapter.
 pub struct StaticWorkspaceBackend;
 
@@ -25,7 +25,7 @@ impl WorkspaceBackend for StaticWorkspaceBackend {
     }
 
     async fn probe(&self) -> Result<WorkspaceCapabilities, BackendError> {
-        Ok(WorkspaceCapabilities::BAR)
+        Ok(WorkspaceCapabilities::OBSERVE)
     }
 
     async fn read(&self) -> Result<WorkspaceState, BackendError> {
@@ -46,7 +46,7 @@ impl WorkspaceBackend for StaticWorkspaceBackend {
         })
     }
 
-    async fn watch(&self, _events: Sender<BackendEvent>) -> Result<(), BackendError> {
+    async fn watch(&self, _events: Sender<WorkspaceBackendEvent>) -> Result<(), BackendError> {
         std::future::pending::<Result<(), BackendError>>().await
     }
 }
@@ -65,7 +65,7 @@ pub struct WorkspaceServiceConfig {
 impl Default for WorkspaceServiceConfig {
     fn default() -> Self {
         Self {
-            required: WorkspaceCapabilities::BAR,
+            required: WorkspaceCapabilities::OBSERVE,
             missing_env_retry: Duration::from_secs(2),
             retry: RetryPolicy::default(),
             stable_connection: Duration::from_secs(5),
@@ -81,7 +81,7 @@ impl Default for WorkspaceServiceConfig {
 }
 
 pub struct WorkspaceService {
-    candidates: Vec<Candidate>,
+    candidates: Vec<WorkspaceCandidate>,
     config: WorkspaceServiceConfig,
 }
 
@@ -91,21 +91,25 @@ impl WorkspaceService {
     }
 
     pub fn from_env_with(config: WorkspaceServiceConfig) -> Self {
-        let hyprland = Candidate::new("hyprland", || match HyprlandWorkspaceBackend::detect() {
-            Ok(Some(backend)) => Ok(Arc::new(backend) as BackendRef),
-            Ok(None) => Err(BackendError::Unavailable(
-                "HYPRLAND_INSTANCE_SIGNATURE is not set".to_string(),
-            )),
-            Err(error) => Err(BackendError::Unavailable(error.to_string())),
-        });
-        let static_backend = Candidate::new("static", || {
-            Ok(Arc::new(StaticWorkspaceBackend) as BackendRef)
+        let hyprland =
+            WorkspaceCandidate::new("hyprland", || match HyprlandWorkspaceBackend::detect() {
+                Ok(Some(backend)) => Ok(Arc::new(backend) as WorkspaceBackendRef),
+                Ok(None) => Err(BackendError::Unavailable(
+                    "HYPRLAND_INSTANCE_SIGNATURE is not set".to_string(),
+                )),
+                Err(error) => Err(BackendError::Unavailable(error.to_string())),
+            });
+        let static_backend = WorkspaceCandidate::new("static", || {
+            Ok(Arc::new(StaticWorkspaceBackend) as WorkspaceBackendRef)
         });
 
         Self::with_candidates(vec![hyprland, static_backend], config)
     }
 
-    pub fn with_candidates(candidates: Vec<Candidate>, config: WorkspaceServiceConfig) -> Self {
+    pub fn with_candidates(
+        candidates: Vec<WorkspaceCandidate>,
+        config: WorkspaceServiceConfig,
+    ) -> Self {
         Self { candidates, config }
     }
 
@@ -119,24 +123,29 @@ impl WorkspaceService {
                 return;
             }
 
-            let resolved =
-                match resolve("workspaces", self.candidates.clone(), self.config.required).await {
-                    Ok(resolved) => resolved,
-                    Err(error) => {
-                        tracing::warn!(%error, "no workspace backend is available");
-                        if events
-                            .send(Event::ServiceAvailability(Service::Workspaces, false))
-                            .await
-                            .is_err()
-                        {
-                            return;
-                        }
-                        if wait_or_closed(&commands, self.config.missing_env_retry).await {
-                            return;
-                        }
-                        continue;
+            let resolved = match resolve_workspace(
+                "workspaces",
+                self.candidates.clone(),
+                self.config.required,
+            )
+            .await
+            {
+                Ok(resolved) => resolved,
+                Err(error) => {
+                    tracing::warn!(%error, "no workspace backend is available");
+                    if events
+                        .send(Event::ServiceAvailability(Service::Workspaces, false))
+                        .await
+                        .is_err()
+                    {
+                        return;
                     }
-                };
+                    if wait_or_closed(&commands, self.config.missing_env_retry).await {
+                        return;
+                    }
+                    continue;
+                }
+            };
 
             if last_backend != Some(resolved.name) {
                 last_backend = Some(resolved.name);
@@ -319,7 +328,10 @@ impl WorkspaceService {
     }
 }
 
-async fn handle_command(backend: &BackendRef, command: Command) -> Result<(), BackendError> {
+async fn handle_command(
+    backend: &WorkspaceBackendRef,
+    command: Command,
+) -> Result<(), BackendError> {
     match command {
         Command::WorkspaceActivate(workspace) => backend.activate(&workspace).await,
         Command::WorkspaceMoveToMonitor { workspace, monitor } => {
@@ -329,16 +341,20 @@ async fn handle_command(backend: &BackendRef, command: Command) -> Result<(), Ba
     }
 }
 
-async fn forward_event(events: &Sender<Event>, event: BackendEvent, backend: &'static str) -> bool {
+async fn forward_event(
+    events: &Sender<Event>,
+    event: WorkspaceBackendEvent,
+    backend: &'static str,
+) -> bool {
     let event = match event {
-        BackendEvent::Snapshot(state) => Event::Workspaces(WorkspaceEvent::Snapshot {
+        WorkspaceBackendEvent::Snapshot(state) => Event::Workspaces(WorkspaceEvent::Snapshot {
             state: state.snapshot(),
             backend,
         }),
-        BackendEvent::FocusedChanged(workspace) => {
+        WorkspaceBackendEvent::FocusedChanged(workspace) => {
             Event::Workspaces(WorkspaceEvent::FocusedChanged { workspace })
         }
-        BackendEvent::UrgentChanged { workspace, urgent } => {
+        WorkspaceBackendEvent::UrgentChanged { workspace, urgent } => {
             Event::Workspaces(WorkspaceEvent::UrgentChanged { workspace, urgent })
         }
     };
@@ -346,11 +362,11 @@ async fn forward_event(events: &Sender<Event>, event: BackendEvent, backend: &'s
     events.send(event).await.is_ok()
 }
 
-/// Re-probes the candidates that sit before the selected backend. A candidate
-/// must pass repeated probes for the whole stability window before the service
-/// switches back to it.
+/// Re-probes the candidates ahead of the selected backend. A candidate must
+/// pass probes for the full stability window before the service switches back
+/// to it.
 async fn recovery_loop(
-    candidates: Vec<Candidate>,
+    candidates: Vec<WorkspaceCandidate>,
     config: WorkspaceServiceConfig,
     signal: Sender<()>,
 ) {
@@ -361,13 +377,14 @@ async fn recovery_loop(
         tracing::debug!(?delay, "re-probing more specific workspace backends");
         tokio::time::sleep(delay).await;
 
-        let resolved = match resolve("workspaces", candidates.clone(), config.required).await {
-            Ok(resolved) => resolved,
-            Err(error) => {
-                tracing::debug!(%error, "no more specific workspace backend is available");
-                continue;
-            }
-        };
+        let resolved =
+            match resolve_workspace("workspaces", candidates.clone(), config.required).await {
+                Ok(resolved) => resolved,
+                Err(error) => {
+                    tracing::debug!(%error, "no more specific workspace backend is available");
+                    continue;
+                }
+            };
 
         tracing::debug!(
             backend = resolved.name,
@@ -403,7 +420,7 @@ async fn recovery_loop(
 }
 
 async fn stable_backend(
-    resolved: &Resolved,
+    resolved: &ResolvedWorkspace,
     required: WorkspaceCapabilities,
     stability: Duration,
     probe_interval: Duration,
@@ -464,15 +481,15 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::backends::test_support::FakeWorkspaceBackend;
+    use crate::workspaces::backend::test_support::FakeWorkspaceBackend;
 
-    fn candidate(name: &'static str, backend: Arc<FakeWorkspaceBackend>) -> Candidate {
-        Candidate::new(name, move || Ok(backend.clone()))
+    fn candidate(name: &'static str, backend: Arc<FakeWorkspaceBackend>) -> WorkspaceCandidate {
+        WorkspaceCandidate::new(name, move || Ok(backend.clone()))
     }
 
     fn fast_config() -> WorkspaceServiceConfig {
         WorkspaceServiceConfig {
-            required: WorkspaceCapabilities::BAR,
+            required: WorkspaceCapabilities::OBSERVE,
             missing_env_retry: Duration::from_millis(5),
             retry: RetryPolicy {
                 initial: Duration::from_millis(5),
@@ -494,12 +511,12 @@ mod tests {
     async fn the_static_backend_keeps_the_service_running_without_a_compositor() {
         let service = WorkspaceService::with_candidates(
             vec![
-                Candidate::new("broken", || {
+                WorkspaceCandidate::new("broken", || {
                     Err(BackendError::Unavailable("missing".into()))
                 }),
                 candidate(
                     "static",
-                    FakeWorkspaceBackend::new("static", WorkspaceCapabilities::BAR).arc(),
+                    FakeWorkspaceBackend::new("static", WorkspaceCapabilities::OBSERVE).arc(),
                 ),
             ],
             fast_config(),
@@ -537,7 +554,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_watch_emits_unavailable_and_reconnects() {
-        let mut backend = FakeWorkspaceBackend::new("fake", WorkspaceCapabilities::BAR);
+        let mut backend = FakeWorkspaceBackend::new("fake", WorkspaceCapabilities::OBSERVE);
         backend.watch_result = Err(BackendError::Unavailable("closed".into()));
         let backend = backend.arc();
         let service = WorkspaceService::with_candidates(
@@ -573,7 +590,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_command_reaches_the_selected_backend() {
-        let mut backend = FakeWorkspaceBackend::new("fake", WorkspaceCapabilities::BAR);
+        let mut backend = FakeWorkspaceBackend::new("fake", WorkspaceCapabilities::OBSERVE);
         backend.read_result = Ok(WorkspaceState::default());
         backend.watch_result = Ok(());
         backend.watch_delay = Some(Duration::from_secs(5));
@@ -617,13 +634,13 @@ mod tests {
 
     #[tokio::test]
     async fn a_recovered_specific_backend_wins_back_after_the_window() {
-        let mut specific = FakeWorkspaceBackend::new("specific", WorkspaceCapabilities::BAR);
+        let mut specific = FakeWorkspaceBackend::new("specific", WorkspaceCapabilities::OBSERVE);
         specific.probe_failures.store(1, Ordering::SeqCst);
         specific.watch_delay = Some(Duration::from_secs(30));
         specific.watch_result = Ok(());
         let specific = specific.arc();
 
-        let mut fallback = FakeWorkspaceBackend::new("fallback", WorkspaceCapabilities::BAR);
+        let mut fallback = FakeWorkspaceBackend::new("fallback", WorkspaceCapabilities::OBSERVE);
         fallback.watch_delay = Some(Duration::from_secs(30));
         fallback.watch_result = Ok(());
         let fallback = fallback.arc();
@@ -662,18 +679,18 @@ mod tests {
 
     #[tokio::test]
     async fn a_backend_must_stay_healthy_for_the_whole_stability_window() {
-        let backend = FakeWorkspaceBackend::new("specific", WorkspaceCapabilities::BAR).arc();
-        let resolved = Resolved {
+        let backend = FakeWorkspaceBackend::new("specific", WorkspaceCapabilities::OBSERVE).arc();
+        let resolved = ResolvedWorkspace {
             backend: backend.clone(),
             name: "specific",
-            capabilities: WorkspaceCapabilities::BAR,
+            capabilities: WorkspaceCapabilities::OBSERVE,
             priority: 0,
         };
         let started = Instant::now();
 
         stable_backend(
             &resolved,
-            WorkspaceCapabilities::BAR,
+            WorkspaceCapabilities::OBSERVE,
             Duration::from_millis(60),
             Duration::from_millis(10),
         )
@@ -685,19 +702,19 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_probe_aborts_the_stability_wait() {
-        let backend = FakeWorkspaceBackend::new("specific", WorkspaceCapabilities::BAR);
+        let backend = FakeWorkspaceBackend::new("specific", WorkspaceCapabilities::OBSERVE);
         backend.probe_failures.store(1, Ordering::SeqCst);
         let backend = backend.arc();
-        let resolved = Resolved {
+        let resolved = ResolvedWorkspace {
             backend,
             name: "specific",
-            capabilities: WorkspaceCapabilities::BAR,
+            capabilities: WorkspaceCapabilities::OBSERVE,
             priority: 0,
         };
 
         let result = stable_backend(
             &resolved,
-            WorkspaceCapabilities::BAR,
+            WorkspaceCapabilities::OBSERVE,
             Duration::from_millis(200),
             Duration::from_millis(10),
         )

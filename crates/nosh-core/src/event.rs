@@ -1,7 +1,8 @@
-use crate::audio::model::{AudioEndpoint, AudioModel, ChangeOrigin, EndpointKind};
-use crate::brightness::model::BrightnessEvent;
-use crate::model::WorkspaceSnapshot;
+use crate::audio::model::{AudioEndpoint, AudioModel, EndpointKind};
+use crate::brightness::model::{BrightnessDevice, BrightnessDeviceId};
 use crate::monitors::MonitorLayout;
+use crate::origin::ChangeOrigin;
+use crate::workspaces::model::WorkspaceSnapshot;
 
 /// Every service publishes state through this enum.
 #[derive(Debug, Clone)]
@@ -100,5 +101,24 @@ pub enum AudioEvent {
     BackendChanged {
         backend: &'static str,
     },
+    Unavailable,
+}
+
+#[derive(Debug, Clone)]
+pub enum BrightnessEvent {
+    /// Complete device list after startup, a rescan, or a device change.
+    Snapshot(Vec<BrightnessDevice>),
+    DeviceChanged {
+        device: BrightnessDeviceId,
+        percent: f64,
+        old: f64,
+        origin: ChangeOrigin,
+    },
+    /// A value is queued but not written yet.
+    Pending {
+        device: BrightnessDeviceId,
+        target: f64,
+    },
+    Restored,
     Unavailable,
 }

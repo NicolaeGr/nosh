@@ -3,9 +3,8 @@
 //! Provider detection uses `configProvider` from `j/status` when it is present.
 //! Older or stripped responses fall back to a version table.
 
-/// Hyprland releases at or above this version fall back to Lua when
-/// `j/status` has no `configProvider`. The spec does not name the cutoff, so
-/// this constant is the one place to change it.
+/// Hyprland releases at or above this version use Lua when `j/status` has no
+/// `configProvider`. Change the cutoff here.
 pub const LUA_PROVIDER_MIN_VERSION: Version = Version {
     major: 0,
     minor: 50,

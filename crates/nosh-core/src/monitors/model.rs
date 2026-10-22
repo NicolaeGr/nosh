@@ -14,14 +14,14 @@ bitflags! {
 }
 
 impl MonitorCapabilities {
-    /// The capabilities the monitor service needs for bars and placement.
+    /// Read and watch, the minimum needed for bars and placement.
     pub const OBSERVE: Self = Self::READ.union(Self::WATCH);
 }
 
-/// A stable identifier for a monitor.
+/// A monitor identifier.
 ///
-/// [`Self::connector`] is the key callers should persist and compare.
-/// Compositor ids can change across compositor restarts.
+/// Persist and compare [`Self::connector`], since compositor ids can change
+/// across restarts.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MonitorId {
     pub compositor_id: i32,
@@ -118,8 +118,8 @@ impl MonitorModel {
         }
     }
 
-    /// Center in compositor coordinates. Placement uses the raw geometry, not
-    /// logical geometry, because the score is defined on those coordinates.
+    /// Center in compositor coordinates. Placement scores raw geometry, not
+    /// logical geometry.
     pub fn center(&self) -> (f64, f64) {
         (
             self.x as f64 + self.width as f64 / 2.0,
@@ -160,11 +160,8 @@ impl MonitorLayout {
         self.enabled().find(|monitor| monitor.focused)
     }
 
-    /// Chooses the primary while treating it as core-owned state.
-    ///
-    /// The previous primary wins when it is still enabled, then the focused
-    /// monitor, then the first enabled monitor. With no enabled monitors there
-    /// is no primary.
+    /// Chooses the primary from the previous value, the focused monitor, then
+    /// the first enabled monitor. Returns `None` when no monitor is enabled.
     pub fn choose_primary(&self, previous: Option<&str>) -> Option<String> {
         let enabled = |connector: &str| {
             self.monitors
@@ -187,16 +184,16 @@ impl MonitorLayout {
             })
     }
 
-    /// Recomputes the primary from the previous core state, ignoring any
-    /// fallback chosen by a read backend.
+    /// Recomputes the primary from the previous value and ignores any primary
+    /// set by a read backend.
     pub fn apply_primary(&mut self, previous: Option<&str>) -> Option<String> {
         let primary = self.choose_primary(previous);
         self.set_primary(primary.clone());
         primary
     }
 
-    /// Honours an explicitly requested primary when it is still valid, then
-    /// falls back to the same rules as [`Self::apply_primary`].
+    /// Keeps an explicitly requested primary while it is still enabled, then
+    /// falls back to [`Self::choose_primary`].
     pub fn respect_primary(&mut self, previous: Option<&str>) -> Option<String> {
         let requested = self
             .primary

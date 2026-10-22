@@ -1,8 +1,8 @@
 //! Monitor models, placement rules, layout presets, and the monitor service.
 //!
-//! Reads are generic over a [`MonitorBackend`]; Hyprland is the only concrete
-//! adapter in this crate. Writes are resolved separately so a compositor that
-//! only supports reading still gets bars and notification placement.
+//! Reads use a [`MonitorBackend`], and Hyprland is the only adapter in this
+//! crate. The service resolves writes separately, so a compositor that only
+//! supports reading still gets bars and notification placement.
 
 pub mod backend;
 pub mod model;

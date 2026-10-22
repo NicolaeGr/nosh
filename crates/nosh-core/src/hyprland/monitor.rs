@@ -1,8 +1,8 @@
-//! Hyprland monitor backend: `j/monitors` reads, the event socket, and the
-//! runtime `keyword monitor` write path.
+//! Hyprland monitor backend: `j/monitors` reads, the event socket, and runtime
+//! `keyword monitor` writes.
 //!
-//! Writes go through the command socket and require an `ok` reply. A rejected
-//! write is a typed error; the service turns it into `ApplyFailed`. This module
+//! Writes use the command socket and require an `ok` reply. A rejected write
+//! becomes a typed error that the service turns into `ApplyFailed`. This module
 //! never writes a Hyprland config file and never reloads config.
 
 use std::collections::HashSet;

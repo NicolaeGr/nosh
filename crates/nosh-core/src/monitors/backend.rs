@@ -9,14 +9,13 @@ use crate::monitors::model::{MonitorCapabilities, MonitorLayout};
 /// A change produced by a running monitor backend.
 #[derive(Debug, Clone)]
 pub enum MonitorBackendEvent {
-    /// A fresh read after a monitor event.
     Layout(MonitorLayout),
 }
 
 /// One implementation of monitor reading, watching, and writing.
 ///
-/// Read and write capability are resolved independently by the service, so a
-/// backend may implement only the read half.
+/// The service resolves read and write capability separately, so a backend may
+/// implement only the read half.
 #[async_trait]
 pub trait MonitorBackend: Send + Sync {
     fn name(&self) -> &'static str;

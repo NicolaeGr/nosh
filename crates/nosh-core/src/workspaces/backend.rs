@@ -2,12 +2,12 @@ use async_channel::Sender;
 use async_trait::async_trait;
 
 use crate::error::BackendError;
-use crate::model::WorkspaceCapabilities;
+use crate::workspaces::model::WorkspaceCapabilities;
 use crate::workspaces::state::WorkspaceState;
 
 /// A change produced by a running workspace backend.
 #[derive(Debug, Clone)]
-pub enum BackendEvent {
+pub enum WorkspaceBackendEvent {
     Snapshot(WorkspaceState),
     FocusedChanged(Option<String>),
     UrgentChanged { workspace: String, urgent: bool },
@@ -15,7 +15,7 @@ pub enum BackendEvent {
 
 /// One implementation of workspace reading and writing.
 ///
-/// A backend is selected by the resolver. `probe` must not change state.
+/// The resolver picks a backend. A probe must not change workspace state.
 #[async_trait]
 pub trait WorkspaceBackend: Send + Sync {
     fn name(&self) -> &'static str;
@@ -28,11 +28,11 @@ pub trait WorkspaceBackend: Send + Sync {
 
     async fn move_to_monitor(&self, workspace: &str, monitor: &str) -> Result<(), BackendError>;
 
-    /// Runs until the connection fails or the event receiver closes.
-    async fn watch(&self, events: Sender<BackendEvent>) -> Result<(), BackendError>;
+    /// Runs until the connection fails or the receiver closes.
+    async fn watch(&self, events: Sender<WorkspaceBackendEvent>) -> Result<(), BackendError>;
 }
 
-pub type BackendRef = std::sync::Arc<dyn WorkspaceBackend>;
+pub type WorkspaceBackendRef = std::sync::Arc<dyn WorkspaceBackend>;
 
 #[cfg(test)]
 pub(crate) mod test_support {
@@ -116,7 +116,7 @@ pub(crate) mod test_support {
             Ok(())
         }
 
-        async fn watch(&self, _events: Sender<BackendEvent>) -> Result<(), BackendError> {
+        async fn watch(&self, _events: Sender<WorkspaceBackendEvent>) -> Result<(), BackendError> {
             self.watches.fetch_add(1, Ordering::SeqCst);
             if let Some(delay) = self.watch_delay {
                 tokio::time::sleep(delay).await;

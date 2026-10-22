@@ -1,3 +1,6 @@
+//! Hyprland workspace backend: `j/workspaces` reads, event socket updates, and
+//! workspace dispatches.
+
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -9,7 +12,6 @@ use tokio::net::UnixStream;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::timeout;
 
-use crate::backends::{BackendEvent, WorkspaceBackend};
 use crate::error::{BackendError, PathError};
 use crate::hyprland::client::HyprlandClient;
 use crate::hyprland::dispatch::{detect_provider, format_dispatch, ConfigProvider, Dispatch};
@@ -17,8 +19,9 @@ use crate::hyprland::events::{parse_event, HyprlandEvent};
 use crate::hyprland::json::{
     build_workspace_state, HyprClient, HyprMonitor, HyprStatus, HyprVersion, HyprWorkspace,
 };
-use crate::model::WorkspaceCapabilities;
 use crate::paths::HyprlandPaths;
+use crate::workspaces::backend::{WorkspaceBackend, WorkspaceBackendEvent};
+use crate::workspaces::model::WorkspaceCapabilities;
 use crate::workspaces::state::WorkspaceState;
 
 const EVENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -96,7 +99,7 @@ impl HyprlandWorkspaceBackend {
     async fn handle_event(
         &self,
         event: HyprlandEvent,
-        events: &Sender<BackendEvent>,
+        events: &Sender<WorkspaceBackendEvent>,
         unknown: &mut HashSet<String>,
     ) -> Result<bool, BackendError> {
         let before = self.state.lock().await.focused_workspace.clone();
@@ -106,7 +109,7 @@ impl HyprlandWorkspaceBackend {
                 let workspace = self.state.lock().await.apply_urgent(&address);
                 match workspace {
                     Some(workspace) => Ok(events
-                        .send(BackendEvent::UrgentChanged {
+                        .send(WorkspaceBackendEvent::UrgentChanged {
                             workspace,
                             urgent: true,
                         })
@@ -134,18 +137,22 @@ impl HyprlandWorkspaceBackend {
 
     async fn refresh_and_emit(
         &self,
-        events: &Sender<BackendEvent>,
+        events: &Sender<WorkspaceBackendEvent>,
         before: Option<String>,
     ) -> Result<bool, BackendError> {
         let state = self.read().await?;
         let focused = state.focused_workspace.clone();
 
-        if events.send(BackendEvent::Snapshot(state)).await.is_err() {
+        if events
+            .send(WorkspaceBackendEvent::Snapshot(state))
+            .await
+            .is_err()
+        {
             return Ok(false);
         }
         if before != focused
             && events
-                .send(BackendEvent::FocusedChanged(focused))
+                .send(WorkspaceBackendEvent::FocusedChanged(focused))
                 .await
                 .is_err()
         {
@@ -246,7 +253,7 @@ impl WorkspaceBackend for HyprlandWorkspaceBackend {
         Ok(())
     }
 
-    async fn watch(&self, events: Sender<BackendEvent>) -> Result<(), BackendError> {
+    async fn watch(&self, events: Sender<WorkspaceBackendEvent>) -> Result<(), BackendError> {
         let stream = timeout(
             EVENT_CONNECT_TIMEOUT,
             UnixStream::connect(&self.paths.event_socket),

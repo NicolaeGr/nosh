@@ -1,3 +1,5 @@
+//! Workspace models shared by the backend and the service.
+
 use std::cmp::Ordering;
 
 use bitflags::bitflags;
@@ -16,13 +18,13 @@ bitflags! {
 }
 
 impl WorkspaceCapabilities {
-    /// The capabilities the bar needs to render workspaces.
-    pub const BAR: Self = Self::READ.union(Self::WATCH);
+    /// Read and watch, the minimum the service needs to publish a snapshot.
+    pub const OBSERVE: Self = Self::READ.union(Self::WATCH);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceModel {
-    /// Stable key. The Hyprland backend uses the numeric id as a decimal string.
+    /// The Hyprland backend stores the numeric workspace id as a decimal string.
     pub id: String,
     pub name: String,
     /// Connector name when known.
@@ -34,10 +36,10 @@ pub struct WorkspaceModel {
     pub capabilities: WorkspaceCapabilities,
 }
 
-/// The lightweight monitor view used by the workspace service.
+/// The monitor view used by the workspace service.
 ///
-/// The full monitor model lives in [`crate::monitors`]. Keeping this type
-/// separate avoids coupling workspace filtering to layout details.
+/// The full layout lives in [`crate::monitors`], so workspace filtering does
+/// not depend on placement details.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceMonitor {
     pub id: i32,
@@ -58,7 +60,7 @@ impl WorkspaceSnapshot {
     }
 }
 
-/// Canonical client address: no `0x` prefix, lower case.
+/// Canonical client address: no `0x` prefix, lowercase.
 pub fn normalize_address(address: &str) -> String {
     address
         .strip_prefix("0x")

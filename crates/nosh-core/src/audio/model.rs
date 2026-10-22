@@ -6,9 +6,9 @@ pub const MAX_VOLUME: f64 = 1.5;
 pub const MAX_SOURCE_VOLUME: f64 = 1.0;
 /// One keyboard or scroll step.
 pub const VOLUME_STEP: f64 = 0.05;
-/// The bar scroll wheel stops here. The slider and the command line do not.
+/// The bar stops scrolling up here. The slider and command line can go higher.
 pub const BAR_MAX_VOLUME: f64 = 1.0;
-/// A small difference that is not worth reporting as a change.
+/// A difference smaller than this is not reported as a change.
 pub const VOLUME_EPSILON: f64 = 0.0005;
 
 /// Which device list an endpoint belongs to.
@@ -34,9 +34,6 @@ impl EndpointKind {
     }
 }
 
-pub use crate::origin::ChangeOrigin;
-
-/// One sink or source.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AudioEndpoint {
     pub id: u32,
@@ -100,7 +97,7 @@ impl AudioModel {
     }
 }
 
-/// The icon for a volume level. The bar binds this directly.
+/// The icon for a volume level.
 pub fn volume_icon(kind: EndpointKind, volume: f64, muted: bool) -> &'static str {
     let _ = kind;
     if muted || volume <= 0.0 {
@@ -114,8 +111,8 @@ pub fn volume_icon(kind: EndpointKind, volume: f64, muted: bool) -> &'static str
     }
 }
 
-/// Computes the next volume for a bar scroll, or `None` when scrolling up must
-/// do nothing because the bar is already at its 100 percent limit.
+/// Returns the next volume for a bar scroll, or `None` when scrolling up would
+/// pass the bar limit.
 pub fn bar_step_volume(current: f64, delta: f64) -> Option<f64> {
     if delta > 0.0 {
         if current >= BAR_MAX_VOLUME {

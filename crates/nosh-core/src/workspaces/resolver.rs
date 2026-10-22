@@ -1,21 +1,21 @@
 use std::sync::Arc;
 
-use crate::backends::BackendRef;
 use crate::error::BackendError;
-use crate::model::WorkspaceCapabilities;
+use crate::workspaces::backend::WorkspaceBackendRef;
+use crate::workspaces::model::WorkspaceCapabilities;
 
-type BackendFactory = Arc<dyn Fn() -> Result<BackendRef, BackendError> + Send + Sync>;
+type BackendFactory = Arc<dyn Fn() -> Result<WorkspaceBackendRef, BackendError> + Send + Sync>;
 
 #[derive(Clone)]
-pub struct Candidate {
+pub struct WorkspaceCandidate {
     pub name: &'static str,
     make: BackendFactory,
 }
 
-impl Candidate {
+impl WorkspaceCandidate {
     pub fn new<F>(name: &'static str, make: F) -> Self
     where
-        F: Fn() -> Result<BackendRef, BackendError> + Send + Sync + 'static,
+        F: Fn() -> Result<WorkspaceBackendRef, BackendError> + Send + Sync + 'static,
     {
         Self {
             name,
@@ -23,13 +23,13 @@ impl Candidate {
         }
     }
 
-    pub fn create(&self) -> Result<BackendRef, BackendError> {
+    pub fn create(&self) -> Result<WorkspaceBackendRef, BackendError> {
         (self.make)()
     }
 }
 
-pub struct Resolved {
-    pub backend: BackendRef,
+pub struct ResolvedWorkspace {
+    pub backend: WorkspaceBackendRef,
     pub name: &'static str,
     pub capabilities: WorkspaceCapabilities,
     /// Position in the candidate list. Zero is the most specific backend.
@@ -38,13 +38,13 @@ pub struct Resolved {
 
 /// Tries candidates from most specific to most generic.
 ///
-/// A candidate is selected only when its probe succeeds and it provides every
-/// required capability. Probing must have no side effects.
-pub async fn resolve(
+/// A candidate wins when its probe succeeds and it provides every required
+/// capability. A probe must not change state.
+pub async fn resolve_workspace(
     feature: &'static str,
-    candidates: Vec<Candidate>,
+    candidates: Vec<WorkspaceCandidate>,
     required: WorkspaceCapabilities,
-) -> Result<Resolved, BackendError> {
+) -> Result<ResolvedWorkspace, BackendError> {
     for (priority, candidate) in candidates.into_iter().enumerate() {
         let backend = match candidate.create() {
             Ok(backend) => backend,
@@ -67,7 +67,7 @@ pub async fn resolve(
                     ?capabilities,
                     "selected backend"
                 );
-                return Ok(Resolved {
+                return Ok(ResolvedWorkspace {
                     backend,
                     name: candidate.name,
                     capabilities,
@@ -100,10 +100,10 @@ pub async fn resolve(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::test_support::FakeWorkspaceBackend;
+    use crate::workspaces::backend::test_support::FakeWorkspaceBackend;
 
-    fn candidate(name: &'static str, backend: Arc<FakeWorkspaceBackend>) -> Candidate {
-        Candidate::new(name, move || Ok(backend.clone()))
+    fn candidate(name: &'static str, backend: Arc<FakeWorkspaceBackend>) -> WorkspaceCandidate {
+        WorkspaceCandidate::new(name, move || Ok(backend.clone()))
     }
 
     #[tokio::test]
@@ -119,13 +119,13 @@ mod tests {
         )
         .arc();
 
-        let resolved = resolve(
+        let resolved = resolve_workspace(
             "workspaces",
             vec![
                 candidate("specific", specific),
                 candidate("generic", generic),
             ],
-            WorkspaceCapabilities::BAR,
+            WorkspaceCapabilities::OBSERVE,
         )
         .await
         .unwrap();
@@ -148,13 +148,13 @@ mod tests {
         )
         .arc();
 
-        let resolved = resolve(
+        let resolved = resolve_workspace(
             "workspaces",
             vec![
                 candidate("specific", specific),
                 candidate("generic", generic),
             ],
-            WorkspaceCapabilities::BAR,
+            WorkspaceCapabilities::OBSERVE,
         )
         .await
         .unwrap();
@@ -172,13 +172,13 @@ mod tests {
         )
         .arc();
 
-        let resolved = resolve(
+        let resolved = resolve_workspace(
             "workspaces",
             vec![
                 candidate("read-only", read_only),
                 candidate("generic", generic),
             ],
-            WorkspaceCapabilities::BAR,
+            WorkspaceCapabilities::OBSERVE,
         )
         .await
         .unwrap();
@@ -189,17 +189,17 @@ mod tests {
 
     #[tokio::test]
     async fn no_candidate_is_a_clean_error() {
-        let result = resolve(
+        let result = resolve_workspace(
             "workspaces",
             vec![
-                Candidate::new("broken", || {
+                WorkspaceCandidate::new("broken", || {
                     Err(BackendError::Unavailable("constructor failed".into()))
                 }),
-                Candidate::new("read-only", || {
+                WorkspaceCandidate::new("read-only", || {
                     Ok(FakeWorkspaceBackend::new("read-only", WorkspaceCapabilities::READ).arc())
                 }),
             ],
-            WorkspaceCapabilities::BAR,
+            WorkspaceCapabilities::OBSERVE,
         )
         .await;
 

@@ -73,7 +73,6 @@ mod enabled {
                         match origin {
                             ChangeOrigin::User => "user",
                             ChangeOrigin::External => "external",
-                            ChangeOrigin::Initial => "initial",
                             ChangeOrigin::Restore => "restore",
                         }
                     );

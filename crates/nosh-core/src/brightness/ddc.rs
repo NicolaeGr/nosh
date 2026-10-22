@@ -1,9 +1,8 @@
 //! DDC/CI external display brightness through VCP code `0x10`.
 //!
-//! `ddcutil` is the default implementation. The [`DdcBackend`] trait keeps the
-//! door open for a direct I2C implementation, but this crate ships only the
-//! process-based one because `ddcutil` handles monitor quirks and multiple
-//! buses better than a direct I2C library.
+//! `ddcutil` is the default implementation. The [`DdcBackend`] trait allows a
+//! direct I2C implementation, but this crate ships only the process-based one
+//! because `ddcutil` handles monitor quirks and multiple buses.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

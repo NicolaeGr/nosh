@@ -1,7 +1,8 @@
 //! Parser for the Hyprland event socket.
 //!
-//! Each line is `event_name>>payload`. Some events have no payload. Payloads
-//! are validated before indexing so a version change cannot panic the service.
+//! Each line is `event_name>>payload` and some events have no payload. The
+//! parser validates payloads before indexing, so a malformed line cannot panic
+//! the service.
 
 use crate::error::EventParseError;
 
@@ -150,7 +151,7 @@ pub fn parse_event(line: &str) -> Result<HyprlandEvent, EventParseError> {
         "openwindow" => {
             let parts = fields(name, payload, 4)?;
             Ok(HyprlandEvent::OpenWindow {
-                address: crate::model::normalize_address(parts[0]),
+                address: crate::workspaces::model::normalize_address(parts[0]),
                 workspace: parts[1].to_string(),
                 class: parts[2].to_string(),
                 title: parts[3].to_string(),
@@ -159,13 +160,13 @@ pub fn parse_event(line: &str) -> Result<HyprlandEvent, EventParseError> {
         "closewindow" => {
             let address = one(name, payload)?;
             Ok(HyprlandEvent::CloseWindow {
-                address: crate::model::normalize_address(address),
+                address: crate::workspaces::model::normalize_address(address),
             })
         }
         "movewindowv2" => {
             let parts = fields(name, payload, 3)?;
             Ok(HyprlandEvent::MoveWindow {
-                address: crate::model::normalize_address(parts[0]),
+                address: crate::workspaces::model::normalize_address(parts[0]),
                 workspace: parts[1].to_string(),
                 monitor: parts[2].to_string(),
             })
@@ -173,19 +174,19 @@ pub fn parse_event(line: &str) -> Result<HyprlandEvent, EventParseError> {
         "urgent" => {
             let address = one(name, payload)?;
             Ok(HyprlandEvent::Urgent {
-                address: crate::model::normalize_address(address),
+                address: crate::workspaces::model::normalize_address(address),
             })
         }
         "activewindowv2" => {
             let address = one(name, payload)?;
             Ok(HyprlandEvent::ActiveWindow {
-                address: crate::model::normalize_address(address),
+                address: crate::workspaces::model::normalize_address(address),
             })
         }
         "changefloatingmode" => {
             let (address, floating) = two(name, payload)?;
             Ok(HyprlandEvent::ChangeFloatingMode {
-                address: crate::model::normalize_address(address),
+                address: crate::workspaces::model::normalize_address(address),
                 floating: boolean(name, floating)?,
             })
         }
@@ -195,7 +196,7 @@ pub fn parse_event(line: &str) -> Result<HyprlandEvent, EventParseError> {
         "windowtitlev2" => {
             let (address, title) = two(name, payload)?;
             Ok(HyprlandEvent::WindowTitle {
-                address: crate::model::normalize_address(address),
+                address: crate::workspaces::model::normalize_address(address),
                 title: title.to_string(),
             })
         }

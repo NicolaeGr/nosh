@@ -113,8 +113,8 @@ impl AudioBackend for WpctlBackend {
     }
 
     async fn probe(&self) -> Result<AudioCapabilities, BackendError> {
-        // `wpctl status` succeeds on a server with no default sink, which is a
-        // valid state while a device appears.
+        // `wpctl status` succeeds when the server has no default sink yet, so a
+        // probe does not require one.
         self.run(&["status"]).await?;
         Ok(AudioCapabilities::READ | AudioCapabilities::WATCH | AudioCapabilities::WRITE)
     }

@@ -1,7 +1,7 @@
-//! Process helpers shared by the brightness backends.
+//! Process helpers for the brightness backends.
 //!
-//! DDC/CI calls run on a blocking task, so this module offers a blocking runner
-//! with a timeout as well as the async runner used by the internal fallbacks.
+//! DDC/CI calls run on a blocking task, so this module provides a blocking
+//! runner with a timeout and the async runner used by the internal fallbacks.
 
 use std::io::Read;
 use std::process::{Command, Stdio};

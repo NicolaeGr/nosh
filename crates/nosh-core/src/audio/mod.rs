@@ -1,7 +1,7 @@
-//! Audio sinks, sources, volume, mute, and the backend try tree.
+//! Audio sinks, sources, volume, and mute.
 //!
-//! The Pulse backend is the default. `wpctl` is the command fallback, and the
-//! null backend keeps the shell running with no audio server.
+//! Pulse is the default backend. `wpctl` is the command fallback, and the
+//! static backend keeps the shell running when no audio server is available.
 
 pub mod backend;
 pub mod model;
@@ -15,10 +15,12 @@ pub use backend::{
     AudioCapabilities, ResolvedAudio,
 };
 pub use model::{
-    bar_step_volume, round_volume, volume_icon, AudioEndpoint, AudioModel, ChangeOrigin,
-    EndpointKind, BAR_MAX_VOLUME, MAX_SOURCE_VOLUME, MAX_VOLUME, VOLUME_EPSILON, VOLUME_STEP,
+    bar_step_volume, round_volume, volume_icon, AudioEndpoint, AudioModel, EndpointKind,
+    BAR_MAX_VOLUME, MAX_SOURCE_VOLUME, MAX_VOLUME, VOLUME_EPSILON, VOLUME_STEP,
 };
 #[cfg(feature = "audio-pulse")]
 pub use pulse::PulseBackend;
-pub use service::{AudioService, AudioServiceConfig, NullAudioBackend};
+pub use service::{AudioService, AudioServiceConfig, StaticAudioBackend};
 pub use wpctl::{WpctlBackend, WpctlConfig};
+
+pub use crate::origin::ChangeOrigin;

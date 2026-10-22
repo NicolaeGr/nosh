@@ -8,7 +8,7 @@ use crate::audio::backend::{
     resolve_audio, AudioBackend, AudioBackendEvent, AudioBackendRef, AudioCandidate,
     AudioCapabilities, ResolvedAudio,
 };
-use crate::audio::model::{AudioModel, ChangeOrigin, EndpointKind, VOLUME_EPSILON};
+use crate::audio::model::{AudioModel, EndpointKind, VOLUME_EPSILON};
 #[cfg(feature = "audio-pulse")]
 use crate::audio::pulse::PulseBackend;
 use crate::audio::wpctl::WpctlBackend;
@@ -16,14 +16,16 @@ use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::BackendError;
 use crate::event::{AudioEvent, Event, Service, Snapshot};
+use crate::origin::ChangeOrigin;
 
-/// A backend that keeps the shell running with no audio server.
-pub struct NullAudioBackend;
+/// A backend that reports no audio devices. It keeps the shell running
+/// without an audio server.
+pub struct StaticAudioBackend;
 
 #[async_trait]
-impl AudioBackend for NullAudioBackend {
+impl AudioBackend for StaticAudioBackend {
     fn name(&self) -> &'static str {
-        "null"
+        "static"
     }
 
     async fn probe(&self) -> Result<AudioCapabilities, BackendError> {
@@ -73,7 +75,7 @@ impl AudioBackend for NullAudioBackend {
 #[derive(Debug, Clone)]
 pub struct AudioServiceConfig {
     pub required: AudioCapabilities,
-    /// Coalesces slider movement into one backend write.
+    /// Merges slider movement into one backend write.
     pub debounce: Duration,
     pub missing_env_retry: Duration,
     pub retry: RetryPolicy,
@@ -123,8 +125,8 @@ impl AudioService {
         candidates.push(AudioCandidate::new("wpctl", || {
             Ok(Arc::new(WpctlBackend::new()) as AudioBackendRef)
         }));
-        candidates.push(AudioCandidate::new("null", || {
-            Ok(Arc::new(NullAudioBackend) as AudioBackendRef)
+        candidates.push(AudioCandidate::new("static", || {
+            Ok(Arc::new(StaticAudioBackend) as AudioBackendRef)
         }));
 
         Self::with_candidates(candidates, config)
@@ -175,9 +177,9 @@ impl AudioService {
                     return;
                 }
             }
-            // The null backend cannot report or write audio. The shell still
-            // starts and the audio widgets hide.
-            let unavailable = resolved.name == "null";
+            // The static backend reports no devices and accepts no writes. The
+            // shell still starts and hides its audio widgets.
+            let unavailable = resolved.name == "static";
             if unavailable
                 && events
                     .send(Event::Audio(AudioEvent::Unavailable))
@@ -265,8 +267,8 @@ impl AudioService {
                                     deadline =
                                         Some(tokio::time::Instant::now() + self.config.debounce);
                                 } else {
-                                    // A non-volume command must not overtake a
-                                    // volume write that is already pending.
+                                    // A non-volume command must wait for a
+                                    // pending volume write.
                                     if let Some(write) = pending.take() {
                                         deadline = None;
                                         apply_pending(
@@ -500,8 +502,8 @@ async fn handle_command(
         Command::AudioSetVolume(_)
         | Command::AudioStepVolume(_)
         | Command::AudioSetSourceVolume(_) => {
-            // These are handled by `plan_volume`. A missing default endpoint
-            // still needs a report so the action does not fail silently.
+            // These commands go through `plan_volume`. Report the missing
+            // default endpoint instead of failing silently.
             fail(events, "no default audio endpoint is available").await
         }
         _ => Ok(()),
@@ -648,8 +650,9 @@ async fn emit_changes(
         }
     }
 
-    // A write accepted by the server may land on the same value, for example
-    // when the user steps past the maximum. Still show the OSD feedback.
+    // The server may accept a write without changing the value, for example
+    // when the user steps past the maximum. The UI still needs feedback, so
+    // report a user change.
     if let Some(UserTarget::Volume { kind, id }) = user {
         if !reported_volume {
             if let Some(endpoint) = next.endpoint(kind, id) {
@@ -918,8 +921,8 @@ mod tests {
         })
         .await;
 
-        // The initial snapshot must not look like a user change, or every
-        // startup would flash the indicator.
+        // The first snapshot must not look like a user change, or the indicator
+        // would flash at every startup.
         loop {
             match tokio::time::timeout(Duration::from_millis(100), event_rx.recv()).await {
                 Ok(Ok(Event::Audio(AudioEvent::VolumeChanged { .. }))) => {
@@ -999,7 +1002,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn slider_movement_is_coalesced_into_one_write() {
+    async fn slider_movement_merges_into_one_write() {
         let backend = FakeAudioBackend::new("fake", model(0.3)).arc();
         let (command_tx, command_rx) = async_channel::unbounded();
         let (event_tx, event_rx) = async_channel::unbounded();
@@ -1073,9 +1076,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_null_backend_starts_and_reports_unavailable() {
-        let null = Arc::new(NullAudioBackend);
-        let candidate = AudioCandidate::new("null", move || Ok(null.clone() as AudioBackendRef));
+    async fn a_static_backend_starts_and_reports_unavailable() {
+        let backend = Arc::new(StaticAudioBackend);
+        let candidate =
+            AudioCandidate::new("static", move || Ok(backend.clone() as AudioBackendRef));
         let (command_tx, command_rx) = async_channel::unbounded();
         let (event_tx, event_rx) = async_channel::unbounded();
         let service = AudioService::with_candidates(vec![candidate], config());

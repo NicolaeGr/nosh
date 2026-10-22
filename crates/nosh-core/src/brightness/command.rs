@@ -1,8 +1,8 @@
 //! User-configured command backends.
 //!
-//! A command device is the escape hatch for a monitor DDC cannot reach or for a
-//! compositor-specific brightness tool. The only interpolated value is an
-//! integer percentage.
+//! A command device covers a monitor DDC cannot reach or a compositor-specific
+//! brightness tool. Only an integer percentage is substituted into the set
+//! command.
 
 use std::time::Duration;
 

@@ -8,7 +8,7 @@ use crate::audio::model::{AudioModel, EndpointKind};
 use crate::error::BackendError;
 
 bitflags! {
-    /// What an audio backend can do.
+    /// What an audio backend supports.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct AudioCapabilities: u8 {
         const READ = 1 << 0;
@@ -18,7 +18,7 @@ bitflags! {
 }
 
 impl AudioCapabilities {
-    /// The capabilities the audio service needs to publish a model.
+    /// Read and watch, the minimum needed to publish a model.
     pub const OBSERVE: Self = Self::READ.union(Self::WATCH);
 }
 

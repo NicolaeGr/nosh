@@ -2,13 +2,10 @@ use crate::brightness::model::BrightnessDeviceId;
 use crate::monitors::LayoutPreset;
 use crate::monitors::MonitorLayout;
 
-/// User intent. Commands are cheap to send and never block the caller.
+/// User intent. Sending a command does not block the caller.
 ///
-/// Variants are added with the feature that needs them. The monitor variants
-/// are routed to the monitor service by [`crate::Core`].
-///
-/// `MonitorLayout` contains `f64` geometry, so the enum is `PartialEq` but not
-/// `Eq`.
+/// The monitor variants carry [`MonitorLayout`], which holds `f64` geometry, so
+/// the enum is `PartialEq` but not `Eq`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     AudioSetVolume(f64),
@@ -50,7 +47,7 @@ pub enum Command {
 }
 
 impl Command {
-    /// Whether the audio service owns this command.
+    /// Whether the audio service handles this command.
     pub fn is_audio(&self) -> bool {
         matches!(
             self,
@@ -62,7 +59,7 @@ impl Command {
         )
     }
 
-    /// Whether the brightness service owns this command.
+    /// Whether the brightness service handles this command.
     pub fn is_brightness(&self) -> bool {
         matches!(
             self,
@@ -76,7 +73,7 @@ impl Command {
         )
     }
 
-    /// Whether the monitor service owns this command.
+    /// Whether the monitor service handles this command.
     pub fn is_monitor(&self) -> bool {
         matches!(
             self,

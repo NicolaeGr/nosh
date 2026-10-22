@@ -1,9 +1,9 @@
 //! PulseAudio and pipewire-pulse backend.
 //!
-//! `libpulse` objects are not usable across threads, so one worker thread owns
-//! the main loop and context. Async callers send commands and await the reply.
-//! The worker subscribes to sink, source, and server changes and forwards a
-//! single "changed" notification; the service performs the re-read.
+//! `libpulse` objects cannot cross threads, so one worker thread owns the main
+//! loop and context. Async callers send commands and await the reply. The worker
+//! subscribes to sink, source, and server changes and sends one `Changed`
+//! notification. The service performs the re-read.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -576,8 +576,8 @@ fn raw_from_source(info: &SourceInfo) -> (RawEndpoint, u8) {
 }
 
 /// `wpctl` and AstalWp report the Pulse software volume divided by the normal
-/// volume, so `0.5` means 50 percent. Using the linear amplitude conversion
-/// here would show 12.5 percent instead.
+/// volume, so `0.5` means 50 percent. The linear amplitude conversion would show
+/// 12.5 percent instead.
 fn normalized_volume(volume: Volume) -> f64 {
     volume.0 as f64 / Volume::NORMAL.0 as f64
 }

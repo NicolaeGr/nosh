@@ -1,8 +1,7 @@
 //! `brightnessctl` fallback for the internal panel.
 //!
-//! Used only when sysfs plus logind is unavailable. The commands match the old
-//! `BrightnessControl`: `--exponent=2.0` for the same curve, and `-m` for
-//! machine-readable output.
+//! The service uses it when sysfs plus logind is unavailable. `--exponent=2.0`
+//! matches the sysfs curve, and `-m` selects machine-readable output.
 
 use std::time::Duration;
 

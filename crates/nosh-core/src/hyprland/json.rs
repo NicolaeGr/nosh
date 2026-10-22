@@ -4,8 +4,10 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::Deserialize;
 
-use crate::model::{normalize_address, WorkspaceCapabilities, WorkspaceModel, WorkspaceMonitor};
 use crate::monitors::{MonitorId, MonitorLayout, MonitorModel, Transform};
+use crate::workspaces::model::{
+    normalize_address, WorkspaceCapabilities, WorkspaceModel, WorkspaceMonitor,
+};
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -149,16 +151,17 @@ pub fn build_workspace_state(
     (workspace_models, monitor_models, clients, focused)
 }
 
-/// Special workspaces never reach the bar.
+/// A workspace is normal when its id is positive and its name has no `special:`
+/// prefix.
 pub fn is_normal_workspace(workspace: &HyprWorkspace) -> bool {
     workspace.id > 0 && !workspace.name.starts_with("special:")
 }
 
-/// Maps a raw `j/monitors` response to the core monitor layout.
+/// Maps a raw `j/monitors` response to the core layout.
 ///
-/// Disabled monitors stay in the list with `enabled = false`; callers that
-/// operate on the enabled layout filter them out. The layout is sorted by
-/// compositor id so numeric targets have a stable meaning.
+/// Disabled monitors stay in the list with `enabled = false`, and callers filter
+/// them out. The layout is sorted by compositor id so numeric targets keep the
+/// same meaning.
 pub fn build_monitor_layout(monitors: &[HyprMonitor]) -> MonitorLayout {
     let mut models: Vec<MonitorModel> = monitors.iter().map(monitor_model).collect();
     models.sort_by_key(|monitor| monitor.id.compositor_id);

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::model::{
+use crate::workspaces::model::{
     normalize_address, sort_workspaces, WorkspaceModel, WorkspaceMonitor, WorkspaceSnapshot,
 };
 
@@ -15,8 +15,8 @@ pub struct WorkspaceState {
 }
 
 impl WorkspaceState {
-    /// Replaces the list from a fresh read while keeping urgency for workspaces
-    /// that still exist. A focused workspace never stays urgent.
+    /// Replaces the list from a fresh read, keeps urgency for workspaces that
+    /// still exist, and never leaves the focused workspace urgent.
     pub fn replace(
         &mut self,
         mut workspaces: Vec<WorkspaceModel>,
@@ -54,8 +54,8 @@ impl WorkspaceState {
         }
     }
 
-    /// Marks the client's workspace urgent when the client is known and its
-    /// workspace is not focused. Returns the workspace key on a change.
+    /// Marks the client's workspace urgent when the client is known and the
+    /// workspace is not focused. Returns the workspace key when urgency changes.
     pub fn apply_urgent(&mut self, address: &str) -> Option<String> {
         let address = normalize_address(address);
         let workspace = self.client_workspaces.get(&address)?.clone();
@@ -77,7 +77,7 @@ impl WorkspaceState {
     }
 
     /// Sets focus by workspace key, clears its urgent flag, and returns whether
-    /// focus actually changed.
+    /// focus changed.
     pub fn set_focused(&mut self, focused: Option<String>) -> bool {
         if self.focused_workspace == focused {
             return false;
@@ -108,7 +108,7 @@ impl WorkspaceState {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::WorkspaceCapabilities;
+    use crate::workspaces::model::WorkspaceCapabilities;
 
     use super::*;
 

@@ -1,9 +1,9 @@
-//! The brightness actor.
+//! The brightness service.
 //!
-//! The actor owns the device list, the last known value, and the command queue.
-//! Every write runs here, one at a time, so a slow DDC/CI call cannot block the
-//! GTK thread, the Tokio runtime, or another display. Slider movement is
-//! coalesced per device before it reaches a backend.
+//! The service owns the device list, the last known value, and the command
+//! queue. Every write runs here, one at a time, so a slow DDC/CI call cannot
+//! block the GTK thread, the Tokio runtime, or another display. Slider movement
+//! is merged per device before it reaches a backend.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -20,19 +20,19 @@ use crate::brightness::command::{CommandBackend, CommandDeviceConfig};
 use crate::brightness::ddc::{DdcBackendBridge, DdcutilBackend, DEFAULT_DDC_TIMEOUT};
 use crate::brightness::model::{
     clamp_percent, linear_raw_from_percent, raw_from_percent, BrightnessDevice, BrightnessDeviceId,
-    BrightnessDeviceInfo, BrightnessEvent, BrightnessKind, BrightnessSnapshotFile, PERCENT_EPSILON,
+    BrightnessDeviceInfo, BrightnessKind, BrightnessSnapshotFile, PERCENT_EPSILON,
 };
 use crate::brightness::snapshot;
 use crate::brightness::sysfs::SysfsLogindBackend;
 use crate::command::Command;
 use crate::error::BrightnessError;
-use crate::event::{Event, Service, Snapshot};
+use crate::event::{BrightnessEvent, Event, Service, Snapshot};
 use crate::origin::ChangeOrigin;
 use crate::paths::NoshPaths;
 
 #[derive(Debug, Clone)]
 pub struct BrightnessServiceConfig {
-    /// Coalesces slider movement into one backend write per device.
+    /// Merges slider movement into one backend write per device.
     pub debounce: Duration,
     pub command_timeout: Duration,
     pub ddc_timeout: Duration,
@@ -216,8 +216,8 @@ impl BrightnessService {
         let candidates = self.external.clone();
         let sender = sender.clone();
         tokio::spawn(async move {
-            // DDC reads are slow. Bind every display here so the actor only has
-            // to insert the finished devices.
+            // DDC reads are slow. Bind every display here so the service only
+            // has to insert the finished devices.
             let infos = discover_first(&candidates).await;
             let mut bound = Vec::with_capacity(infos.len());
             for info in infos {
@@ -348,7 +348,7 @@ impl BrightnessService {
                                 device: device.device.id.clone(),
                                 percent: reading.percent,
                                 old,
-                                source: ChangeOrigin::External,
+                                origin: ChangeOrigin::External,
                             }))
                             .await
                             .is_err()
@@ -493,8 +493,8 @@ async fn bind_device(
     })
 }
 
-/// Adds external displays discovered and bound in the background and retires
-/// devices that disappeared.
+/// Adds external displays discovered in the background and retires devices that
+/// disappeared.
 fn apply_external(state: &mut BrightnessState, devices: Vec<BoundDevice>) -> bool {
     let found: Vec<BrightnessDeviceId> = devices
         .iter()
@@ -604,7 +604,7 @@ async fn apply_target(
     state: &mut BrightnessState,
     id: &BrightnessDeviceId,
     target: f64,
-    source: ChangeOrigin,
+    origin: ChangeOrigin,
     events: &Sender<Event>,
 ) -> Result<bool, ()> {
     let Some(index) = state.index(id) else {
@@ -631,7 +631,7 @@ async fn apply_target(
                     device: id.clone(),
                     percent: target,
                     old,
-                    source,
+                    origin,
                 }))
                 .await
                 .map_err(|_| ())?;
@@ -987,7 +987,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rapid_sets_coalesce_to_the_latest_value() {
+    async fn rapid_sets_merge_to_the_latest_value() {
         let backend =
             FakeBrightnessBackend::new("sysfs-logind", vec![info("intel_backlight")]).arc();
         let (commands, command_rx) = async_channel::unbounded();
@@ -1007,7 +1007,7 @@ mod tests {
             matches!(
                 event,
                 Event::Brightness(BrightnessEvent::DeviceChanged {
-                    source: ChangeOrigin::User,
+                    origin: ChangeOrigin::User,
                     ..
                 })
             )
@@ -1049,7 +1049,7 @@ mod tests {
             matches!(
                 event,
                 Event::Brightness(BrightnessEvent::DeviceChanged {
-                    source: ChangeOrigin::User,
+                    origin: ChangeOrigin::User,
                     ..
                 })
             )
@@ -1103,8 +1103,8 @@ mod tests {
     async fn a_failing_device_does_not_stop_the_other_one() {
         let (commands, command_rx) = async_channel::unbounded();
         let (event_tx, event_rx) = async_channel::unbounded();
-        // Two command devices so the internal "first device only" rule does not
-        // hide one of them.
+        // Two command devices show that the first-device rule applies only to
+        // internal panels.
         let device_a = BrightnessDeviceInfo::command("Desk lamp");
         let device_b = BrightnessDeviceInfo::command("Wall light");
         let backend = FakeBrightnessBackend::new("command", vec![device_a, device_b]).arc();
@@ -1133,7 +1133,7 @@ mod tests {
             matches!(
                 event,
                 Event::Brightness(BrightnessEvent::DeviceChanged {
-                    source: ChangeOrigin::User,
+                    origin: ChangeOrigin::User,
                     ..
                 })
             )
@@ -1192,7 +1192,7 @@ mod tests {
             matches!(
                 event,
                 Event::Brightness(BrightnessEvent::DeviceChanged {
-                    source: ChangeOrigin::User,
+                    origin: ChangeOrigin::User,
                     percent: 10.0,
                     ..
                 })
@@ -1354,7 +1354,7 @@ mod tests {
             matches!(
                 event,
                 Event::Brightness(BrightnessEvent::DeviceChanged {
-                    source: ChangeOrigin::External,
+                    origin: ChangeOrigin::External,
                     ..
                 })
             )

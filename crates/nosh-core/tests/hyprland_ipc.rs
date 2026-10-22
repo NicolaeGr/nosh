@@ -1,10 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use nosh_core::backends::BackendEvent;
 use nosh_core::hyprland::{HyprlandClient, HyprlandWorkspaceBackend};
 use nosh_core::paths::HyprlandPaths;
-use nosh_core::{BackendError, WorkspaceBackend};
+use nosh_core::{BackendError, WorkspaceBackend, WorkspaceBackendEvent};
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
@@ -22,7 +21,7 @@ fn paths(directory: &TempDir) -> HyprlandPaths {
     }
 }
 
-/// Serves one request per connection, which is how Hyprland 0.56 behaves.
+/// Serves one request per connection, matching Hyprland 0.56.
 async fn serve_commands(
     listener: UnixListener,
     requests: Arc<Mutex<Vec<String>>>,
@@ -241,7 +240,7 @@ async fn watch_reads_events_and_returns_on_eof() {
         .unwrap()
         .unwrap();
     match event {
-        BackendEvent::Snapshot(state) => {
+        WorkspaceBackendEvent::Snapshot(state) => {
             assert_eq!(state.focused_workspace.as_deref(), Some("1"));
             assert_eq!(state.workspaces.len(), 2);
         }
@@ -295,7 +294,7 @@ async fn urgent_marks_the_clients_workspace_when_it_is_not_focused() {
         .unwrap();
     assert!(matches!(
         event,
-        BackendEvent::UrgentChanged {
+        WorkspaceBackendEvent::UrgentChanged {
             workspace,
             urgent: true
         } if workspace == "2"

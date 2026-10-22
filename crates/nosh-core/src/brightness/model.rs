@@ -9,14 +9,12 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 use crate::error::BrightnessError;
-use crate::origin::ChangeOrigin;
 
-/// The exponent used by `brightnessctl --exponent=2.0` and by direct sysfs
-/// writes. Keep it in one place so the slider and the CLI agree.
+/// The exponent used by `brightnessctl --exponent=2.0` and direct sysfs
+/// writes. The slider and the CLI must use the same value.
 pub const GAMMA: f64 = 2.0;
 /// One keyboard step.
 pub const BRIGHTNESS_STEP: f64 = 5.0;
-/// The default dim value.
 pub const DIM_PERCENT: f64 = 10.0;
 /// A difference smaller than this is not reported as a change.
 pub const PERCENT_EPSILON: f64 = 0.05;
@@ -123,7 +121,6 @@ impl FromStr for BrightnessDeviceId {
     }
 }
 
-/// One controllable display or backlight.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrightnessDevice {
     pub id: BrightnessDeviceId,
@@ -133,17 +130,16 @@ pub struct BrightnessDevice {
     pub connector: Option<String>,
     /// `0.0..=100.0`.
     pub percent: f64,
-    /// A value the UI may show before the actor confirms the write.
+    /// A value the UI may show before the service confirms the write.
     pub pending_percent: Option<f64>,
     pub available: bool,
     pub raw: Option<u32>,
     pub max_raw: Option<u32>,
     pub ddc_bus: Option<u8>,
-    /// The backend that currently owns the device.
+    /// The backend that currently controls the device.
     pub backend: Option<&'static str>,
 }
 
-/// The result of reading a device.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BrightnessReading {
     pub percent: f64,
@@ -240,7 +236,7 @@ pub fn linear_raw_from_percent(percent: f64, max: u32) -> u32 {
     (max as f64 * fraction).round().clamp(0.0, max as f64) as u32
 }
 
-/// One entry in `~/.cache/nosh/brightness/snapshot.json`.
+/// One entry in the brightness snapshot file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BrightnessSnapshotEntry {
     pub id: String,
@@ -270,7 +266,7 @@ impl BrightnessSnapshotEntry {
         }
     }
 
-    /// Stable ID first, then connector, then the DDC bus.
+    /// Whether the entry refers to the same device id.
     pub fn matches(&self, device: &BrightnessDevice) -> bool {
         self.id == device.id.stable_id()
     }
@@ -290,7 +286,6 @@ impl BrightnessSnapshotEntry {
     }
 }
 
-/// The persisted snapshot file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BrightnessSnapshotFile {
     pub created: u64,
@@ -307,26 +302,6 @@ impl BrightnessSnapshotFile {
                 .collect(),
         }
     }
-}
-
-/// The brightness events published by the service.
-#[derive(Debug, Clone)]
-pub enum BrightnessEvent {
-    /// Complete device list after startup, a rescan, or a device change.
-    Snapshot(Vec<BrightnessDevice>),
-    DeviceChanged {
-        device: BrightnessDeviceId,
-        percent: f64,
-        old: f64,
-        source: ChangeOrigin,
-    },
-    /// A value is queued but not written yet.
-    Pending {
-        device: BrightnessDeviceId,
-        target: f64,
-    },
-    Restored,
-    Unavailable,
 }
 
 #[cfg(test)]

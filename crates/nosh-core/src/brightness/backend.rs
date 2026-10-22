@@ -1,4 +1,4 @@
-//! The per-device brightness backend trait and its try-tree resolver.
+//! The per-device brightness backend trait and its resolver.
 //!
 //! Brightness resolves per device. An internal panel may use sysfs plus logind
 //! while an external display on the same machine uses DDC/CI.
@@ -27,13 +27,13 @@ impl BrightnessCapabilities {
 
 /// One implementation of brightness reading and writing.
 ///
-/// `probe` must not change a device. Discovery is allowed to be slow because it
-/// runs off the UI thread.
+/// A probe must not change a device. Discovery may be slow because it does not
+/// run on the UI thread.
 #[async_trait]
 pub trait BrightnessBackend: Send + Sync {
     fn name(&self) -> &'static str;
 
-    /// Whether this backend owns the given identifier.
+    /// Whether this backend handles the given identifier.
     fn supports(&self, device: &BrightnessDeviceId) -> bool;
 
     async fn probe(&self) -> Result<BrightnessCapabilities, BrightnessError>;
@@ -76,7 +76,7 @@ impl BrightnessCandidate {
 
 /// A device bound to a working backend.
 #[derive(Clone)]
-pub struct BoundBackend {
+pub struct ResolvedBrightness {
     pub backend: BrightnessBackendRef,
     pub name: &'static str,
     pub priority: usize,
@@ -88,7 +88,7 @@ pub struct BoundBackend {
 pub async fn resolve_device(
     info: &BrightnessDeviceInfo,
     candidates: &[BrightnessCandidate],
-) -> Option<BoundBackend> {
+) -> Option<ResolvedBrightness> {
     for (priority, candidate) in candidates.iter().enumerate() {
         let backend = match candidate.create() {
             Ok(backend) => backend,
@@ -139,7 +139,7 @@ pub async fn resolve_device(
                     device = %info.id,
                     "selected brightness backend"
                 );
-                return Some(BoundBackend {
+                return Some(ResolvedBrightness {
                     backend,
                     name: candidate.name,
                     priority,
@@ -161,10 +161,8 @@ pub async fn resolve_device(
     None
 }
 
-/// Returns the first candidate that discovers any devices.
-///
-/// This is the discovery half of the per-device try tree. Binding then runs for
-/// each discovered device.
+/// Returns the devices from the first candidate that discovers any. Binding then
+/// runs for each device.
 pub async fn discover_first(candidates: &[BrightnessCandidate]) -> Vec<BrightnessDeviceInfo> {
     for candidate in candidates {
         let backend = match candidate.create() {

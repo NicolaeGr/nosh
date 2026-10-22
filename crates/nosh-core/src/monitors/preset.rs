@@ -95,7 +95,7 @@ pub fn extend(layout: &MonitorLayout) -> MonitorLayout {
     next
 }
 
-/// `Extend` with one fixed scale (1.0) and linear positions.
+/// Extend with scale fixed at 1.0.
 pub fn panning(layout: &MonitorLayout) -> MonitorLayout {
     let mut next = layout.clone();
     for monitor in &mut next.monitors {

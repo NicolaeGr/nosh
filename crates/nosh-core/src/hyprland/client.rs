@@ -1,10 +1,9 @@
 //! Client for the Hyprland command socket.
 //!
 //! Hyprland 0.56.2 closes the command socket after one response and does not
-//! send the `0x04` terminator described in the spec. The client opens one
-//! connection per request and accepts either framing: a `0x04` terminator or
-//! end of stream. One connection per request also keeps concurrent callers
-//! from interleaving on the same socket.
+//! send the `0x04` terminator. The client opens one connection per request and
+//! accepts either framing: a `0x04` terminator or end of stream. A connection
+//! per request also keeps concurrent callers from interleaving.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;

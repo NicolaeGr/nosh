@@ -40,8 +40,8 @@ pub enum BackendError {
     NoBackend,
 }
 
-/// A monitor layout operation failed. These errors are short and safe to
-/// surface to the user; a missing monitor never stops the service.
+/// A monitor layout operation failed. The messages are short and safe to show
+/// to the user. A missing monitor never stops the service.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum MonitorError {
     #[error("monitor {0:?} was not found")]

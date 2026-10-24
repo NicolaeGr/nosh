@@ -39,11 +39,11 @@ Add a `TrayService` to `nosh-core`. It implements the StatusNotifier watcher and
 
 Watcher role try tree:
 
-| Order | Backend | Probe | Behavior |
-| --- | --- | --- | --- |
-| 1 | `OwnWatcherBackend` | can own `org.kde.StatusNotifierWatcher` | Full watcher and host |
-| 2 | `ProxyWatcherBackend` | another owner exists | Proxy the watcher and register as a host |
-| 3 | `NoTrayBackend` | always | No tray section |
+| Order | Backend               | Probe                                   | Behavior                                 |
+| ----- | --------------------- | --------------------------------------- | ---------------------------------------- |
+| 1     | `OwnWatcherBackend`   | can own `org.kde.StatusNotifierWatcher` | Full watcher and host                    |
+| 2     | `ProxyWatcherBackend` | another owner exists                    | Proxy the watcher and register as a host |
+| 3     | `NoTrayBackend`       | always                                  | No tray section                          |
 
 Use the try tree from [backends.md](../backends.md). Do not start a second watcher when another process already owns the name.
 
@@ -117,7 +117,7 @@ Do not use `appmenu-glib-translator` from the vala-panel-appmenu project. The us
 Protocol:
 
 - Proxy `com.canonical.dbusmenu` at the item's menu path.
-- Call `GetLayout(0, -1, ["label", "enabled", "visible", "type", "children-display", "toggle-type", "toggle-state", "icon-name"])`.
+- Call `GetLayout(0, -1, ["label", "enabled", "visible", "type", "children-display", "toggle-type", "toggle-state", "icon-name", "shortcut"])`.
 - Call `AboutToShow(0)` before opening.
 - Subscribe to `LayoutUpdated` and `ItemsPropertiesUpdated`.
 - Call `GetGroupProperties` or `GetProperty` for a targeted refresh when the compositor supports it.
@@ -127,7 +127,8 @@ Protocol:
 - On open, call `AboutToShow`.
 - Call `Event(id, "hovered", ...)` only if the item asks for it. Most items do not.
 - Handle `LayoutUpdated` by rebuilding the model and updating the menu button. Keep the menu open if possible.
-- Handle `ItemsPropertiesUpdated` by updating labels, enabled state, and toggle state in place.
+- Handle `ItemsPropertiesUpdated` by updating labels, enabled state, and toggle state in place. Apply the removed-properties half by resetting those fields to their defaults.
+- Bound the layout parser: reject entries deeper than 32 levels and more than 2048 entries per item.
 
 The implementation is a few hundred lines plus tests. Budget for:
 
@@ -140,11 +141,20 @@ The implementation is a few hundred lines plus tests. Budget for:
 
 Do not implement both a C translator and a Rust client. The Rust client is the only path.
 
-### Activation
+### Activation and focus
 
-When an item has no menu, a primary click calls `Activate(x, y)`. A secondary click calls `SecondaryActivate(x, y)`. Scroll calls `Scroll(delta, "vertical")` or `"horizontal"`.
+A left click must launch the application when it has no window and focus its window when it does. Do not track clicks in the UI or the core. The core asks the compositor on every left click:
 
-The current UI uses a `MenuButton`, so it only opens the menu. If `is_menu` is false and there is no menu model, the UI should render a plain button and call `Activate`.
+1. Read the client list.
+2. Pick a window for the item. The tiers are the process that owns the item's bus name, the window class matching the item id, the icon name, the last segment of the well-known bus name, and finally the item title. Inside a tier the most recently focused mapped, non-hidden window wins.
+3. If a window matches and sits on the currently focused workspace, dispatch `focuswindow` for its address and stop.
+4. Otherwise call `Activate(x, y)`, which lets the item launch or present itself. For a window on another workspace this marks that workspace urgent instead of switching to it.
+
+Any focus failure, including a compositor that is not Hyprland, falls back to `Activate`. The cost is one `j/clients` and one `j/activeworkspace` query per left click on an item with a window.
+
+A right click opens the context menu when the item has a `Menu` path or a loaded menu. Without one it calls `SecondaryActivate(x, y)`. A middle click always calls `SecondaryActivate`.
+
+Scroll calls `Scroll(delta, "vertical")` or `"horizontal"` and is available on every item, with or without a menu.
 
 ## UI
 
@@ -152,20 +162,22 @@ The current UI uses a `MenuButton`, so it only opens the menu. If `is_menu` is f
 
 For each item:
 
-- A `gtk::MenuButton` with classes `menu-icon`, `m-0`, `p-0`.
+- A `gtk::Button` with classes `menu-icon`, `m-0`, `p-0`.
 - A child `gtk::Image` bound to the item icon.
 - `set_tooltip_markup` from the tooltip.
-- `set_menu_model` from the core menu model.
-- `insert_action_group("dbusmenu", action_group)`.
-- If the model changes, update the model and the action group in place. Do not recreate the button.
+- A `gtk::PopoverMenu` parented to the button, sharing a `gio::Menu` and a `dbusmenu` action group with the core model.
+- A DBusMenu separator becomes a section boundary. GTK draws a separator between adjacent sections. Do not append an item with no label and no action, which renders as an empty row.
+- The button stays in place when a menu appears or disappears; only the menu model changes.
 - If the item is removed, remove the button and drop the action group.
 
-For an item with no menu:
+Input is one gesture controller per button:
 
-- A `gtk::Button` with the same classes.
-- Click sends `Command::TrayActivate { item_id, x, y }`.
-- Right click sends `Command::TraySecondaryActivate`.
-- Scroll sends a scroll command if the UI supports it.
+- Primary button: send `Command::TrayActivate { item_id, x, y }`, or close the popover when it is open.
+- Secondary button: open the popover and send `Command::TrayMenuAboutToShow`, or send `Command::TraySecondaryActivate` when the item has no menu.
+- Middle button: send `Command::TraySecondaryActivate`.
+- Scroll: send `Command::TrayScroll`.
+
+Which button activates and which opens the menu is a UI decision. The core only resolves focus and performs D-Bus calls.
 
 The UI must not call D-Bus or parse menu items. It receives an opaque menu model and action group from the core.
 
@@ -190,10 +202,11 @@ Keep `.SysTray` and `.square-icon, .menu-icon button` from `src/style/_blocks.sc
 ## Definition of done
 
 - A StatusNotifierItem with an icon and a menu appears in the bar.
-- Left click opens the menu; menu actions fire the correct DBusMenu event.
+- Left click launches the application, and a later left click focuses its existing window.
+- Right click opens the context menu; menu actions fire the correct DBusMenu event.
 - A tooltip appears with the item title and description.
-- An item with no menu activates on click.
+- An item with no menu calls `SecondaryActivate` on a right click.
 - Removing the item's bus name removes the button.
 - A zero-sized pixmap falls back to the icon name or a missing-image icon without a crash.
 - Tray operations do not block the GTK thread.
-- The core owns the watcher, item proxies, and menu model. The UI owns only the button and popover.
+- The core owns the watcher, item proxies, menu model, and focus resolution. The UI owns only the button and popover.

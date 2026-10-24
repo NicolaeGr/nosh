@@ -163,6 +163,27 @@ window.Bar.secondary-instance {
     margin-right: 8px;
 }
 
+.SysTray {
+    padding-left: 4px;
+    padding-right: 4px;
+}
+
+.menu-icon {
+    min-width: 32px;
+    min-height: 32px;
+    margin-left: 2px;
+    margin-right: 2px;
+    padding: 0;
+    background-color: transparent;
+    box-shadow: none;
+    border: 2px solid transparent;
+    border-radius: 10px;
+}
+
+.menu-icon:hover {
+    border-color: @accent_bg_color;
+}
+
 .SystemStats label {
     font-weight: 700;
     min-width: 32px;

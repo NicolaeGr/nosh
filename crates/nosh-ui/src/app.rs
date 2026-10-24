@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::error::Error;
 use std::rc::Rc;
 
@@ -10,7 +10,7 @@ use gtk4 as gtk;
 use nosh_core::{
     volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel, Core,
     EndpointKind, Event, IdleInhibitEvent, IdleInhibitState, SystemStats, SystemStatsEvent,
-    WorkspaceEvent, WorkspaceSnapshot,
+    TrayEvent, TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot,
 };
 
 use crate::bar::BarWindow;
@@ -34,6 +34,8 @@ struct Ui {
     audio: RefCell<AudioModel>,
     battery: RefCell<BatteryModel>,
     idle_inhibit: RefCell<IdleInhibitState>,
+    tray: RefCell<Vec<TrayItemModel>>,
+    tray_menus: RefCell<HashMap<String, TrayMenu>>,
     bars: RefCell<BTreeMap<String, BarWindow>>,
 }
 
@@ -47,6 +49,8 @@ impl Ui {
             audio: RefCell::new(AudioModel::default()),
             battery: RefCell::new(BatteryModel::default()),
             idle_inhibit: RefCell::new(IdleInhibitState::default()),
+            tray: RefCell::new(Vec::new()),
+            tray_menus: RefCell::new(HashMap::new()),
             bars: RefCell::new(BTreeMap::new()),
         }
     }
@@ -86,6 +90,7 @@ impl Ui {
             bar.set_audio(&self.audio.borrow());
             bar.set_battery(&self.battery.borrow());
             bar.set_idle_inhibit(&self.idle_inhibit.borrow());
+            bar.set_tray(&self.tray.borrow(), &self.tray_menus.borrow());
             bar.present();
             self.bars.borrow_mut().insert(connector, bar);
         }
@@ -134,6 +139,14 @@ impl Ui {
         }
     }
 
+    fn render_tray(&self) {
+        let items = self.tray.borrow();
+        let menus = self.tray_menus.borrow();
+        for bar in self.bars.borrow_mut().values_mut() {
+            bar.set_tray(&items, &menus);
+        }
+    }
+
     fn apply(&self, event: Event) {
         match event {
             Event::Snapshot(snapshot) => {
@@ -157,6 +170,9 @@ impl Ui {
                     *self.idle_inhibit.borrow_mut() = state;
                     self.render_idle_inhibit();
                 }
+                if let Some(tray) = snapshot.tray {
+                    self.replace_tray(tray);
+                }
             }
             Event::Workspaces(event) => self.apply_workspace_event(event),
             Event::SystemStats(SystemStatsEvent::Changed(stats)) => {
@@ -166,8 +182,74 @@ impl Ui {
             Event::Audio(event) => self.apply_audio_event(event),
             Event::Battery(event) => self.apply_battery_event(event),
             Event::IdleInhibit(event) => self.apply_idle_inhibit_event(event),
+            Event::Tray(event) => self.apply_tray_event(event),
             _ => {}
         }
+    }
+
+    fn replace_tray(&self, items: Vec<TrayItemModel>) {
+        self.tray_menus
+            .borrow_mut()
+            .retain(|item_id, _| items.iter().any(|item| &item.item_id == item_id));
+        *self.tray.borrow_mut() = items;
+        self.render_tray();
+    }
+
+    fn upsert_tray_item(&self, item: TrayItemModel) {
+        let mut items = self.tray.borrow_mut();
+        if let Some(existing) = items
+            .iter_mut()
+            .find(|existing| existing.item_id == item.item_id)
+        {
+            *existing = item;
+        } else {
+            items.push(item);
+        }
+    }
+
+    fn apply_tray_event(&self, event: TrayEvent) {
+        match event {
+            TrayEvent::Snapshot(items) => {
+                self.tray_menus
+                    .borrow_mut()
+                    .retain(|item_id, _| items.iter().any(|item| &item.item_id == item_id));
+                *self.tray.borrow_mut() = items;
+            }
+            TrayEvent::ItemAdded { item, menu } => {
+                let item_id = item.item_id.clone();
+                self.upsert_tray_item(item);
+                match menu {
+                    Some(menu) => {
+                        self.tray_menus.borrow_mut().insert(item_id, menu);
+                    }
+                    None => {
+                        self.tray_menus.borrow_mut().remove(&item_id);
+                    }
+                }
+            }
+            TrayEvent::ItemUpdated { item } => self.upsert_tray_item(item),
+            TrayEvent::ItemRemoved { item_id } => {
+                self.tray
+                    .borrow_mut()
+                    .retain(|item| item.item_id != item_id);
+                self.tray_menus.borrow_mut().remove(&item_id);
+            }
+            TrayEvent::MenuUpdated { item_id, menu } => match menu {
+                Some(menu) => {
+                    self.tray_menus.borrow_mut().insert(item_id, menu);
+                }
+                None => {
+                    self.tray_menus.borrow_mut().remove(&item_id);
+                }
+            },
+            TrayEvent::BackendChanged { .. } => return,
+            TrayEvent::Unavailable => {
+                self.tray.borrow_mut().clear();
+                self.tray_menus.borrow_mut().clear();
+            }
+        }
+
+        self.render_tray();
     }
 
     fn apply_audio_event(&self, event: AudioEvent) {

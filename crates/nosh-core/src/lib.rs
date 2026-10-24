@@ -18,6 +18,7 @@ pub mod monitors;
 pub mod origin;
 pub mod paths;
 pub mod stats;
+pub mod tray;
 pub mod workspaces;
 
 #[cfg(feature = "audio-pulse")]
@@ -46,7 +47,7 @@ pub use error::{
 };
 pub use event::{
     AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, Service,
-    Snapshot, SystemStatsEvent, WorkspaceEvent,
+    Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
 };
 pub use idle_inhibit::{
     IdleInhibitBackend, IdleInhibitService, IdleInhibitServiceConfig, IdleInhibitState,
@@ -63,6 +64,14 @@ pub use stats::{
     cpu_percent, parse_cpu_stat, parse_meminfo, CpuTimes, MemoryInfo, ProcStatsSource, StatsSource,
     StatsSourceRef, SystemStats, SystemStatsService, SystemStatsServiceConfig, DEFAULT_INTERVAL,
     MEMINFO_PATH, STAT_PATH,
+};
+pub use tray::{
+    decode_argb32, default_candidates, find_icon_file, largest_pixmap, pick_window, DbusMenuClient,
+    HyprlandFocus, IconCache, IconPixmap, NoTrayBackend, OwnWatcherBackend, ProxyWatcherBackend,
+    Registration, TrayCandidate, TrayCategory, TrayIcon, TrayItemModel, TrayMenu, TrayMenuItem,
+    TrayMenuItemKind, TrayService, TrayServiceConfig, TrayStatus, TrayToggleState, TrayToggleType,
+    WatcherBackend, WatcherBackendRef, WatcherChange, WatcherSession, WindowFocus, WindowFocusRef,
+    WindowHint, MAX_MENU_DEPTH, MAX_MENU_ITEMS, MAX_PIXMAP_SIZE, MENU_TIMEOUT, WANTED_PROPERTIES,
 };
 pub use workspaces::{
     normalize_address, resolve_workspace, sort_workspaces, ResolvedWorkspace,

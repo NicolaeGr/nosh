@@ -46,6 +46,29 @@ pub enum Command {
     },
     IdleInhibitSet(bool),
     IdleInhibitToggle,
+    TrayActivate {
+        item_id: String,
+        x: i32,
+        y: i32,
+    },
+    TraySecondaryActivate {
+        item_id: String,
+        x: i32,
+        y: i32,
+    },
+    TrayScroll {
+        item_id: String,
+        delta: i32,
+        horizontal: bool,
+    },
+    TrayMenuAboutToShow {
+        item_id: String,
+    },
+    TrayMenuEvent {
+        item_id: String,
+        menu_id: i32,
+        event: String,
+    },
 }
 
 /// The idle inhibitor command behind a routed [`Command`].
@@ -91,6 +114,18 @@ impl Command {
                 | Self::MonitorMode { .. }
                 | Self::MonitorSetPrimary(_)
                 | Self::MonitorSetEnabled { .. }
+        )
+    }
+
+    /// Whether the tray service handles this command.
+    pub fn is_tray(&self) -> bool {
+        matches!(
+            self,
+            Self::TrayActivate { .. }
+                | Self::TraySecondaryActivate { .. }
+                | Self::TrayScroll { .. }
+                | Self::TrayMenuAboutToShow { .. }
+                | Self::TrayMenuEvent { .. }
         )
     }
 
@@ -169,6 +204,41 @@ mod tests {
 
         assert!(!Command::WorkspaceActivate("1".to_string()).is_audio());
         assert!(!Command::MonitorSetPrimary("DP-1".to_string()).is_audio());
+    }
+
+    #[test]
+    fn tray_commands_are_classified_for_routing() {
+        assert!(Command::TrayActivate {
+            item_id: ":1.2/StatusNotifierItem".to_string(),
+            x: 0,
+            y: 0,
+        }
+        .is_tray());
+        assert!(Command::TraySecondaryActivate {
+            item_id: "item".to_string(),
+            x: 1,
+            y: 2,
+        }
+        .is_tray());
+        assert!(Command::TrayScroll {
+            item_id: "item".to_string(),
+            delta: 1,
+            horizontal: false,
+        }
+        .is_tray());
+        assert!(Command::TrayMenuAboutToShow {
+            item_id: "item".to_string(),
+        }
+        .is_tray());
+        assert!(Command::TrayMenuEvent {
+            item_id: "item".to_string(),
+            menu_id: 3,
+            event: "clicked".to_string(),
+        }
+        .is_tray());
+
+        assert!(!Command::IdleInhibitToggle.is_tray());
+        assert!(!Command::AudioSetVolume(0.5).is_tray());
     }
 
     #[test]

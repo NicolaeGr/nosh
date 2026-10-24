@@ -10,12 +10,13 @@ use crate::command::Command;
 use crate::error::CoreError;
 use crate::event::{
     AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, Snapshot,
-    SystemStatsEvent, WorkspaceEvent,
+    SystemStatsEvent, TrayEvent, WorkspaceEvent,
 };
 use crate::idle_inhibit::model::IdleInhibitState;
 use crate::idle_inhibit::service::{IdleInhibitService, IdleInhibitServiceConfig};
 use crate::monitors::service::{MonitorService, MonitorServiceConfig};
 use crate::stats::service::{SystemStatsService, SystemStatsServiceConfig};
+use crate::tray::service::{TrayService, TrayServiceConfig};
 use crate::workspaces::service::{WorkspaceService, WorkspaceServiceConfig};
 
 #[derive(Debug, Clone, Default)]
@@ -27,6 +28,7 @@ pub struct CoreSettings {
     pub battery: BatteryServiceConfig,
     pub stats: SystemStatsServiceConfig,
     pub idle_inhibit: IdleInhibitServiceConfig,
+    pub tray: TrayServiceConfig,
 }
 
 /// Handle to the core thread.
@@ -60,6 +62,7 @@ impl Core {
         let (battery_commands, battery_receiver) = async_channel::unbounded();
         let (stats_commands, stats_receiver) = async_channel::unbounded();
         let (idle_inhibit_commands, idle_inhibit_receiver) = async_channel::unbounded();
+        let (tray_commands, tray_receiver) = async_channel::unbounded();
 
         let thread = thread::Builder::new()
             .name("nosh-core".to_string())
@@ -75,6 +78,7 @@ impl Core {
                             _battery: battery_commands,
                             _stats: stats_commands,
                             idle_inhibit: idle_inhibit_commands,
+                            tray: tray_commands,
                         },
                     ));
                     let merger = tokio::spawn(merge_events(service_event_receiver, event_sender));
@@ -93,6 +97,8 @@ impl Core {
                         .run(stats_receiver, service_events.clone());
                     let idle_inhibit = IdleInhibitService::from_env_with(settings.idle_inhibit)
                         .run(idle_inhibit_receiver, service_events.clone());
+                    let tray = TrayService::from_env_with(settings.tray)
+                        .run(tray_receiver, service_events.clone());
                     // The services own a clone. Dropping the original lets the
                     // merger finish once every service returns.
                     drop(service_events);
@@ -104,7 +110,8 @@ impl Core {
                         brightness,
                         battery,
                         stats,
-                        idle_inhibit
+                        idle_inhibit,
+                        tray
                     );
                     router.abort();
                     let _ = merger.await;
@@ -158,6 +165,7 @@ struct ServiceSenders {
     _battery: Sender<Command>,
     _stats: Sender<Command>,
     idle_inhibit: Sender<Command>,
+    tray: Sender<Command>,
 }
 
 async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
@@ -170,6 +178,8 @@ async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
             &senders.monitors
         } else if command.is_idle_inhibit() {
             &senders.idle_inhibit
+        } else if command.is_tray() {
+            &senders.tray
         } else {
             &senders.workspaces
         };
@@ -241,6 +251,12 @@ fn merge_snapshot(accumulator: &mut Snapshot, incoming: Snapshot) {
     if incoming.idle_inhibit_backend.is_some() {
         accumulator.idle_inhibit_backend = incoming.idle_inhibit_backend;
     }
+    if incoming.tray.is_some() {
+        accumulator.tray = incoming.tray;
+    }
+    if incoming.tray_backend.is_some() {
+        accumulator.tray_backend = incoming.tray_backend;
+    }
 }
 
 fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
@@ -261,6 +277,7 @@ fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
         Event::Battery(event) => absorb_battery(accumulator, event),
         Event::SystemStats(event) => absorb_system_stats(accumulator, event),
         Event::IdleInhibit(event) => absorb_idle_inhibit(accumulator, event),
+        Event::Tray(event) => absorb_tray(accumulator, event),
         _ => {}
     }
 }
@@ -291,6 +308,32 @@ fn absorb_idle_inhibit(accumulator: &mut Snapshot, event: &IdleInhibitEvent) {
             }
         }
         IdleInhibitEvent::Unavailable => accumulator.idle_inhibit = None,
+    }
+}
+
+fn absorb_tray(accumulator: &mut Snapshot, event: &TrayEvent) {
+    match event {
+        TrayEvent::Snapshot(items) => accumulator.tray = Some(items.clone()),
+        TrayEvent::ItemAdded { item, .. } | TrayEvent::ItemUpdated { item } => {
+            let Some(items) = accumulator.tray.as_mut() else {
+                return;
+            };
+            if let Some(existing) = items.iter_mut().find(|entry| entry.item_id == item.item_id) {
+                *existing = item.clone();
+            } else {
+                items.push(item.clone());
+            }
+        }
+        TrayEvent::ItemRemoved { item_id } => {
+            if let Some(items) = accumulator.tray.as_mut() {
+                items.retain(|item| &item.item_id != item_id);
+            }
+        }
+        TrayEvent::MenuUpdated { .. } => {}
+        TrayEvent::BackendChanged { backend } => {
+            accumulator.tray_backend = Some(*backend);
+        }
+        TrayEvent::Unavailable => accumulator.tray = None,
     }
 }
 
@@ -425,6 +468,7 @@ mod tests {
         let (battery_tx, _battery_rx) = async_channel::unbounded();
         let (stats_tx, _stats_rx) = async_channel::unbounded();
         let (idle_inhibit_tx, idle_inhibit_rx) = async_channel::unbounded();
+        let (tray_tx, tray_rx) = async_channel::unbounded();
 
         let task = tokio::spawn(route_commands(
             public_rx,
@@ -436,6 +480,7 @@ mod tests {
                 _battery: battery_tx,
                 _stats: stats_tx,
                 idle_inhibit: idle_inhibit_tx,
+                tray: tray_tx,
             },
         ));
 
@@ -457,6 +502,12 @@ mod tests {
         public_tx.send(Command::AudioSetVolume(0.5)).await.unwrap();
         public_tx.send(Command::BrightnessSet(40.0)).await.unwrap();
         public_tx.send(Command::IdleInhibitToggle).await.unwrap();
+        public_tx
+            .send(Command::TrayMenuAboutToShow {
+                item_id: "item".to_string(),
+            })
+            .await
+            .unwrap();
 
         assert_eq!(
             tokio::time::timeout(Duration::from_secs(1), workspace_rx.recv())
@@ -505,6 +556,15 @@ mod tests {
                 .unwrap()
                 .unwrap(),
             Command::IdleInhibitToggle
+        );
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), tray_rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            Command::TrayMenuAboutToShow {
+                item_id: "item".to_string()
+            }
         );
 
         drop(public_tx);

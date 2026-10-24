@@ -1,15 +1,18 @@
 mod battery;
 mod idle_inhibitor;
 mod stats;
+mod tray;
 mod volume;
 mod workspaces;
 
 pub use battery::Battery;
 pub use idle_inhibitor::IdleInhibitor;
 pub use stats::SystemStats;
+pub use tray::Tray;
 pub use volume::Volume;
 pub use workspaces::Workspaces;
 
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::gdk;
@@ -17,8 +20,8 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use nosh_core::{
-    AudioModel, BatteryModel, Core, IdleInhibitState, SystemStats as StatsSnapshot,
-    WorkspaceSnapshot,
+    AudioModel, BatteryModel, Core, IdleInhibitState, SystemStats as StatsSnapshot, TrayItemModel,
+    TrayMenu, WorkspaceSnapshot,
 };
 
 pub struct BarWindow {
@@ -26,6 +29,7 @@ pub struct BarWindow {
     window: gtk::ApplicationWindow,
     workspaces: Workspaces,
     stats: SystemStats,
+    tray: Tray,
     idle_inhibitor: IdleInhibitor,
     battery: Battery,
     volume: Volume,
@@ -69,6 +73,7 @@ impl BarWindow {
 
         let workspaces = Workspaces::new(Rc::clone(&core));
         let stats = SystemStats::new();
+        let tray = Tray::new(Rc::clone(&core));
         let idle_inhibitor = IdleInhibitor::new(Rc::clone(&core));
         let battery = Battery::new();
         let volume = Volume::new(core);
@@ -89,6 +94,7 @@ impl BarWindow {
         right.set_hexpand(true);
         right.add_css_class("Right");
         right.append(stats.widget());
+        right.append(tray.widget());
         right.append(idle_inhibitor.widget());
         right.append(battery.widget());
         right.append(volume.widget());
@@ -102,6 +108,7 @@ impl BarWindow {
             window,
             workspaces,
             stats,
+            tray,
             idle_inhibitor,
             battery,
             volume,
@@ -122,6 +129,10 @@ impl BarWindow {
 
     pub fn set_stats(&mut self, stats: &StatsSnapshot) {
         self.stats.render(stats);
+    }
+
+    pub fn set_tray(&mut self, items: &[TrayItemModel], menus: &HashMap<String, TrayMenu>) {
+        self.tray.render(items, menus);
     }
 
     pub fn set_idle_inhibit(&mut self, state: &IdleInhibitState) {

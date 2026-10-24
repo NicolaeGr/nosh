@@ -5,6 +5,7 @@ use crate::idle_inhibit::model::IdleInhibitState;
 use crate::monitors::MonitorLayout;
 use crate::origin::ChangeOrigin;
 use crate::stats::model::SystemStats;
+use crate::tray::model::{TrayItemModel, TrayMenu};
 use crate::workspaces::model::WorkspaceSnapshot;
 
 /// Every service publishes state through this enum.
@@ -23,6 +24,7 @@ pub enum Event {
     Battery(BatteryEvent),
     SystemStats(SystemStatsEvent),
     IdleInhibit(IdleInhibitEvent),
+    Tray(TrayEvent),
     ServiceAvailability(Service, bool),
 }
 
@@ -39,6 +41,8 @@ pub struct Snapshot {
     pub system_stats: Option<SystemStats>,
     pub idle_inhibit: Option<IdleInhibitState>,
     pub idle_inhibit_backend: Option<&'static str>,
+    pub tray: Option<Vec<TrayItemModel>>,
+    pub tray_backend: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -51,6 +55,7 @@ pub enum Service {
     Battery,
     SystemStats,
     IdleInhibit,
+    Tray,
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +159,33 @@ pub enum BatteryEvent {
 pub enum SystemStatsEvent {
     /// A fresh CPU and memory sample.
     Changed(SystemStats),
+}
+
+#[derive(Debug, Clone)]
+pub enum TrayEvent {
+    /// The complete item list after startup or a reconnect.
+    Snapshot(Vec<TrayItemModel>),
+    /// A new item was read. Its menu is already fetched or was unavailable.
+    ItemAdded {
+        item: TrayItemModel,
+        menu: Option<TrayMenu>,
+    },
+    /// An existing item changed one of its properties.
+    ItemUpdated {
+        item: TrayItemModel,
+    },
+    ItemRemoved {
+        item_id: String,
+    },
+    /// The DBusMenu tree changed. `None` means the item has no usable menu.
+    MenuUpdated {
+        item_id: String,
+        menu: Option<TrayMenu>,
+    },
+    BackendChanged {
+        backend: &'static str,
+    },
+    Unavailable,
 }
 
 /// The idle inhibitor state.

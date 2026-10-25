@@ -2,6 +2,8 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::BatteryModel;
 
+use crate::scale;
+
 pub struct Battery {
     button: gtk::Button,
     icon: gtk::Image,
@@ -14,7 +16,7 @@ impl Battery {
         button.set_focus_on_click(false);
 
         let icon = gtk::Image::new();
-        icon.set_pixel_size(16);
+        icon.set_pixel_size(scale::icon_px());
         button.set_child(Some(&icon));
 
         let widget = Self { button, icon };

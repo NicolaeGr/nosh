@@ -20,6 +20,8 @@ use nosh_core::{
     TrayToggleState,
 };
 
+use crate::scale;
+
 pub struct Tray {
     container: gtk::Box,
     core: Rc<Core>,
@@ -125,10 +127,10 @@ impl Tray {
 
     fn create(&self, item: &TrayItemModel, menu: Option<&TrayMenu>) -> TrayEntry {
         let image = gtk::Image::new();
-        image.set_pixel_size(16);
+        image.set_pixel_size(scale::icon_px());
 
         let button = gtk::Button::new();
-        for class in ["menu-icon", "m-0", "p-0"] {
+        for class in ["menu-icon", "p-0"] {
             button.add_css_class(class);
         }
         button.set_focus_on_click(false);

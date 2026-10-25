@@ -1,0 +1,2052 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asymmetric Island Bar — Shell v4</title>
+<style>
+  :root {
+    --accent: #f58b83;
+    --accent-cool: #8dc8df;
+    --ink: #f5eef6;
+    --muted: #b7aebf;
+    --muted-2: #8a8295;
+    --island: rgba(35, 28, 50, .50);
+    --island-edge: rgba(231, 207, 237, .18);
+    --panel: rgba(19, 15, 26, .82);
+    --panel-edge: rgba(231, 207, 237, .12);
+    --row: rgba(150, 135, 160, .08);
+    --row-hover: rgba(150, 135, 160, .16);
+    --track: rgba(150, 135, 160, .22);
+    --divider: rgba(231, 207, 237, .10);
+    --inactive-radius: 16px;
+    --active-radius: 10px;
+    --corner: 0px var(--inactive-radius) 0px var(--inactive-radius);
+    /* overshoot bounce curve — goes slightly past 1 then settles */
+    --bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; margin: 0; }
+  body {
+    overflow: hidden;
+    color: var(--ink);
+    font: 13px/1.1 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    letter-spacing: .015em;
+    background: #15111c;
+  }
+
+  button {
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ---------- Top bar ---------- */
+  .bar {
+    position: fixed;
+    z-index: 5;
+    inset: 12px 16px auto;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: start;
+    gap: 12px;
+  }
+  .island {
+    display: flex;
+    align-items: center;
+    min-height: 42px;
+    gap: 3px;
+    padding: 4px;
+    background: var(--island);
+    border: 1px solid var(--island-edge);
+    border-radius: var(--corner);
+    box-shadow: 0 7px 24px rgba(5, 3, 10, .18), inset 0 1px 0 rgba(255,255,255,.035);
+    backdrop-filter: blur(18px) saturate(125%);
+    -webkit-backdrop-filter: blur(18px) saturate(125%);
+  }
+  .left { justify-self: start; }
+  .center { justify-self: center; padding-inline: 14px; min-width: 116px; }
+  .right { justify-self: end; gap: 2px; }
+
+  .workspace {
+    position: relative;
+    min-width: 31px;
+    height: 31px;
+    padding: 0 15px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(150, 135, 160, .06);
+    border: 2px solid transparent;
+    border-radius: 0px var(--inactive-radius) 0px var(--inactive-radius);
+    color: var(--muted);
+    transition:
+      color 240ms ease,
+      background-color 260ms ease,
+      border-color 300ms ease,
+      border-radius 300ms cubic-bezier(.2,.8,.2,1),
+      box-shadow 260ms ease;
+  }
+  .workspace.active {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent) 22%, var(--island));
+    border-left-color: var(--accent);
+    border-bottom-color: var(--accent);
+    border-radius: 0px var(--active-radius) 0px var(--active-radius);
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .workspace:hover, .workspace:focus-visible {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent) 13%, var(--island));
+    border-left-color: color-mix(in srgb, var(--accent) 78%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--accent) 78%, transparent);
+    border-radius: 0px var(--active-radius) 0px var(--active-radius);
+    outline: none;
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .workspace.active:hover, .workspace.active:focus-visible {
+    background: color-mix(in srgb, var(--accent) 29%, var(--island));
+    border-left-color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ---------- Clock + media in center island ---------- */
+  .clock {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .time-btn {
+    background: transparent;
+    border: none;
+    color: inherit;
+    padding: 4px 6px;
+    border-radius: 0px 8px 0px 8px;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    transition: background-color 200ms ease;
+  }
+  .time-btn:hover { background: rgba(150, 135, 160, .08); }
+  .time { font-size: 14px; font-weight: 650; letter-spacing: .04em; }
+  .date-tooltip {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%) translateY(-4px);
+    padding: 5px 10px;
+    background: rgba(31, 25, 41, .95);
+    border: 1px solid var(--island-edge);
+    border-radius: 6px;
+    color: var(--ink);
+    font-size: 11px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease, transform 180ms ease;
+    z-index: 7;
+    box-shadow: 0 6px 18px rgba(5, 3, 10, .35);
+  }
+  .date-tooltip::after {
+    content: "";
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 8px; height: 8px;
+    background: rgba(31, 25, 41, .95);
+    border-left: 1px solid var(--island-edge);
+    border-top: 1px solid var(--island-edge);
+  }
+  .time-btn:hover .date-tooltip {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .media-divider {
+    width: 0;
+    height: 18px;
+    background: var(--divider);
+    flex: 0 0 auto;
+    margin: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: width 280ms cubic-bezier(.2,.8,.2,1), margin 280ms ease, opacity 280ms ease;
+  }
+  .center.is-playing .media-divider {
+    width: 1px;
+    margin: 0 10px;
+    opacity: 1;
+  }
+
+  .media-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: transparent;
+    border: none;
+    color: var(--ink);
+    cursor: pointer;
+    padding: 0;
+    max-width: 0;
+    min-width: 0;
+    overflow: hidden;
+    pointer-events: none;
+    transition: max-width 420ms var(--bounce);
+  }
+  .center.is-playing .media-info {
+    max-width: 190px;
+    pointer-events: auto;
+  }
+  .media-icon {
+    color: var(--accent);
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    animation: mediaPulse 2.4s ease-in-out infinite;
+  }
+  @keyframes mediaPulse {
+    0%, 100% { opacity: 0.72; }
+    50% { opacity: 1; }
+  }
+  .media-icon svg { width: 12px; height: 12px; display: block; }
+  .media-title {
+    overflow: hidden;
+    white-space: nowrap;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--ink);
+  }
+  .media-title-text {
+    display: inline-block;
+    transition: transform 0.3s ease;
+  }
+  .media-title-text.carousing {
+    animation: mediaMarquee 6s ease-in-out infinite;
+  }
+  @keyframes mediaMarquee {
+    0%, 8%   { transform: translateX(0); }
+    42%, 58% { transform: translateX(var(--marquee-distance, 0px)); }
+    92%, 100% { transform: translateX(0); }
+  }
+
+  /* Center island gets a subtle scale-bounce on play start */
+  .center.is-playing {
+    animation: islandBounce 480ms var(--bounce);
+  }
+  @keyframes islandBounce {
+    0%   { transform: scale(0.97); }
+    60%  { transform: scale(1.035); }
+    100% { transform: scale(1); }
+  }
+
+  /* System pills */
+  .system {
+    height: 32px;
+    min-width: 35px;
+    padding: 0 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    color: var(--muted);
+    background: rgba(150, 135, 160, .025);
+    border: 2px solid transparent;
+    border-top-color: transparent;
+    border-right-color: transparent;
+    border-radius: 0px var(--inactive-radius) 0px var(--inactive-radius);
+    transition:
+      color 240ms ease,
+      background-color 280ms ease,
+      border-color 320ms ease,
+      border-radius 300ms cubic-bezier(.2,.8,.2,1),
+      box-shadow 280ms ease;
+  }
+  .system:hover, .system:focus-visible {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent) 15%, var(--island));
+    border-left-color: color-mix(in srgb, var(--accent) 72%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--accent) 72%, transparent);
+    border-radius: 0px var(--active-radius) 0px var(--active-radius);
+    outline: none;
+    box-shadow: 0 3px 12px color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .system:active { transform: translateY(1px); }
+  .system svg { width: 15px; height: 15px; flex: 0 0 auto; }
+  .system .value { font-size: 11px; color: #e8dfe9; font-variant-numeric: tabular-nums; }
+  .system:hover .value { color: #fff; }
+  .battery-shell { stroke: currentColor; }
+  .battery-fill { fill: var(--accent-cool); }
+  .combo-pill { gap: 4px; padding: 0 8px; }
+  .combo-pill .mini-status {
+    display: inline-flex; gap: 4px; align-items: center;
+    color: var(--muted-2);
+  }
+  .combo-pill:hover .mini-status { color: var(--ink); }
+  .combo-pill .mini-status svg { width: 13px; height: 13px; }
+  .combo-pill.is-open {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent) 18%, var(--island));
+    border-left-color: color-mix(in srgb, var(--accent) 72%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--accent) 72%, transparent);
+    border-radius: 0px var(--active-radius) 0px var(--active-radius);
+  }
+
+  /* ---------- Quick Settings panel ---------- */
+  .quick-settings {
+    --r-lg: 18px;
+    --r-md: 12px;
+    --r-sm: 10px;
+    --r-xs: 6px;
+    /* default: TL+BR sharp, TR+BL rounded */
+    --c1-lg: 0; --c2-lg: var(--r-lg);
+    --c1-md: 0; --c2-md: var(--r-md);
+    --c1-sm: 0; --c2-sm: var(--r-sm);
+    --c1-xs: 0; --c2-xs: var(--r-xs);
+
+    position: fixed;
+    z-index: 6;
+    top: 58px;
+    right: 16px;
+    width: 372px;
+    max-height: calc(100vh - 80px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 14px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: var(--c1-lg) var(--c2-lg) var(--c1-lg) var(--c2-lg);
+    box-shadow: 0 18px 60px rgba(5, 3, 10, .42), inset 0 1px 0 rgba(255,255,255,.04);
+    backdrop-filter: blur(28px) saturate(125%);
+    -webkit-backdrop-filter: blur(28px) saturate(125%);
+    transform-origin: top right;
+    animation: qsIn 220ms cubic-bezier(.2,.8,.2,1);
+  }
+  .quick-settings[hidden] { display: none; }
+  /* user prefers inverted — make it the default */
+  .quick-settings.corners-inverted {
+    --c1-lg: var(--r-lg); --c2-lg: 0;
+    --c1-md: var(--r-md); --c2-md: 0;
+    --c1-sm: var(--r-sm); --c2-sm: 0;
+    --c1-xs: var(--r-xs); --c2-xs: 0;
+  }
+  @keyframes qsIn {
+    from { opacity: 0; transform: translateY(-6px) scale(.98); }
+    to   { opacity: 1; transform: none; }
+  }
+  /* Separate keyframe for center-anchored panels so the translateX(-50%)
+     used for horizontal centering isn't clobbered by the animation. */
+  @keyframes centerPanelIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(.98); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  }
+
+  .qs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .qs-battery {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 6px 11px;
+    background: var(--row);
+    border: 1px solid transparent;
+    border-radius: var(--c1-sm) var(--c2-sm) var(--c1-sm) var(--c2-sm);
+    color: var(--ink);
+  }
+  .qs-battery svg { width: 18px; height: 18px; }
+  .qs-battery .pct { font-variant-numeric: tabular-nums; font-size: 12px; }
+  .qs-battery .label { color: var(--muted); font-size: 11px; }
+
+  .qs-session {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px 6px 11px;
+    color: var(--ink);
+    background: var(--row);
+    border: 1px solid transparent;
+    border-radius: var(--c1-sm) var(--c2-sm) var(--c1-sm) var(--c2-sm);
+    transition: background-color 220ms ease, border-color 220ms ease, color 220ms ease;
+  }
+  .qs-session:hover {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-left-color: color-mix(in srgb, var(--accent) 70%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+  .qs-session svg { width: 16px; height: 16px; }
+  .qs-session .name { font-size: 12px; }
+
+  .qs-toggles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+    grid-auto-flow: row dense;
+  }
+  .toggle {
+    display: flex;
+    align-items: stretch;
+    background: var(--row);
+    border: 1px solid transparent;
+    border-radius: var(--c1-md) var(--c2-md) var(--c1-md) var(--c2-md);
+    color: var(--muted);
+    overflow: hidden;
+    transition: background-color 220ms ease, border-color 220ms ease, color 220ms ease;
+  }
+  .toggle:hover { background: var(--row-hover); }
+  .toggle.on {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-left-color: color-mix(in srgb, var(--accent) 60%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  .toggle-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 11px;
+    color: inherit;
+    text-align: left;
+  }
+  .toggle .icon {
+    width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 8px;
+    background: rgba(150, 135, 160, .12);
+    color: var(--muted);
+    flex: 0 0 auto;
+    transition: background-color 220ms ease, color 220ms ease;
+  }
+  .toggle.on .icon {
+    background: color-mix(in srgb, var(--accent) 26%, transparent);
+    color: var(--ink);
+  }
+  .toggle .icon svg { width: 15px; height: 15px; }
+  .toggle .meta { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .toggle .name { font-size: 12px; color: var(--ink); line-height: 1.15; }
+  .toggle .status { font-size: 10.5px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .divider { width: 1px; background: var(--divider); margin: 6px 0; flex: 0 0 auto; }
+  .dd-btn {
+    width: 36px;
+    background: transparent;
+    border: none;
+    color: var(--muted-2);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+  .dd-btn:hover { color: var(--ink); background: rgba(150, 135, 160, .10); }
+  .dd-btn svg { width: 12px; height: 12px; transition: transform 220ms cubic-bezier(.2,.8,.2,1); }
+  .dd-btn.is-open svg { transform: rotate(180deg); }
+
+  .qs-dropdown {
+    grid-column: 1 / -1;
+    padding: 6px;
+    background: rgba(31, 25, 41, .92);
+    border: 1px solid var(--panel-edge);
+    border-radius: var(--c1-md) var(--c2-md) var(--c1-md) var(--c2-md);
+    animation: ddIn 180ms cubic-bezier(.2,.8,.2,1);
+  }
+  .qs-dropdown[hidden] { display: none; }
+  @keyframes ddIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .dd-section-head {
+    font-size: 9.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    padding: 6px 8px 4px;
+  }
+  .dd-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 7px 8px;
+    background: transparent;
+    border: none;
+    border-radius: var(--c1-sm) var(--c2-sm) var(--c1-sm) var(--c2-sm);
+    color: var(--muted);
+    text-align: left;
+    font-size: 12px;
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+  .dd-item:hover { background: rgba(150, 135, 160, .10); color: var(--ink); }
+  .dd-item.is-active { color: var(--ink); }
+  .dd-item-name { flex: 1; }
+  .dd-item-meta { display: inline-flex; align-items: center; gap: 6px; color: var(--muted-2); }
+  .dd-item.is-active .dd-item-meta { color: var(--accent); }
+  .dd-action {
+    color: var(--muted-2);
+    margin-top: 4px;
+    padding-top: 9px;
+    border-top: 1px solid var(--divider);
+    border-radius: 0;
+  }
+  .dd-action:hover { color: var(--ink); background: transparent; }
+
+  .radio-dot {
+    width: 12px; height: 12px;
+    border: 1.4px solid currentColor;
+    border-radius: 50%;
+    position: relative;
+  }
+  .radio-dot.on::after {
+    content: "";
+    position: absolute; inset: 2px;
+    background: currentColor;
+    border-radius: 50%;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .status-dot.sleep { opacity: .35; }
+  .signal-bars { fill: currentColor; }
+  .signal-bars[data-strength="3"] rect:nth-child(4) { opacity: .25; }
+  .signal-bars[data-strength="2"] rect:nth-child(n+3) { opacity: .25; }
+  .signal-bars[data-strength="1"] rect:nth-child(n+2) { opacity: .25; }
+  .signal-bars[data-strength="0"] rect { opacity: .25; }
+
+  .qs-sliders {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .slider-simple {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 0 4px;
+  }
+  .slider-simple .icon { color: var(--muted); display: inline-flex; }
+  .slider-simple .icon svg { width: 16px; height: 16px; display: block; }
+  .slider-simple .value { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
+
+  .slider-block { display: flex; flex-direction: column; padding: 0 4px; }
+  .slider-block-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .block-name {
+    font-size: 10.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .block-expand {
+    background: transparent;
+    border: none;
+    color: var(--muted-2);
+    padding: 2px 4px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--c1-xs) var(--c2-xs) var(--c1-xs) var(--c2-xs);
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+  .block-expand:hover { color: var(--ink); background: rgba(150, 135, 160, .10); }
+  .block-expand svg { width: 12px; height: 12px; transition: transform 220ms cubic-bezier(.2,.8,.2,1); }
+  .block-expand.is-open svg { transform: rotate(180deg); }
+
+  .slider-block-body {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    align-items: center;
+    gap: 12px;
+  }
+  .slider-block-body .icon { color: var(--muted); display: inline-flex; }
+  .slider-block-body .icon svg { width: 16px; height: 16px; display: block; }
+  .slider-block-body .value { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: var(--track);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--ink);
+    border: 1.5px solid var(--accent);
+    cursor: ew-resize;
+    transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover,
+  input[type="range"]:focus::-webkit-slider-thumb,
+  input[type="range"]:active::-webkit-slider-thumb {
+    background: var(--accent);
+    border-color: var(--ink);
+    transform: scale(1.18);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--ink);
+    border: 1.5px solid var(--accent);
+    cursor: ew-resize;
+    transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease;
+  }
+  input[type="range"]:hover::-moz-range-thumb,
+  input[type="range"]:focus::-moz-range-thumb,
+  input[type="range"]:active::-moz-range-thumb {
+    background: var(--accent);
+    border-color: var(--ink);
+  }
+
+  .slider-dropdown {
+    margin-top: 8px;
+    padding: 10px;
+    background: rgba(31, 25, 41, .92);
+    border: 1px solid var(--panel-edge);
+    border-radius: var(--c1-md) var(--c2-md) var(--c1-md) var(--c2-md);
+    animation: ddIn 180ms cubic-bezier(.2,.8,.2,1);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .slider-dropdown[hidden] { display: none; }
+  .dd-item-row { display: flex; flex-direction: column; gap: 4px; }
+  .dd-item-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .dd-item-head .dd-name { font-size: 11px; color: var(--muted); }
+  .dd-item-row.is-default .dd-item-head .dd-name { color: var(--ink); }
+  .dd-default {
+    width: 16px; height: 16px;
+    border: 1px solid var(--panel-edge);
+    border-radius: var(--c1-xs) var(--c2-xs) var(--c1-xs) var(--c2-xs);
+    background: transparent;
+    color: transparent;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+  }
+  .dd-default:hover { border-color: var(--accent); }
+  .dd-default.is-default {
+    background: var(--accent);
+    border-color: transparent;
+    color: #fff;
+  }
+  .dd-default svg { width: 10px; height: 10px; display: block; }
+  .dd-slider { width: 100%; }
+
+  /* ---------- Calendar panel (below center island) ---------- */
+  .calendar-panel {
+    position: fixed;
+    z-index: 6;
+    top: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 268px;
+    padding: 14px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 18px 0 18px 0;
+    box-shadow: 0 18px 60px rgba(5, 3, 10, .42), inset 0 1px 0 rgba(255,255,255,.04);
+    backdrop-filter: blur(28px) saturate(125%);
+    -webkit-backdrop-filter: blur(28px) saturate(125%);
+    animation: centerPanelIn 220ms cubic-bezier(.2,.8,.2,1);
+  }
+  .calendar-panel[hidden] { display: none; }
+  .cal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    gap: 6px;
+  }
+  .cal-month {
+    font-size: 13px;
+    font-weight: 650;
+    color: var(--ink);
+    letter-spacing: .01em;
+  }
+  .cal-nav {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 6px 8px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+  .cal-nav:hover { color: var(--ink); background: var(--row); }
+  .cal-nav svg { width: 12px; height: 12px; }
+  .cal-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    margin-bottom: 4px;
+  }
+  .cal-weekdays span {
+    text-align: center;
+    font-size: 10px;
+    color: var(--muted-2);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    padding: 4px 0;
+  }
+  .cal-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+  .cal-day {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--ink);
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background-color 160ms ease, color 160ms ease;
+  }
+  .cal-day:not(.today):hover { background: var(--row-hover); }
+  .cal-day.empty { cursor: default; }
+  .cal-day.empty:hover { background: transparent; }
+  .cal-day.other-month { color: var(--muted-2); }
+  .cal-day.today {
+    background: var(--accent);
+    color: #fff;
+    font-weight: 650;
+  }
+  .cal-day.today:hover { background: color-mix(in srgb, var(--accent) 88%, #fff); }
+
+  /* ---------- Media panel (below center island) ---------- */
+  .media-panel {
+    position: fixed;
+    z-index: 6;
+    top: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 320px;
+    padding: 14px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 18px 0 18px 0;
+    box-shadow: 0 18px 60px rgba(5, 3, 10, .42), inset 0 1px 0 rgba(255,255,255,.04);
+    backdrop-filter: blur(28px) saturate(125%);
+    -webkit-backdrop-filter: blur(28px) saturate(125%);
+    animation: centerPanelIn 220ms cubic-bezier(.2,.8,.2,1);
+  }
+  .media-panel[hidden] { display: none; }
+  .mp-track {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .mp-art {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-cool));
+    border-radius: 10px;
+    flex: 0 0 auto;
+    position: relative;
+    overflow: hidden;
+  }
+  .mp-art.is-video::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    width: 0; height: 0;
+    border-left: 12px solid #fff;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+    margin-left: 2px;
+    opacity: .9;
+  }
+  .mp-info {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .mp-title {
+    font-size: 13px;
+    font-weight: 650;
+    color: var(--ink);
+    margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mp-artist {
+    font-size: 11px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mp-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    margin-bottom: 14px;
+  }
+  .mp-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    color: var(--ink);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 160ms ease;
+  }
+  .mp-btn:hover { background: var(--row-hover); }
+  .mp-btn.mp-play {
+    width: 40px;
+    height: 40px;
+    background: var(--accent);
+    color: #fff;
+  }
+  .mp-btn.mp-play:hover { background: color-mix(in srgb, var(--accent) 88%, #fff); }
+  .mp-btn svg { width: 16px; height: 16px; }
+  .mp-btn.mp-play svg { width: 18px; height: 18px; }
+  .mp-seek {
+    display: grid;
+    grid-template-columns: 36px 1fr 36px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .mp-time {
+    font-size: 10px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .mp-time:last-child { text-align: right; }
+  .mp-volume {
+    display: grid;
+    grid-template-columns: 16px 1fr 32px;
+    align-items: center;
+    gap: 10px;
+  }
+  .mp-vol-icon { color: var(--muted); display: inline-flex; }
+  .mp-vol-icon svg { width: 14px; height: 14px; display: block; }
+  .mp-vol-value {
+    font-size: 10px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  /* ---------- Session overlay ---------- */
+  .session-overlay {
+    position: fixed;
+    z-index: 9;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5, 3, 10, .55);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: ovIn 200ms ease;
+  }
+  .session-overlay[hidden] { display: none; }
+  @keyframes ovIn { from { opacity: 0; } to { opacity: 1; } }
+  .session-card {
+    width: 340px;
+    padding: 20px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 0px 22px 0px 22px;
+    box-shadow: 0 24px 80px rgba(5, 3, 10, .55), inset 0 1px 0 rgba(255,255,255,.04);
+    backdrop-filter: blur(28px) saturate(125%);
+    -webkit-backdrop-filter: blur(28px) saturate(125%);
+    animation: cardIn 240ms cubic-bezier(.2,.8,.2,1);
+  }
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(8px) scale(.98); }
+    to   { opacity: 1; transform: none; }
+  }
+  .session-card h2 {
+    margin: 0 0 4px;
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: .02em;
+  }
+  .session-card .sub { color: var(--muted); font-size: 11.5px; margin-bottom: 14px; }
+  .session-actions { display: grid; gap: 6px; }
+  .session-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    color: var(--ink);
+    background: var(--row);
+    border: 1px solid transparent;
+    border-radius: 0px 12px 0px 12px;
+    text-align: left;
+    font-size: 13px;
+    transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+  }
+  .session-btn:hover {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-left-color: color-mix(in srgb, var(--accent) 70%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+  .session-btn.danger:hover {
+    background: color-mix(in srgb, #e36a72 18%, transparent);
+    border-left-color: color-mix(in srgb, #e36a72 70%, transparent);
+    border-bottom-color: color-mix(in srgb, #e36a72 70%, transparent);
+  }
+  .session-btn .ico {
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--muted);
+  }
+  .session-btn:hover .ico { color: var(--ink); }
+  .session-btn .ico svg { width: 16px; height: 16px; }
+  .session-btn .label { flex: 1 1 auto; }
+  .session-btn .hint { font-size: 11px; color: var(--muted); }
+
+  /* ---------- Demo menu ---------- */
+  .demo-controls {
+    position: fixed;
+    z-index: 8;
+    right: 16px;
+    bottom: 16px;
+    display: grid;
+    gap: 7px;
+    padding: 8px;
+    color: var(--ink);
+    background: rgba(21, 17, 29, .76);
+    border: 1px solid var(--island-edge);
+    border-radius: 4px 8px 4px 8px;
+    box-shadow: 0 7px 24px rgba(5, 3, 10, .18);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+  .demo-row { display: flex; align-items: center; gap: 6px; min-height: 25px; }
+  .demo-label { width: 50px; color: var(--muted); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+  .swatch {
+    width: 18px; height: 18px; padding: 0;
+    border: 2px solid rgba(255,255,255,.25);
+    border-radius: 3px 7px 3px 7px;
+    background: var(--swatch);
+  }
+  .swatch[aria-pressed="true"] { outline: 1px solid var(--swatch); outline-offset: 2px; }
+  .theme-choice {
+    padding: 5px 9px;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px 7px 3px 7px;
+    font-size: 10px;
+  }
+  .theme-choice[aria-pressed="true"] {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-left-color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .corner-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px 7px 3px 7px;
+    color: var(--muted);
+    font-size: 10px;
+    transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+  }
+  .corner-toggle:hover { color: var(--ink); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .corner-toggle[aria-pressed="true"] {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-left-color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .ct-corner-icon {
+    width: 12px; height: 12px;
+    border: 1.4px solid currentColor;
+    display: inline-block;
+    flex: 0 0 auto;
+    transition: border-radius 220ms cubic-bezier(.2,.8,.2,1);
+  }
+  .quick-settings:not(.corners-inverted) .ct-corner-icon {
+    border-top-right-radius: 3px;
+    border-bottom-left-radius: 3px;
+  }
+  .quick-settings.corners-inverted .ct-corner-icon {
+    border-top-left-radius: 3px;
+    border-bottom-right-radius: 3px;
+  }
+  .ct-value { color: inherit; font-variant-numeric: tabular-nums; }
+  .quick-settings.corners-inverted .toggle.on {
+    border-left-color: transparent;
+    border-right-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  .quick-settings.corners-inverted .qs-session:hover {
+    border-left-color: transparent;
+    border-right-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+  .track-select {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-left-color: var(--island-edge);
+    border-bottom-color: var(--island-edge);
+    border-radius: 3px 7px 3px 7px;
+    font: inherit;
+    font-size: 10px;
+    padding: 4px 6px;
+    cursor: pointer;
+    max-width: 150px;
+  }
+  .track-select:hover { color: var(--ink); }
+  .track-select option { background: #1a1320; color: var(--ink); }
+  .track-select option:checked { color: var(--accent); }
+
+  /* ---------- Light mode ---------- */
+  body.light-mode {
+    color: #2a2230;
+    background: #ede4d8;
+  }
+  body.light-mode .island {
+    background: rgba(252, 248, 252, .50);
+    border-color: rgba(70, 52, 75, .15);
+  }
+  body.light-mode .workspace { background: rgba(70, 52, 75, .04); color: #504555; }
+  body.light-mode .workspace.active {
+    color: #2a2230;
+    background: color-mix(in srgb, var(--accent) 24%, rgba(248, 242, 249, .78));
+  }
+  body.light-mode .workspace:hover, body.light-mode .workspace:focus-visible {
+    color: #29212c;
+    background: color-mix(in srgb, var(--accent) 15%, rgba(248, 242, 249, .78));
+  }
+  body.light-mode .system { color: #504555; background: rgba(70, 52, 75, .025); }
+  body.light-mode .system .value { color: #514653; }
+  body.light-mode .system:hover, body.light-mode .system:focus-visible {
+    color: #29212c;
+    background: color-mix(in srgb, var(--accent) 17%, rgba(248, 242, 249, .78));
+  }
+  body.light-mode .system:hover .value { color: #29212c; }
+  body.light-mode .time-btn:hover { background: rgba(70, 52, 75, .08); }
+  body.light-mode .date-tooltip {
+    background: rgba(252, 247, 251, .96);
+    color: #2a2230;
+    border-color: rgba(70, 52, 75, .14);
+  }
+  body.light-mode .date-tooltip::after {
+    background: rgba(252, 247, 251, .96);
+    border-color: rgba(70, 52, 75, .14);
+  }
+  body.light-mode .media-title { color: #2a2230; }
+  body.light-mode .media-divider { background: rgba(70, 52, 75, .14); }
+  body.light-mode .quick-settings,
+  body.light-mode .session-card,
+  body.light-mode .calendar-panel,
+  body.light-mode .media-panel {
+    background: rgba(250, 245, 251, .88);
+    border-color: rgba(70, 52, 75, .12);
+    color: #2a2230;
+  }
+  body.light-mode .qs-battery,
+  body.light-mode .qs-session,
+  body.light-mode .toggle,
+  body.light-mode .session-btn { background: rgba(70, 52, 75, .06); color: #504555; }
+  body.light-mode .toggle .name,
+  body.light-mode .slider-block-body .value,
+  body.light-mode .slider-simple .value,
+  body.light-mode .session-btn .label,
+  body.light-mode .mp-title { color: #2a2230; }
+  body.light-mode .toggle .status,
+  body.light-mode .session-btn .hint,
+  body.light-mode .block-name,
+  body.light-mode .mp-artist,
+  body.light-mode .mp-time,
+  body.light-mode .mp-vol-value,
+  body.light-mode .cal-month { color: #6e6478; }
+  body.light-mode .toggle .icon { background: rgba(70, 52, 75, .10); color: #504555; }
+  body.light-mode .qs-dropdown,
+  body.light-mode .slider-dropdown {
+    background: rgba(248, 240, 252, .96);
+    border-color: rgba(70, 52, 75, .12);
+  }
+  body.light-mode .dd-item:hover { background: rgba(70, 52, 75, .08); }
+  body.light-mode .dd-item-row.is-default .dd-item-head .dd-name { color: #2a2230; }
+  body.light-mode .slider-block-body input[type="range"],
+  body.light-mode .slider-simple input[type="range"],
+  body.light-mode .dd-slider,
+  body.light-mode .mp-seek input[type="range"],
+  body.light-mode .mp-volume input[type="range"] { background: rgba(70, 52, 75, .18); }
+  body.light-mode .slider-block-body input[type="range"]::-webkit-slider-thumb,
+  body.light-mode .slider-simple input[type="range"]::-webkit-slider-thumb,
+  body.light-mode .dd-slider::-webkit-slider-thumb,
+  body.light-mode .mp-seek input[type="range"]::-webkit-slider-thumb,
+  body.light-mode .mp-volume input[type="range"]::-webkit-slider-thumb { background: #fff; border-color: var(--accent); }
+  body.light-mode .demo-controls { background: rgba(248, 242, 249, .86); color: #2a2230; }
+  body.light-mode .demo-label,
+  body.light-mode .ct-label { color: #6e6478; }
+  body.light-mode .corner-toggle:hover { color: #2a2230; background: rgba(70, 52, 75, .10); }
+  body.light-mode .track-select { color: #504555; }
+  body.light-mode .track-select option { background: #f5edf5; color: #2a2230; }
+  body.light-mode .cal-day { color: #2a2230; }
+  body.light-mode .cal-day:not(.today):hover { background: rgba(70, 52, 75, .08); }
+  body.light-mode .cal-day.other-month { color: #8a8295; }
+  body.light-mode .cal-nav { color: #6e6478; }
+  body.light-mode .cal-nav:hover { color: #2a2230; background: rgba(70, 52, 75, .08); }
+  body.light-mode .mp-btn { color: #2a2230; }
+  body.light-mode .mp-btn:hover { background: rgba(70, 52, 75, .08); }
+  body.light-mode .mp-vol-icon { color: #6e6478; }
+
+  @media (max-width: 650px) {
+    .bar { inset: 8px 8px auto; gap: 6px; grid-template-columns: 1fr auto; }
+    .center { grid-column: 1 / -1; grid-row: 2; justify-self: center; min-height: 36px; }
+    .left { grid-column: 1; grid-row: 1; }
+    .right { grid-column: 2; grid-row: 1; }
+    .workspace { padding: 0 12px; min-width: 27px; }
+    .workspace .label { display: none; }
+    .system { min-width: 30px; padding-inline: 7px; }
+    .system .value { display: none; }
+    .quick-settings { right: 8px; width: calc(100vw - 16px); }
+    .calendar-panel, .media-panel { width: calc(100vw - 16px); }
+  }
+</style>
+</head>
+<body>
+  <nav class="bar" aria-label="Desktop panel">
+    <section class="island left" aria-label="Workspaces">
+      <button class="workspace active" aria-pressed="true" title="Workspace 1"><span class="label">1</span></button>
+      <button class="workspace" aria-pressed="false" title="Workspace 2"><span class="label">2</span></button>
+      <button class="workspace" aria-pressed="false" title="Workspace 3"><span class="label">3</span></button>
+      <button class="workspace" aria-pressed="false" title="Workspace 4"><span class="label">4</span></button>
+      <button class="workspace" aria-pressed="false" title="Workspace 5"><span class="label">5</span></button>
+    </section>
+
+    <section class="island center" id="centerIsland" aria-label="Clock and media">
+      <div class="clock">
+        <button class="time-btn" id="timeBtn" type="button" aria-label="Time, click to open calendar" aria-expanded="false">
+          <span class="time" id="time">17:44</span>
+          <span class="date-tooltip" id="dateTooltip" aria-hidden="true">SAT · 24 OCT</span>
+        </button>
+      </div>
+      <span class="media-divider" id="mediaDivider" aria-hidden="true"></span>
+      <button class="media-info" id="mediaInfo" type="button" aria-label="Open media player" aria-expanded="false">
+        <span class="media-icon" aria-hidden="true">
+          <svg viewBox="0 0 12 12" fill="none">
+            <path d="M5 1.5v7M5.5 1.5l3.5-1v7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="3.5" cy="8.5" r="1.4" fill="currentColor"/>
+            <circle cx="7.5" cy="7.5" r="1.4" fill="currentColor"/>
+          </svg>
+        </span>
+        <span class="media-title" id="mediaTitle"><span class="media-title-text" id="mediaTitleText"></span></span>
+      </button>
+    </section>
+
+    <section class="island right" aria-label="System status">
+      <button class="system" title="Battery: 86%" aria-label="Battery 86 percent">
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <rect class="battery-shell" x="2.5" y="5" width="13.5" height="10" rx="1.4" stroke-width="1.3"/>
+          <path class="battery-shell" d="M16.5 8h1.2v4h-1.2" stroke-width="1.3"/>
+          <rect class="battery-fill" x="4.5" y="7" width="9.5" height="6" rx=".5"/>
+        </svg>
+      </button>
+      <button class="system" id="audioPill" title="Volume: 42%" aria-label="Volume 42 percent">
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path fill="currentColor" d="M2.5 7.5h3l4-3.2c.6-.5 1.5-.1 1.5.7v10c0 .8-.9 1.2-1.5.7l-4-3.2h-3z"/>
+          <path stroke="currentColor" d="M14 7a4.2 4.2 0 0 1 0 6M15.8 4.8a7.3 7.3 0 0 1 0 10.4" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <button class="system combo-pill" id="qsTrigger" title="Network &amp; Quick settings" aria-label="Open quick settings" aria-expanded="false">
+        <span class="mini-status" aria-hidden="true">
+          <svg viewBox="0 0 20 20" fill="none">
+            <path stroke="currentColor" d="M2.5 7.2a11.2 11.2 0 0 1 15 0M5.4 10.2a7 7 0 0 1 9.2 0M8.1 13a3 3 0 0 1 3.8 0" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="10" cy="16" r="1" fill="currentColor"/>
+          </svg>
+          <svg viewBox="0 0 20 20" fill="none">
+            <path stroke="currentColor" d="M10 2.5v15l5-4.5-9-7.5 9 7.5-5 4.5M6 6l9 8" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </button>
+    </section>
+  </nav>
+
+  <!-- ============== Calendar panel ============== -->
+  <section class="calendar-panel" id="calendarPanel" hidden role="dialog" aria-label="Calendar">
+    <header class="cal-header">
+      <button class="cal-nav" id="calPrev" type="button" aria-label="Previous month">
+        <svg viewBox="0 0 12 12" fill="none"><path d="M7.5 3l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <span class="cal-month" id="calMonth">October 2026</span>
+      <button class="cal-nav" id="calNext" type="button" aria-label="Next month">
+        <svg viewBox="0 0 12 12" fill="none"><path d="M4.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </header>
+    <div class="cal-weekdays" aria-hidden="true">
+      <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+    </div>
+    <div class="cal-days" id="calDays"></div>
+  </section>
+
+  <!-- ============== Media panel ============== -->
+  <section class="media-panel" id="mediaPanel" hidden role="dialog" aria-label="Media player">
+    <div class="mp-track">
+      <div class="mp-art" id="mpArt"></div>
+      <div class="mp-info">
+        <div class="mp-title" id="mpTitle">—</div>
+        <div class="mp-artist" id="mpArtist">—</div>
+      </div>
+    </div>
+    <div class="mp-controls">
+      <button class="mp-btn" id="mpPrev" type="button" aria-label="Previous track">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M5 4v12M15 4L7 10l8 6V4z" fill="currentColor"/></svg>
+      </button>
+      <button class="mp-btn mp-play" id="mpPlay" type="button" aria-label="Play or pause" aria-pressed="true">
+        <svg viewBox="0 0 20 20" fill="none" id="mpPlayIcon"><path d="M6 4v12M14 4v12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      </button>
+      <button class="mp-btn" id="mpNext" type="button" aria-label="Next track">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M15 4v12M5 4l8 6-8 6V4z" fill="currentColor"/></svg>
+      </button>
+    </div>
+    <div class="mp-seek">
+      <span class="mp-time" id="mpCurrent">2:34</span>
+      <input type="range" min="0" max="100" value="35" id="mpSeek" aria-label="Seek">
+      <span class="mp-time" id="mpTotal">8:02</span>
+    </div>
+    <div class="mp-volume">
+      <span class="mp-vol-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none"><path fill="currentColor" d="M2 6h2.5L8 3.5c.5-.4 1.3-.1 1.3.6v7.8c0 .7-.8 1-1.3.6L4.5 10H2z"/><path stroke="currentColor" d="M11 5a3 3 0 0 1 0 6M12.5 3a5.5 5.5 0 0 1 0 10" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </span>
+      <input type="range" min="0" max="100" value="60" id="mpVolume" aria-label="Media volume">
+      <span class="mp-vol-value" id="mpVolValue">60%</span>
+    </div>
+  </section>
+
+  <!-- ============== Quick Settings (inverted by default) ============== -->
+  <section class="quick-settings corners-inverted" id="quickSettings" hidden role="dialog" aria-label="Quick settings">
+    <header class="qs-header">
+      <div class="qs-battery" title="Battery">
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <rect class="battery-shell" x="2.5" y="5" width="13.5" height="10" rx="1.4" stroke="currentColor" stroke-width="1.3"/>
+          <path class="battery-shell" d="M16.5 8h1.2v4h-1.2" stroke="currentColor" stroke-width="1.3"/>
+          <rect class="battery-fill" x="4.5" y="7" width="9.5" height="6" rx=".5"/>
+        </svg>
+        <span class="pct">86%</span>
+        <span class="label">· 4h 12m</span>
+      </div>
+      <button class="qs-session" id="sessionTrigger" title="Session">
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M3.5 17.5c1-3.4 3.6-5 6.5-5s5.5 1.6 6.5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        <span class="name">aria</span>
+      </button>
+    </header>
+
+    <div class="qs-toggles" id="toggleGrid">
+      <!-- Wi-Fi -->
+      <div class="toggle on" data-toggle="wifi">
+        <button class="toggle-btn" type="button">
+          <span class="icon"><svg viewBox="0 0 20 20" fill="none"><path stroke="currentColor" d="M2.5 7.2a11.2 11.2 0 0 1 15 0M5.4 10.2a7 7 0 0 1 9.2 0M8.1 13a3 3 0 0 1 3.8 0" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="16" r="1" fill="currentColor"/></svg></span>
+          <span class="meta"><span class="name">Wi-Fi</span><span class="status">Home Network</span></span>
+        </button>
+        <span class="divider"></span>
+        <button class="dd-btn" data-dd-target="wifi-dd" type="button" aria-label="Show Wi-Fi networks">
+          <svg viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="qs-dropdown" id="wifi-dd" hidden>
+        <div class="dd-section-head">Available networks</div>
+        <button class="dd-item is-active" type="button">
+          <span class="dd-item-name">Home Network</span>
+          <span class="dd-item-meta">
+            <svg class="signal-bars" data-strength="4" width="16" height="12" viewBox="0 0 16 12"><rect x="0" y="8" width="3" height="4" rx=".5"/><rect x="4.5" y="5" width="3" height="7" rx=".5"/><rect x="9" y="3" width="3" height="9" rx=".5"/><rect x="13.5" y="0" width="2.5" height="12" rx=".5"/></svg>
+            <svg viewBox="0 0 12 12" fill="none" width="12" height="12"><path d="M3 6l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </button>
+        <button class="dd-item" type="button">
+          <span class="dd-item-name">Coffee Shop Guest</span>
+          <span class="dd-item-meta"><svg class="signal-bars" data-strength="3" width="16" height="12" viewBox="0 0 16 12"><rect x="0" y="8" width="3" height="4" rx=".5"/><rect x="4.5" y="5" width="3" height="7" rx=".5"/><rect x="9" y="3" width="3" height="9" rx=".5"/><rect x="13.5" y="0" width="2.5" height="12" rx=".5"/></svg></span>
+        </button>
+        <button class="dd-item" type="button">
+          <span class="dd-item-name">Neighbor's 5G</span>
+          <span class="dd-item-meta"><svg class="signal-bars" data-strength="2" width="16" height="12" viewBox="0 0 16 12"><rect x="0" y="8" width="3" height="4" rx=".5"/><rect x="4.5" y="5" width="3" height="7" rx=".5"/><rect x="9" y="3" width="3" height="9" rx=".5"/><rect x="13.5" y="0" width="2.5" height="12" rx=".5"/></svg></span>
+        </button>
+        <button class="dd-item dd-action" type="button">
+          <span class="dd-item-name">+ Connect to hidden network</span>
+        </button>
+      </div>
+
+      <!-- Bluetooth -->
+      <div class="toggle on" data-toggle="bt">
+        <button class="toggle-btn" type="button">
+          <span class="icon"><svg viewBox="0 0 20 20" fill="none"><path stroke="currentColor" d="M10 2.5v15l5-4.5-9-7.5 9 7.5-5 4.5M6 6l9 8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span class="meta"><span class="name">Bluetooth</span><span class="status">Pixel Buds Pro</span></span>
+        </button>
+        <span class="divider"></span>
+        <button class="dd-btn" data-dd-target="bt-dd" type="button" aria-label="Show Bluetooth devices">
+          <svg viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="qs-dropdown" id="bt-dd" hidden>
+        <div class="dd-section-head">Paired devices</div>
+        <button class="dd-item is-active" type="button">
+          <span class="dd-item-name">Pixel Buds Pro</span>
+          <span class="dd-item-meta"><span class="status-dot"></span><svg viewBox="0 0 12 12" fill="none" width="12" height="12"><path d="M3 6l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <button class="dd-item" type="button">
+          <span class="dd-item-name">MX Master 3S</span>
+          <span class="dd-item-meta"><span class="status-dot sleep"></span></span>
+        </button>
+        <button class="dd-item" type="button">
+          <span class="dd-item-name">Jabra Elite 75t</span>
+          <span class="dd-item-meta"><span class="status-dot sleep"></span></span>
+        </button>
+        <button class="dd-item dd-action" type="button">
+          <span class="dd-item-name">+ Add new device</span>
+        </button>
+      </div>
+
+      <!-- VPN -->
+      <div class="toggle" data-toggle="vpn">
+        <button class="toggle-btn" type="button">
+          <span class="icon"><svg viewBox="0 0 20 20" fill="none"><path d="M10 2.5L4 5v5c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V5L10 2.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7 10h6M7 8h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+          <span class="meta"><span class="name">VPN</span><span class="status">Off</span></span>
+        </button>
+        <span class="divider"></span>
+        <button class="dd-btn" data-dd-target="vpn-dd" type="button" aria-label="Show VPN connections">
+          <svg viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="qs-dropdown" id="vpn-dd" hidden>
+        <div class="dd-section-head">Connections</div>
+        <button class="dd-item is-active" type="button">
+          <span class="dd-item-name">Mullvad · se42</span>
+          <span class="dd-item-meta"><span class="radio-dot on"></span></span>
+        </button>
+        <button class="dd-item" type="button">
+          <span class="dd-item-name">Work VPN · Acme</span>
+          <span class="dd-item-meta"><span class="radio-dot"></span></span>
+        </button>
+        <button class="dd-item" type="button">
+          <span class="dd-item-name">Personal · WireGuard</span>
+          <span class="dd-item-meta"><span class="radio-dot"></span></span>
+        </button>
+        <button class="dd-item dd-action" type="button">
+          <span class="dd-item-name">+ Add VPN connection</span>
+        </button>
+      </div>
+
+      <!-- KDE Connect -->
+      <div class="toggle" data-toggle="kde">
+        <button class="toggle-btn" type="button">
+          <span class="icon"><svg viewBox="0 0 20 20" fill="none"><rect x="5" y="3" width="10" height="14" rx="2" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="14.5" r=".8" fill="currentColor"/><path d="M7 6h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+          <span class="meta"><span class="name">KDE Connect</span><span class="status">2 devices</span></span>
+        </button>
+        <span class="divider"></span>
+        <button class="dd-btn" data-dd-target="kde-dd" type="button" aria-label="Show KDE Connect devices">
+          <svg viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="qs-dropdown" id="kde-dd" hidden>
+        <div class="dd-section-head">Paired devices</div>
+        <button class="dd-item is-active" type="button">
+          <span class="dd-item-name">Pixel 8 Pro</span>
+          <span class="dd-item-meta"><span class="status-dot"></span><svg viewBox="0 0 12 12" fill="none" width="12" height="12"><path d="M3 6l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </button>
+        <button class="dd-item" type="button">
+          <span class="dd-item-name">ThinkPad X1</span>
+          <span class="dd-item-meta"><span class="status-dot sleep"></span></span>
+        </button>
+        <button class="dd-item dd-action" type="button">
+          <span class="dd-item-name">+ Pair new device</span>
+        </button>
+      </div>
+
+      <!-- Power Profile -->
+      <div class="toggle on" data-toggle="power">
+        <button class="toggle-btn" type="button">
+          <span class="icon"><svg viewBox="0 0 20 20" fill="none"><path d="M10 2.5L5.5 11h4L9 17.5l5-9h-4L10 2.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
+          <span class="meta"><span class="name">Power Profile</span><span class="status">Balanced</span></span>
+        </button>
+        <span class="divider"></span>
+        <button class="dd-btn" data-dd-target="power-dd" type="button" aria-label="Show power profiles">
+          <svg viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="qs-dropdown" id="power-dd" hidden>
+        <div class="dd-section-head">Profile</div>
+        <button class="dd-item" type="button">
+          <span class="dd-item-name">Performance</span>
+          <span class="dd-item-meta"><span class="radio-dot"></span></span>
+        </button>
+        <button class="dd-item is-active" type="button">
+          <span class="dd-item-name">Balanced</span>
+          <span class="dd-item-meta"><span class="radio-dot on"></span></span>
+        </button>
+        <button class="dd-item" type="button">
+          <span class="dd-item-name">Power Saver</span>
+          <span class="dd-item-meta"><span class="radio-dot"></span></span>
+        </button>
+      </div>
+
+      <!-- Night Light -->
+      <div class="toggle" data-toggle="night">
+        <button class="toggle-btn" type="button">
+          <span class="icon"><svg viewBox="0 0 20 20" fill="none"><path d="M14 4a7 7 0 1 0 2 9 5.5 5.5 0 0 1-2-9z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="6" cy="5" r=".8" fill="currentColor"/><circle cx="4" cy="9" r=".8" fill="currentColor"/><circle cx="6" cy="13" r=".8" fill="currentColor"/></svg></span>
+          <span class="meta"><span class="name">Night Light</span><span class="status">Off</span></span>
+        </button>
+      </div>
+      <!-- Do Not Disturb -->
+      <div class="toggle" data-toggle="dnd">
+        <button class="toggle-btn" type="button">
+          <span class="icon"><svg viewBox="0 0 20 20" fill="none"><path d="M5 8a5 5 0 0 1 10 0v3l1.5 3h-13L5 11V8z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 17h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M3 4l14 12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+          <span class="meta"><span class="name">Do Not Disturb</span><span class="status">Off</span></span>
+        </button>
+      </div>
+      <!-- Caffeine -->
+      <div class="toggle" data-toggle="caffeine">
+        <button class="toggle-btn" type="button">
+          <span class="icon"><svg viewBox="0 0 20 20" fill="none"><path d="M4 4h11v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M15 6h2v2a3 3 0 0 1-3 3M6 4V2M9 4V2M12 4V2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+          <span class="meta"><span class="name">Caffeine</span><span class="status">Sleep allowed</span></span>
+        </button>
+      </div>
+    </div>
+
+    <div class="qs-sliders">
+      <div class="slider-simple">
+        <span class="icon"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="3.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.5 4.5l1.4 1.4M14.1 14.1l1.4 1.4M4.5 15.5l1.4-1.4M14.1 5.9l1.4-1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+        <input type="range" min="0" max="100" value="65" data-target="brightness">
+        <span class="value">65%</span>
+      </div>
+      <div class="slider-block" data-slider="audio">
+        <div class="slider-block-head">
+          <span class="block-name">Audio</span>
+          <button class="block-expand" data-expand="audio-dd" type="button" aria-label="Show other output devices">
+            <svg viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div class="slider-block-body">
+          <span class="icon"><svg viewBox="0 0 20 20" fill="none"><path fill="currentColor" d="M2.5 7.5h3l4-3.2c.6-.5 1.5-.1 1.5.7v10c0 .8-.9 1.2-1.5.7l-4-3.2h-3z"/><path stroke="currentColor" d="M14 7a4.2 4.2 0 0 1 0 6" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+          <input type="range" min="0" max="100" value="42">
+          <span class="value">42%</span>
+        </div>
+        <div class="slider-dropdown" id="audio-dd" hidden>
+          <div class="dd-item-row is-default">
+            <div class="dd-item-head">
+              <span class="dd-name">Laptop Speakers</span>
+              <button class="dd-default is-default" type="button" title="Default output" aria-label="Set as default output"><svg viewBox="0 0 12 12" fill="none"><path d="M3 6l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+            <input type="range" class="dd-slider" min="0" max="100" value="42">
+          </div>
+          <div class="dd-item-row">
+            <div class="dd-item-head">
+              <span class="dd-name">External DisplayPort</span>
+              <button class="dd-default" type="button" title="Set as default" aria-label="Set as default output"><svg viewBox="0 0 12 12" fill="none"><path d="M3 6l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+            <input type="range" class="dd-slider" min="0" max="100" value="80">
+          </div>
+          <div class="dd-item-row">
+            <div class="dd-item-head">
+              <span class="dd-name">Headphones (USB)</span>
+              <button class="dd-default" type="button" title="Set as default" aria-label="Set as default output"><svg viewBox="0 0 12 12" fill="none"><path d="M3 6l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+            <input type="range" class="dd-slider" min="0" max="100" value="30">
+          </div>
+        </div>
+      </div>
+      <div class="slider-block" data-slider="mic">
+        <div class="slider-block-head">
+          <span class="block-name">Microphone</span>
+          <button class="block-expand" data-expand="mic-dd" type="button" aria-label="Show other input devices">
+            <svg viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div class="slider-block-body">
+          <span class="icon"><svg viewBox="0 0 20 20" fill="none"><rect x="7" y="2.5" width="6" height="9" rx="3" stroke="currentColor" stroke-width="1.4"/><path d="M4 11a6 6 0 0 0 12 0M10 17v2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
+          <input type="range" min="0" max="100" value="58">
+          <span class="value">58%</span>
+        </div>
+        <div class="slider-dropdown" id="mic-dd" hidden>
+          <div class="dd-item-row is-default">
+            <div class="dd-item-head">
+              <span class="dd-name">Internal Mic</span>
+              <button class="dd-default is-default" type="button" title="Default input" aria-label="Set as default input"><svg viewBox="0 0 12 12" fill="none"><path d="M3 6l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+            <input type="range" class="dd-slider" min="0" max="100" value="58">
+          </div>
+          <div class="dd-item-row">
+            <div class="dd-item-head">
+              <span class="dd-name">USB Mic (Yeti)</span>
+              <button class="dd-default" type="button" title="Set as default" aria-label="Set as default input"><svg viewBox="0 0 12 12" fill="none"><path d="M3 6l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+            <input type="range" class="dd-slider" min="0" max="100" value="72">
+          </div>
+          <div class="dd-item-row">
+            <div class="dd-item-head">
+              <span class="dd-name">Webcam Mic</span>
+              <button class="dd-default" type="button" title="Set as default" aria-label="Set as default input"><svg viewBox="0 0 12 12" fill="none"><path d="M3 6l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </div>
+            <input type="range" class="dd-slider" min="0" max="100" value="20">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============== Session overlay ============== -->
+  <div class="session-overlay" id="sessionOverlay" hidden role="dialog" aria-label="Session actions" aria-modal="true">
+    <div class="session-card">
+      <h2>Session</h2>
+      <div class="sub">aria · workstation · 4h 12m remaining</div>
+      <div class="session-actions">
+        <button class="session-btn" data-action="logout" type="button">
+          <span class="ico"><svg viewBox="0 0 20 20" fill="none"><path d="M11 4H5v12h6M13 6l4 4-4 4M8 10h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span class="label">Log out</span>
+          <span class="hint">⌘⇧Q</span>
+        </button>
+        <button class="session-btn" data-action="suspend" type="button">
+          <span class="ico"><svg viewBox="0 0 20 20" fill="none"><path d="M10 2.5C5.8 2.5 2.5 5.8 2.5 10s3.3 7.5 7.5 7.5 7.5-3.3 7.5-7.5S14.2 2.5 10 2.5z" stroke="currentColor" stroke-width="1.4"/><path d="M7 10h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+          <span class="label">Suspend</span>
+          <span class="hint">Sleep</span>
+        </button>
+        <button class="session-btn danger" data-action="poweroff" type="button">
+          <span class="ico"><svg viewBox="0 0 20 20" fill="none"><path d="M10 3v8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M6.5 4.5a7 7 0 1 0 7 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+          <span class="label">Power off</span>
+          <span class="hint">Shut down</span>
+        </button>
+        <button class="session-btn" data-action="reboot" type="button">
+          <span class="ico"><svg viewBox="0 0 20 20" fill="none"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span class="label">Restart</span>
+          <span class="hint">Reboot</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============== Demo menu ============== -->
+  <aside class="demo-controls" aria-label="Demo-only appearance controls; not part of the window manager mockup">
+    <div class="demo-row" role="group" aria-label="Demo-only accent color changer">
+      <span class="demo-label" aria-hidden="true">Accent</span>
+      <button class="swatch" style="--swatch:#f58b83" data-accent="#f58b83" aria-label="Coral accent" aria-pressed="true"></button>
+      <button class="swatch" style="--swatch:#c99ae8" data-accent="#c99ae8" aria-label="Lavender accent" aria-pressed="false"></button>
+      <button class="swatch" style="--swatch:#8dc8df" data-accent="#8dc8df" aria-label="Sky accent" aria-pressed="false"></button>
+      <button class="swatch" style="--swatch:#b5d49a" data-accent="#b5d49a" aria-label="Sage accent" aria-pressed="false"></button>
+    </div>
+    <div class="demo-row" role="group" aria-label="Demo-only light or dark theme changer">
+      <span class="demo-label" aria-hidden="true">Theme</span>
+      <button class="theme-choice" data-theme="dark" aria-pressed="true">Dark</button>
+      <button class="theme-choice" data-theme="light" aria-pressed="false">Light</button>
+    </div>
+    <div class="demo-row" role="group" aria-label="Demo-only corner pattern toggle for quick settings">
+      <span class="demo-label" aria-hidden="true">Corners</span>
+      <button class="corner-toggle" id="cornerToggle" type="button" aria-pressed="true" title="Toggle corner pattern in quick settings">
+        <span class="ct-corner-icon" aria-hidden="true"></span>
+        <span class="ct-value" id="ctValue">TL / BR</span>
+      </button>
+    </div>
+    <div class="demo-row" role="group" aria-label="Demo-only media player track selector">
+      <span class="demo-label" aria-hidden="true">Track</span>
+      <select class="track-select" id="trackSelect">
+        <option value="none" selected>(not playing)</option>
+        <option value="song1" data-type="song" data-title="Bohemian Rhapsody" data-artist="Queen" data-total="5:55">Bohemian Rhapsody — Queen</option>
+        <option value="song2" data-type="song" data-title="Stairway to Heaven" data-artist="Led Zeppelin" data-total="8:02">Stairway to Heaven — Led Zeppelin</option>
+        <option value="song3" data-type="song" data-title="Imagine" data-artist="John Lennon" data-total="3:07">Imagine — John Lennon</option>
+        <option value="song4" data-type="song" data-title="Hotel California" data-artist="Eagles" data-total="6:30">Hotel California — Eagles</option>
+        <option value="video1" data-type="video" data-title="Blade Runner 2049" data-artist="2017" data-total="2:24:00">Blade Runner 2049 (2017)</option>
+        <option value="video2" data-type="video" data-title="Interstellar" data-artist="2014" data-total="2:49:00">Interstellar (2014)</option>
+        <option value="video3" data-type="video" data-title="The Matrix" data-artist="1999" data-total="2:16:00">The Matrix (1999)</option>
+      </select>
+    </div>
+  </aside>
+
+<script>
+  // ---- Workspace selection (demo only) ----
+  document.querySelectorAll('.workspace').forEach(button => {
+    button.addEventListener('click', () => {
+      document.querySelectorAll('.workspace').forEach(item => {
+        item.classList.remove('active');
+        item.setAttribute('aria-pressed', 'false');
+      });
+      button.classList.add('active');
+      button.setAttribute('aria-pressed', 'true');
+    });
+  });
+
+  // ---- Live clock + date tooltip ----
+  const timeEl = document.getElementById('time');
+  const dateTooltipEl = document.getElementById('dateTooltip');
+  function updateClock() {
+    const now = new Date();
+    timeEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    dateTooltipEl.textContent = now.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase().replace(',', ' ·');
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // ---- Quick Settings open/close ----
+  const qsTrigger = document.getElementById('qsTrigger');
+  const qsPanel = document.getElementById('quickSettings');
+  const sessionOverlay = document.getElementById('sessionOverlay');
+  const sessionTrigger = document.getElementById('sessionTrigger');
+  const calendarPanel = document.getElementById('calendarPanel');
+  const mediaPanel = document.getElementById('mediaPanel');
+  const timeBtn = document.getElementById('timeBtn');
+  const mediaInfo = document.getElementById('mediaInfo');
+
+  function closeAllPanels() {
+    if (!qsPanel.hidden) closeQS();
+    if (!calendarPanel.hidden) calendarPanel.hidden = true;
+    if (!mediaPanel.hidden) mediaPanel.hidden = true;
+    timeBtn.setAttribute('aria-expanded', 'false');
+    mediaInfo.setAttribute('aria-expanded', 'false');
+    qsTrigger.setAttribute('aria-expanded', 'false');
+  }
+
+  function openQS() {
+    closeAllPanels();
+    qsPanel.hidden = false;
+    qsTrigger.classList.add('is-open');
+    qsTrigger.setAttribute('aria-expanded', 'true');
+  }
+  function closeQS() {
+    qsPanel.hidden = true;
+    qsTrigger.classList.remove('is-open');
+    qsTrigger.setAttribute('aria-expanded', 'false');
+    document.querySelectorAll('.qs-dropdown:not([hidden]), .slider-dropdown:not([hidden])').forEach(d => d.hidden = true);
+    document.querySelectorAll('.dd-btn.is-open, .block-expand.is-open').forEach(b => b.classList.remove('is-open'));
+  }
+  qsTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (qsPanel.hidden) openQS(); else closeQS();
+  });
+
+  // ---- Calendar panel ----
+  const calDays = document.getElementById('calDays');
+  const calMonthEl = document.getElementById('calMonth');
+  const today = new Date();
+  let calYear = today.getFullYear();
+  let calMonthIdx = today.getMonth();
+
+  function renderCalendar() {
+    calMonthEl.textContent = new Date(calYear, calMonthIdx, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const firstDay = new Date(calYear, calMonthIdx, 1).getDay();
+    const daysInMonth = new Date(calYear, calMonthIdx + 1, 0).getDate();
+    // For showing previous month's trailing days in empty cells
+    const prevMonthDays = new Date(calYear, calMonthIdx, 0).getDate();
+    let html = '';
+    for (let i = firstDay - 1; i >= 0; i--) {
+      html += `<span class="cal-day other-month empty">${prevMonthDays - i}</span>`;
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      const isToday = today.getFullYear() === calYear && today.getMonth() === calMonthIdx && today.getDate() === day;
+      html += `<button class="cal-day ${isToday ? 'today' : ''}" type="button" data-day="${day}">${day}</button>`;
+    }
+    const totalCells = firstDay + daysInMonth;
+    const trailing = (7 - (totalCells % 7)) % 7;
+    for (let i = 1; i <= trailing; i++) {
+      html += `<span class="cal-day other-month empty">${i}</span>`;
+    }
+    calDays.innerHTML = html;
+  }
+  timeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (calendarPanel.hidden) {
+      closeAllPanels();
+      calYear = today.getFullYear();
+      calMonthIdx = today.getMonth();
+      renderCalendar();
+      calendarPanel.hidden = false;
+      timeBtn.setAttribute('aria-expanded', 'true');
+    } else {
+      calendarPanel.hidden = true;
+      timeBtn.setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.getElementById('calPrev').addEventListener('click', (e) => {
+    e.stopPropagation();
+    calMonthIdx--;
+    if (calMonthIdx < 0) { calMonthIdx = 11; calYear--; }
+    renderCalendar();
+  });
+  document.getElementById('calNext').addEventListener('click', (e) => {
+    e.stopPropagation();
+    calMonthIdx++;
+    if (calMonthIdx > 11) { calMonthIdx = 0; calYear++; }
+    renderCalendar();
+  });
+
+  // ---- Toggle buttons (click .toggle-btn flips .on) ----
+  document.querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const toggle = btn.closest('.toggle');
+      toggle.classList.toggle('on');
+      const status = toggle.querySelector('.status');
+      const name = toggle.querySelector('.name').textContent;
+      if (status) {
+        const on = toggle.classList.contains('on');
+        const map = {
+          'Wi-Fi':         () => on ? 'Home Network' : 'Off',
+          'Bluetooth':     () => on ? 'Pixel Buds Pro' : 'Off',
+          'VPN':           () => on ? 'Mullvad · se42' : 'Off',
+          'KDE Connect':   () => on ? '2 devices' : 'Off',
+          'Power Profile': () => on ? 'Balanced' : 'Off',
+          'Night Light':   () => on ? 'On · 3200K' : 'Off',
+          'Do Not Disturb':() => on ? 'On · 22:00–07:00' : 'Off',
+          'Caffeine':      () => on ? 'Inhibiting sleep' : 'Sleep allowed',
+        };
+        if (map[name]) status.textContent = map[name]();
+      }
+    });
+  });
+
+  // ---- Toggle dropdown open/close ----
+  document.querySelectorAll('.dd-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const targetId = btn.dataset.ddTarget;
+      const dd = document.getElementById(targetId);
+      if (!dd) return;
+      const willOpen = dd.hidden;
+      document.querySelectorAll('.qs-dropdown:not([hidden]), .slider-dropdown:not([hidden])').forEach(d => d.hidden = true);
+      document.querySelectorAll('.dd-btn.is-open, .block-expand.is-open').forEach(b => b.classList.remove('is-open'));
+      dd.hidden = !willOpen;
+      btn.classList.toggle('is-open', willOpen);
+    });
+  });
+
+  // ---- Slider dropdown open/close ----
+  document.querySelectorAll('.block-expand').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const targetId = btn.dataset.expand;
+      const dd = document.getElementById(targetId);
+      if (!dd) return;
+      const willOpen = dd.hidden;
+      document.querySelectorAll('.qs-dropdown:not([hidden]), .slider-dropdown:not([hidden])').forEach(d => d.hidden = true);
+      document.querySelectorAll('.dd-btn.is-open, .block-expand.is-open').forEach(b => b.classList.remove('is-open'));
+      dd.hidden = !willOpen;
+      btn.classList.toggle('is-open', willOpen);
+    });
+  });
+
+  // ---- Slider value sync ----
+  document.querySelectorAll('.slider-block-body input[type="range"], .slider-simple input[type="range"]').forEach(slider => {
+    slider.addEventListener('input', () => {
+      const row = slider.closest('.slider-block-body, .slider-simple');
+      const valueEl = row.querySelector('.value');
+      if (valueEl) valueEl.textContent = slider.value + '%';
+    });
+  });
+
+  // ---- "Set as default" ----
+  document.querySelectorAll('.dd-default').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const row = btn.closest('.dd-item-row');
+      if (!row) return;
+      const dropdown = row.closest('.slider-dropdown');
+      dropdown.querySelectorAll('.dd-item-row').forEach(r => {
+        r.classList.remove('is-default');
+        r.querySelector('.dd-default').classList.remove('is-default');
+      });
+      row.classList.add('is-default');
+      btn.classList.add('is-default');
+    });
+  });
+
+  // ---- dd-item click (network / device / VPN / profile selection) ----
+  document.querySelectorAll('.dd-item').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (btn.classList.contains('dd-action')) return;
+      const dropdown = btn.closest('.qs-dropdown');
+      const wasActive = btn.classList.contains('is-active');
+      dropdown.querySelectorAll('.dd-item').forEach(i => {
+        i.classList.remove('is-active');
+        i.querySelectorAll('.radio-dot').forEach(d => d.classList.remove('on'));
+      });
+      btn.classList.add('is-active');
+      const dot = btn.querySelector('.radio-dot');
+      if (dot) dot.classList.add('on');
+    });
+  });
+
+  // ---- Session overlay ----
+  sessionTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAllPanels();
+    sessionOverlay.hidden = false;
+  });
+  sessionOverlay.addEventListener('click', (e) => {
+    if (e.target === sessionOverlay) sessionOverlay.hidden = true;
+  });
+  document.querySelectorAll('.session-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.action;
+      console.log('session action:', action);
+      sessionOverlay.hidden = true;
+      closeQS();
+    });
+  });
+
+  // ---- Demo: accent + theme ----
+  document.querySelectorAll('[data-accent]').forEach(button => {
+    button.addEventListener('click', () => {
+      const accent = button.dataset.accent;
+      document.documentElement.style.setProperty('--accent', accent);
+      document.querySelectorAll('[data-accent]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+    });
+  });
+  document.querySelectorAll('[data-theme]').forEach(button => {
+    button.addEventListener('click', () => {
+      const light = button.dataset.theme === 'light';
+      document.body.classList.toggle('light-mode', light);
+      document.querySelectorAll('[data-theme]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+    });
+  });
+
+  // ---- Corner style toggle (now defaults to inverted) ----
+  const cornerToggle = document.getElementById('cornerToggle');
+  const ctValue = document.getElementById('ctValue');
+  cornerToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const inverted = qsPanel.classList.toggle('corners-inverted');
+    cornerToggle.setAttribute('aria-pressed', String(inverted));
+    ctValue.textContent = inverted ? 'TL / BR' : 'TR / BL';
+  });
+
+  // ---- Media player (track selector + center island expansion + media panel) ----
+  const trackSelect = document.getElementById('trackSelect');
+  const centerIsland = document.getElementById('centerIsland');
+  const mediaTitleText = document.getElementById('mediaTitleText');
+  const mediaTitleWrap = document.getElementById('mediaTitle');
+  const mpTitle = document.getElementById('mpTitle');
+  const mpArtist = document.getElementById('mpArtist');
+  const mpArt = document.getElementById('mpArt');
+  const mpTotal = document.getElementById('mpTotal');
+  const mpCurrent = document.getElementById('mpCurrent');
+  const mpSeek = document.getElementById('mpSeek');
+  const mpPlay = document.getElementById('mpPlay');
+  const mpPlayIcon = document.getElementById('mpPlayIcon');
+  const mpVolume = document.getElementById('mpVolume');
+  const mpVolValue = document.getElementById('mpVolValue');
+
+  let currentTrack = null;
+
+  // Middle-truncation: keeps equal-length start and end visible with "…" in between.
+  function truncateMiddle(containerEl, textEl, fullText) {
+    textEl.textContent = fullText;
+    if (textEl.scrollWidth <= containerEl.clientWidth) return false;
+    let lo = 1, hi = Math.max(1, Math.floor(fullText.length / 2));
+    let best = fullText.slice(0, 1) + '…' + fullText.slice(-1);
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      const candidate = fullText.slice(0, mid) + '…' + fullText.slice(fullText.length - mid);
+      textEl.textContent = candidate;
+      if (textEl.scrollWidth <= containerEl.clientWidth) {
+        best = candidate;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    textEl.textContent = best;
+    return true;
+  }
+
+  function buildFullTitle(track) {
+    return track.artist ? `${track.title} — ${track.artist}` : track.title;
+  }
+
+  function setTrack(option) {
+    const value = option.value;
+    if (value === 'none') {
+      currentTrack = null;
+      centerIsland.classList.remove('is-playing');
+      closeMediaPanel();
+      return;
+    }
+    const track = {
+      value,
+      type: option.dataset.type,
+      title: option.dataset.title,
+      artist: option.dataset.artist,
+      total: option.dataset.total,
+    };
+    currentTrack = track;
+    const fullTitle = buildFullTitle(track);
+    mediaTitleText.textContent = fullTitle;
+    // Show + animate expansion
+    if (!centerIsland.classList.contains('is-playing')) {
+      // restart the bounce animation
+      centerIsland.classList.remove('is-playing');
+      void centerIsland.offsetWidth; // force reflow
+      centerIsland.classList.add('is-playing');
+    }
+    // Truncate after the layout settles (so max-width has applied)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        truncateMiddle(mediaTitleWrap, mediaTitleText, fullTitle);
+      });
+    });
+    // Update media panel fields (if open or for next open)
+    updateMediaPanel();
+  }
+
+  function updateMediaPanel() {
+    if (!currentTrack) return;
+    mpTitle.textContent = currentTrack.title;
+    mpArtist.textContent = currentTrack.artist;
+    mpTotal.textContent = currentTrack.total;
+    mpArt.classList.toggle('is-video', currentTrack.type === 'video');
+  }
+
+  trackSelect.addEventListener('change', () => {
+    setTrack(trackSelect.options[trackSelect.selectedIndex]);
+  });
+
+  // ---- Media-info hover → carousel; click → media panel ----
+  mediaInfo.addEventListener('mouseenter', () => {
+    if (!currentTrack) return;
+    const fullTitle = buildFullTitle(currentTrack);
+    mediaTitleText.textContent = fullTitle; // restore full text
+    const overflow = mediaTitleText.scrollWidth - mediaTitleWrap.clientWidth;
+    if (overflow > 0) {
+      mediaTitleText.style.setProperty('--marquee-distance', `-${overflow}px`);
+      mediaTitleText.classList.add('carousing');
+    }
+  });
+  mediaInfo.addEventListener('mouseleave', () => {
+    mediaTitleText.classList.remove('carousing');
+    mediaTitleText.style.removeProperty('--marquee-distance');
+    if (currentTrack) {
+      truncateMiddle(mediaTitleWrap, mediaTitleText, buildFullTitle(currentTrack));
+    }
+  });
+
+  function openMediaPanel() {
+    closeAllPanels();
+    updateMediaPanel();
+    mediaPanel.hidden = false;
+    mediaInfo.setAttribute('aria-expanded', 'true');
+  }
+  function closeMediaPanel() {
+    mediaPanel.hidden = true;
+    mediaInfo.setAttribute('aria-expanded', 'false');
+  }
+  mediaInfo.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (mediaPanel.hidden) openMediaPanel(); else closeMediaPanel();
+  });
+
+  // ---- Media panel controls (visual only) ----
+  function setPlayIcon(playing) {
+    if (playing) {
+      mpPlayIcon.innerHTML = '<path d="M6 4v12M14 4v12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>';
+    } else {
+      mpPlayIcon.innerHTML = '<path d="M6 4l10 6-10 6V4z" fill="currentColor"/>';
+    }
+    mpPlay.setAttribute('aria-pressed', String(playing));
+  }
+  mpPlay.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const playing = mpPlay.getAttribute('aria-pressed') === 'true';
+    setPlayIcon(!playing);
+  });
+  mpSeek.addEventListener('input', () => {
+    // Compute current time from seek position (visual only)
+    const total = currentTrack ? parseTimeStr(currentTrack.total) : 0;
+    const pct = mpSeek.value;
+    const cur = Math.round(total * pct / 100);
+    mpCurrent.textContent = formatTime(cur);
+  });
+  mpVolume.addEventListener('input', () => {
+    mpVolValue.textContent = mpVolume.value + '%';
+  });
+  function parseTimeStr(s) {
+    const parts = s.split(':').map(Number);
+    if (parts.length === 3) return parts[0]*3600 + parts[1]*60 + parts[2];
+    if (parts.length === 2) return parts[0]*60 + parts[1];
+    return 0;
+  }
+  function formatTime(sec) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    const mm = String(m).padStart(2, '0');
+    const ss = String(s).padStart(2, '0');
+    return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
+  }
+  // Initialize as "playing"
+  setPlayIcon(true);
+
+  // ---- Global click-outside handler ----
+  document.addEventListener('click', (e) => {
+    // Don't close anything while interacting with the dev menu
+    if (e.target.closest('.demo-controls')) return;
+    // Calendar
+    if (!calendarPanel.hidden) {
+      if (calendarPanel.contains(e.target) || timeBtn.contains(e.target)) return;
+      calendarPanel.hidden = true;
+      timeBtn.setAttribute('aria-expanded', 'false');
+    }
+    // Media panel
+    if (!mediaPanel.hidden) {
+      if (mediaPanel.contains(e.target) || mediaInfo.contains(e.target)) return;
+      closeMediaPanel();
+    }
+    // QS
+    if (!qsPanel.hidden) {
+      if (qsPanel.contains(e.target) || qsTrigger.contains(e.target)) return;
+      closeQS();
+    }
+  });
+
+  // ---- Esc closes any panel ----
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!sessionOverlay.hidden) { sessionOverlay.hidden = true; return; }
+    if (!calendarPanel.hidden) { calendarPanel.hidden = true; timeBtn.setAttribute('aria-expanded', 'false'); return; }
+    if (!mediaPanel.hidden) { closeMediaPanel(); return; }
+    if (!qsPanel.hidden) { closeQS(); return; }
+    // also close any open dropdowns inside QS
+    document.querySelectorAll('.qs-dropdown:not([hidden]), .slider-dropdown:not([hidden])').forEach(d => d.hidden = true);
+  });
+
+  // ---- Window resize: re-truncate media title ----
+  window.addEventListener('resize', () => {
+    if (currentTrack && !mediaTitleText.classList.contains('carousing')) {
+      truncateMiddle(mediaTitleWrap, mediaTitleText, buildFullTitle(currentTrack));
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 mod battery;
 mod idle_inhibitor;
 mod stats;
+mod time;
 mod tray;
 mod volume;
 mod workspaces;
@@ -68,6 +69,7 @@ impl BarWindow {
         }
 
         let bar = gtk::CenterBox::new();
+        bar.add_css_class("BarRoot");
         bar.add_css_class("min-h-6");
         bar.set_hexpand(true);
 
@@ -78,27 +80,27 @@ impl BarWindow {
         let battery = Battery::new();
         let volume = Volume::new(core);
 
-        let left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        left.set_halign(gtk::Align::Start);
-        left.set_hexpand(true);
-        left.append(workspaces.widget());
+        let left = section(gtk::Align::Start);
+        let left_island = island("IslandStart");
+        left_island.append(workspaces.widget());
+        left.append(&left_island);
         bar.set_start_widget(Some(&left));
 
-        let center = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        center.set_halign(gtk::Align::Center);
-        center.append(&placeholder("center"));
+        let center = section(gtk::Align::Center);
+        let center_island = island("IslandCenter");
+        center_island.append(&time::build());
+        center.append(&center_island);
         bar.set_center_widget(Some(&center));
 
-        let right = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        right.set_halign(gtk::Align::End);
-        right.set_hexpand(true);
+        let right = section(gtk::Align::End);
         right.add_css_class("Right");
-        right.append(stats.widget());
-        right.append(tray.widget());
-        right.append(idle_inhibitor.widget());
-        right.append(battery.widget());
-        right.append(volume.widget());
-        right.append(&placeholder("right"));
+        let right_island = island("IslandEnd");
+        right_island.append(stats.widget());
+        right_island.append(tray.widget());
+        right_island.append(idle_inhibitor.widget());
+        right_island.append(battery.widget());
+        right_island.append(volume.widget());
+        right.append(&right_island);
         bar.set_end_widget(Some(&right));
 
         window.set_child(Some(&bar));
@@ -148,8 +150,20 @@ impl BarWindow {
     }
 }
 
-fn placeholder(text: &str) -> gtk::Label {
-    let label = gtk::Label::new(Some(text));
-    label.add_css_class("Placeholder");
-    label
+/// One of the three bar sections. Only the outer sections expand.
+fn section(align: gtk::Align) -> gtk::Box {
+    let outer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    outer.set_halign(align);
+    outer.set_valign(gtk::Align::Start);
+    outer.set_hexpand(align != gtk::Align::Center);
+    outer
+}
+
+/// A floating island surface.
+fn island(class: &str) -> gtk::Box {
+    let island = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    island.add_css_class("Island");
+    island.add_css_class(class);
+    island.set_valign(gtk::Align::Start);
+    island
 }

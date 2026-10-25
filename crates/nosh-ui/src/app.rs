@@ -14,6 +14,7 @@ use nosh_core::{
 };
 
 use crate::bar::BarWindow;
+use crate::scale;
 
 #[cfg(all(feature = "dev", feature = "stable"))]
 compile_error!("features `dev` and `stable` are mutually exclusive");
@@ -421,7 +422,7 @@ fn install_css() {
     };
 
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(STYLE);
+    provider.load_from_data(&scale::stylesheet(STYLE));
     gtk::style_context_add_provider_for_display(
         &display,
         &provider,

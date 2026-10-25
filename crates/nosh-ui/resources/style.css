@@ -131,6 +131,12 @@ window.Bar.secondary-instance {
     transition-timing-function: ease;
 }
 
+/* Larger numerals without growing the button: the label is sized against
+ * the button's own em, while min-width/min-height/padding stay fixed. */
+.Workspaces button label {
+    font-size: 1.1em;
+}
+
 .Workspaces button:hover,
 .Workspaces button:focus-visible {
     color: @bar_ink;
@@ -177,13 +183,15 @@ window.Bar.secondary-instance {
 
 /* System stats and tray */
 .SystemStats {
-    margin: 0 0.4615em;
+    margin: 0 0.5em;
+    padding: 0 0.15em;
+    border-spacing: 0.4615em;
     color: @bar_muted;
 }
 
 .SystemStats label {
     min-width: 2.6667em;
-    font-size: 0.9231em;
+    font-size: 1em;
     font-weight: 600;
     transition-property: color;
     transition-duration: 200ms;
@@ -199,7 +207,7 @@ window.Bar.secondary-instance {
 }
 
 .level-high {
-    color: @warning_color;
+    color: alpha(@error_color, 0.8);
 }
 
 .level-critical {

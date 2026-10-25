@@ -4,8 +4,6 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::{Command, Core, IdleInhibitState};
 
-use crate::scale;
-
 const ACTIVE_ICON: &str = "my-caffeine-on-symbolic";
 const INACTIVE_ICON: &str = "my-caffeine-off-symbolic";
 const ERROR_ICON: &str = "dialog-error";
@@ -22,7 +20,6 @@ impl IdleInhibitor {
         button.set_focus_on_click(false);
 
         let icon = gtk::Image::new();
-        icon.set_pixel_size(scale::icon_px());
         button.set_child(Some(&icon));
 
         let widget = Self { button, icon };

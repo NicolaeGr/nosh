@@ -1,8 +1,8 @@
 /*
- * Bar styles. Values follow docs/reference/design_proto.html.
+ * Bar styles. Layout values come from docs/reference/design_proto.html.
  *
- * All lengths use em. `src/scale.rs` replaces {{base_font}} and owns SCALE, so
- * the whole bar resizes from that one value. Colours come from the GTK theme.
+ * Lengths are em fractions of the 12px root font below, so changing that one
+ * value resizes the bar. Colours come from the GTK theme.
  */
 
 @define-color brown_2 #9a6a4a;
@@ -27,7 +27,7 @@
 
 /* Window and islands */
 window.Bar {
-    font-size: {{base_font}};
+    font-size: 12px;
     background-color: transparent;
     color: @bar_ink;
     border: none;
@@ -36,31 +36,33 @@ window.Bar {
 }
 
 window.Bar.secondary-instance {
-    border-top: 0.0769em solid alpha(@brown_2, 0.8);
+    border-top: 0.0625em solid alpha(@brown_2, 0.8);
 }
 
 .Island {
-    min-height: 2.1538em;
-    padding: 0.2308em 0.3077em;
+    min-height: 1.75em;
+    padding: 0.1875em 0.25em;
     background-color: @bar_surface;
-    border: 0.0769em solid @bar_surface_edge;
-    border-radius: 0 1.2308em 0 1.2308em;
-    box-shadow: 0 0.5385em 1.8462em @bar_shadow, inset 0 0.0769em 0 @bar_highlight;
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 0 1em 0 1em;
+    box-shadow:
+        0 0.4375em 1.5em @bar_shadow,
+        inset 0 0.0625em 0 @bar_highlight;
 }
 
 .IslandStart {
-    margin: 0.7692em 0 0.6154em 0.9231em;
-    border-spacing: 0.2308em;
+    margin: 0.625em 0 0.5em 0.75em;
+    border-spacing: 0.1875em;
 }
 
 .IslandCenter {
-    min-width: 5.5em;
-    margin: 0.7692em 0 0.6154em 0;
+    min-width: 4.5em;
+    margin: 0.625em 0 0.5em 0;
 }
 
 .IslandEnd {
-    margin: 0.7692em 0.9231em 0.6154em 0;
-    border-spacing: 0.1538em;
+    margin: 0.625em 0.75em 0.5em 0;
+    border-spacing: 0.125em;
 }
 
 .Island .Workspaces {
@@ -71,19 +73,24 @@ window.Bar.secondary-instance {
 /* Icon buttons */
 .square-icon,
 .menu-icon {
-    min-width: 2.2308em;
-    min-height: 2em;
+    min-width: 1.8125em;
+    min-height: 1.625em;
     margin: 0;
     padding: 0;
     color: @bar_muted;
     background-color: transparent;
     background-image: none;
-    border: 0.0769em solid transparent;
-    border-radius: 0 0.7692em 0 0.7692em;
+    border: 0.0625em solid transparent;
+    border-radius: 0 0.625em 0 0.625em;
     box-shadow: none;
     transition-property: color, background-color, border-color, box-shadow;
     transition-duration: 220ms;
     transition-timing-function: ease;
+}
+
+.square-icon image,
+.menu-icon image {
+    -gtk-icon-size: 1em;
 }
 
 .square-icon:hover,
@@ -111,30 +118,27 @@ window.Bar.secondary-instance {
 
 /* Workspaces */
 .Workspaces button {
-    /* Local em base for the sizes below. */
-    font-size: 0.9231em;
-    min-width: 2.5833em;
-    min-height: 2em;
+    min-width: 1.9375em;
+    min-height: 1.5em;
     margin: 0;
-    padding: 0 0.3em;
+    padding: 0 0.225em;
     font-weight: 600;
     color: @bar_muted;
     opacity: 0.85;
     background-color: @bar_row;
     background-image: none;
-    border: 0.1667em solid transparent;
-    border-radius: 0 1.3333em 0 1.3333em;
+    border: 0.125em solid transparent;
+    border-radius: 0 1em 0 1em;
     box-shadow: none;
-    transition-property: color, background-color, border-color, border-radius,
-        box-shadow, opacity;
+    transition-property:
+        color, background-color, border-color, border-radius, box-shadow,
+        opacity;
     transition-duration: 240ms;
     transition-timing-function: ease;
 }
 
-/* Larger numerals without growing the button: the label is sized against
- * the button's own em, while min-width/min-height/padding stay fixed. */
 .Workspaces button label {
-    font-size: 1.1em;
+    font-size: 0.75em;
 }
 
 .Workspaces button:hover,
@@ -144,9 +148,9 @@ window.Bar.secondary-instance {
     background-color: @bar_accent_soft;
     border-left-color: alpha(@accent_bg_color, 0.78);
     border-bottom-color: alpha(@accent_bg_color, 0.78);
-    border-radius: 0 0.8333em 0 0.8333em;
+    border-radius: 0 0.625em 0 0.625em;
     outline: none;
-    box-shadow: inset 0 -0.0833em 0 alpha(@accent_bg_color, 0.22);
+    box-shadow: inset 0 -0.0625em 0 alpha(@accent_bg_color, 0.22);
 }
 
 .Workspaces button.focused {
@@ -155,13 +159,13 @@ window.Bar.secondary-instance {
     background-color: @bar_accent_strong;
     border-left-color: @bar_accent;
     border-bottom-color: @bar_accent;
-    border-radius: 0 0.8333em 0 0.8333em;
-    box-shadow: inset 0 -0.0833em 0 alpha(@accent_bg_color, 0.35);
+    border-radius: 0 0.625em 0 0.625em;
+    box-shadow: inset 0 -0.0625em 0 alpha(@accent_bg_color, 0.35);
 }
 
 .Workspaces button.focused:hover,
 .Workspaces button.focused:focus-visible {
-    background-color: alpha(@accent_bg_color, 0.30);
+    background-color: alpha(@accent_bg_color, 0.3);
 }
 
 .Workspaces button.urgent {
@@ -171,27 +175,27 @@ window.Bar.secondary-instance {
 
 /* Clock */
 .Time {
-    padding: 0 0.3077em;
+    padding: 0 0.25em;
 }
 
 .TimeLabel {
     color: @bar_ink;
-    font-size: 1.0769em;
+    font-size: 0.875em;
     font-weight: 600;
     letter-spacing: 0.02em;
 }
 
 /* System stats and tray */
 .SystemStats {
-    margin: 0 0.5em;
-    padding: 0 0.15em;
-    border-spacing: 0.4615em;
+    margin: 0 0.40625em;
+    padding: 0 0.125em;
+    border-spacing: 0.375em;
     color: @bar_muted;
 }
 
 .SystemStats label {
-    min-width: 2.6667em;
-    font-size: 1em;
+    min-width: 2em;
+    font-size: 0.8125em;
     font-weight: 600;
     transition-property: color;
     transition-duration: 200ms;
@@ -215,20 +219,20 @@ window.Bar.secondary-instance {
 }
 
 .SysTray {
-    padding: 0 0.1538em;
+    padding: 0 0.125em;
 }
 
 /* Documented utility classes. */
 .min-h-6 {
-    min-height: 1.8462em;
+    min-height: 1.5em;
 }
 
 .min-h-2 {
-    min-height: 0.6154em;
+    min-height: 0.5em;
 }
 
 .min-w-8 {
-    min-width: 2.4615em;
+    min-width: 2em;
 }
 
 .p-0 {
@@ -236,12 +240,12 @@ window.Bar.secondary-instance {
 }
 
 .p-1 {
-    padding: 0.3077em;
+    padding: 0.25em;
 }
 
 .px-1 {
-    padding-left: 0.3077em;
-    padding-right: 0.3077em;
+    padding-left: 0.25em;
+    padding-right: 0.25em;
 }
 
 .py-0 {
@@ -255,24 +259,24 @@ window.Bar.secondary-instance {
 }
 
 .mx-1 {
-    margin-left: 0.3077em;
-    margin-right: 0.3077em;
+    margin-left: 0.25em;
+    margin-right: 0.25em;
 }
 
 .mr-2 {
-    margin-right: 0.6154em;
+    margin-right: 0.5em;
 }
 
 .gap-1 {
-    border-spacing: 0.3077em;
+    border-spacing: 0.25em;
 }
 
 .text-xs {
-    font-size: 0.9231em;
+    font-size: 0.75em;
 }
 
 .text-sm {
-    font-size: 1.0769em;
+    font-size: 0.875em;
 }
 
 .font-semibold {

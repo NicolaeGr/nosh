@@ -1,6 +1,5 @@
 mod app;
 mod bar;
-mod scale;
 
 use std::process::ExitCode;
 

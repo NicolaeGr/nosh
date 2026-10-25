@@ -5,8 +5,6 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::{bar_step_volume, AudioModel, Command, Core, VOLUME_STEP};
 
-use crate::scale;
-
 struct State {
     volume: Cell<f64>,
     available: Cell<bool>,
@@ -25,7 +23,6 @@ impl Volume {
         button.set_focus_on_click(false);
 
         let icon = gtk::Image::new();
-        icon.set_pixel_size(scale::icon_px());
         button.set_child(Some(&icon));
 
         let state = Rc::new(State {

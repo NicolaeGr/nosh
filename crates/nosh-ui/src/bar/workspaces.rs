@@ -6,12 +6,11 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::{sort_workspaces, Command, Core, WorkspaceModel, WorkspaceSnapshot};
 
-const BUTTON_CLASSES: [&str; 10] = [
+const BUTTON_CLASSES: [&str; 9] = [
     "min-w-8",
     "min-h-2",
     "p-0",
     "mx-0",
-    "text-xs",
     "font-semibold",
     "opacity-60",
     "transition-all",

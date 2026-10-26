@@ -52,8 +52,20 @@ impl NoshPaths {
         self.config_dir.join("monitors.toml")
     }
 
-    pub fn app_launcher_db(&self) -> PathBuf {
-        self.data_dir.join("app_launcher.db")
+    pub fn menus_config(&self) -> PathBuf {
+        self.config_dir.join("menus.toml")
+    }
+
+    pub fn menus_dir(&self) -> PathBuf {
+        self.config_dir.join("menus.d")
+    }
+
+    pub fn user_styles(&self) -> PathBuf {
+        self.config_dir.join("style.css")
+    }
+
+    pub fn app_usage(&self) -> PathBuf {
+        self.data_dir.join("app_usage.json")
     }
 
     pub fn covers_cache(&self) -> PathBuf {
@@ -203,13 +215,26 @@ mod tests {
             PathBuf::from("/home/nicolae/.config/nosh/app_launcher.toml")
         );
         assert_eq!(
-            paths.app_launcher_db(),
-            PathBuf::from("/home/nicolae/.local/share/nosh/app_launcher.db")
+            paths.app_usage(),
+            PathBuf::from("/home/nicolae/.local/share/nosh/app_usage.json")
         );
         assert_eq!(
             paths.brightness_snapshot(),
             PathBuf::from("/home/nicolae/.cache/nosh/brightness/snapshot.json")
         );
+        assert_eq!(
+            paths.menus_config(),
+            PathBuf::from("/home/nicolae/.config/nosh/menus.toml")
+        );
+        assert_eq!(
+            paths.menus_dir(),
+            PathBuf::from("/home/nicolae/.config/nosh/menus.d")
+        );
+        assert_eq!(
+            paths.user_styles(),
+            PathBuf::from("/home/nicolae/.config/nosh/style.css")
+        );
+
         assert_eq!(
             paths.notifications_store(),
             PathBuf::from("/home/nicolae/.local/state/nosh/notifications.json")

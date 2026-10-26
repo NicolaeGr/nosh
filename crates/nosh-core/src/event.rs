@@ -2,6 +2,7 @@ use crate::audio::model::{AudioEndpoint, AudioModel, EndpointKind};
 use crate::battery::model::BatteryModel;
 use crate::brightness::model::{BrightnessDevice, BrightnessDeviceId};
 use crate::idle_inhibit::model::IdleInhibitState;
+use crate::menu::MenuEvent;
 use crate::monitors::MonitorLayout;
 use crate::origin::ChangeOrigin;
 use crate::stats::model::SystemStats;
@@ -25,6 +26,7 @@ pub enum Event {
     SystemStats(SystemStatsEvent),
     IdleInhibit(IdleInhibitEvent),
     Tray(TrayEvent),
+    Menu(MenuEvent),
     ServiceAvailability(Service, bool),
 }
 

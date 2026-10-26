@@ -1,0 +1,135 @@
+/*
+ * Menu styles.
+ *
+ * Opacity rule: every surface is opaque. Controls inherit the panel colour
+ * instead of stacking alpha on top of it, and normal items have no background
+ * so they show the panel.
+ *
+ * The user stylesheet can include this file by keeping the marker
+ * `/* nosh:builtin-styles *\/`.
+ */
+
+@define-color menu_surface @theme_bg_color;
+@define-color menu_border mix(@theme_bg_color, @theme_fg_color, 0.16);
+@define-color menu_control @theme_bg_color;
+@define-color menu_hover mix(@theme_bg_color, @accent_bg_color, 0.12);
+@define-color menu_active mix(@theme_bg_color, @accent_bg_color, 0.24);
+@define-color menu_accent_soft mix(@theme_bg_color, @accent_bg_color, 0.16);
+@define-color menu_media mix(@theme_bg_color, @theme_fg_color, 0.05);
+@define-color menu_accent @accent_bg_color;
+
+window.Menu {
+    font-size: 12px;
+    letter-spacing: 0.015em;
+    background-color: transparent;
+    color: @bar_ink;
+    border: none;
+    box-shadow: none;
+}
+
+/* The menu panel. Opaque, with the accent on the left and bottom edges. */
+.MenuRoot {
+    padding: 0.625em;
+    background-color: @menu_surface;
+    border: 0.18em solid @menu_border;
+    border-left-color: @bar_accent;
+    border-bottom-color: @bar_accent;
+    border-radius: 0 1em 0 1em;
+    box-shadow:
+        0 0.4375em 1.5em @bar_shadow,
+        inset 0 0.0625em 0 @bar_highlight;
+}
+
+.MenuSearch {
+    min-height: 2.25em;
+    padding: 0.1875em 0.75em;
+    margin-bottom: 0.5em;
+    font-size: 1.3333em;
+    background-color: @menu_control;
+    border: 0.0625em solid @menu_border;
+    border-radius: 0 0.5em 0 0.5em;
+}
+
+.MenuSearch:focus,
+.MenuSearch:focus-within,
+.MenuSearch:focus-visible {
+    background-color: @menu_control;
+    border-width: 0.125em;
+    border-color: @menu_accent;
+    outline-style: none;
+    outline-width: 0;
+}
+
+.MenuError {
+    color: @error_color;
+    padding: 0.25em 0.125em 0 0.125em;
+}
+
+/* Normal items show the panel. Only interactive states paint a background. */
+.MenuItem {
+    padding: 0.375em;
+    background-color: transparent;
+    border: 0.0625em solid transparent;
+    border-radius: 0 0.5em 0 0.5em;
+}
+
+.MenuItemRow {
+    border-spacing: 0.625em;
+}
+
+.MenuItemTitle {
+    font-weight: 600;
+}
+
+.MenuItemDescription {
+    color: @bar_muted;
+    font-size: 0.9167em;
+}
+
+.MenuItemBadge {
+    padding: 0 0.375em;
+    border-radius: 0 0.375em 0 0.375em;
+    background-color: @menu_accent_soft;
+    color: @bar_accent;
+    font-size: 0.8333em;
+}
+
+.MenuItemMedia {
+    border-radius: 0 0.375em 0 0.375em;
+    background-color: @menu_media;
+}
+
+.MenuItemDisabled {
+    opacity: 0.5;
+}
+
+/* Rows and grid children paint the hover and selected background. The item
+ * inside stays transparent so that colour is the only surface. */
+listview.MenuList > row,
+gridview.MenuGrid > child {
+    background-color: transparent;
+    border-radius: 0 0.5em 0 0.5em;
+    outline-style: none;
+    outline-width: 0;
+}
+
+listview.MenuList > row:hover,
+gridview.MenuGrid > child:hover {
+    background-color: @menu_hover;
+}
+
+listview.MenuList > row:selected,
+gridview.MenuGrid > child:selected {
+    background-color: @menu_active;
+    box-shadow: inset 0.1875em 0 0 @menu_accent;
+}
+
+listview.MenuList > row:focus,
+gridview.MenuGrid > child:focus,
+listview.MenuList > row:focus-visible,
+gridview.MenuGrid > child:focus-visible {
+    outline-style: solid;
+    outline-width: 0.125em;
+    outline-offset: -0.125em;
+    outline-color: @menu_accent;
+}

@@ -114,6 +114,7 @@ pub enum Event {
     KdeConnect(KdeConnectEvent),
     IdleInhibit(IdleInhibitEvent),
     Apps(AppsEvent),
+    Menu(MenuEvent),
     ServiceAvailability(Service, bool),
 }
 ```
@@ -164,6 +165,11 @@ pub enum Command {
     TraySecondaryActivate { item_id: String, x: i32, y: i32 },
     TrayMenuAboutToShow(String),
     TrayMenuEvent { item_id: String, menu_id: i32, event: String },
+    MenuOpen(String),
+    MenuQuery { id: String, query: String },
+    MenuActivate { id: String, index: usize },
+    MenuReload(String),
+    MenuClose(String),
 }
 ```
 
@@ -247,17 +253,18 @@ All windows use `gtk4-layer-shell`. The crate calls `gtk4_layer_shell::init_for_
 
 Use a `gtk::Window` with decorations disabled and resizing disabled. Add it to the application with `app.add_window(&window)`.
 
-| Window           | Anchor              | Layer   | Exclusivity | Keymode   | Namespace                  | Monitor | Margins         |
-| ---------------- | ------------------- | ------- | ----------- | --------- | -------------------------- | ------- | --------------- |
-| Bar, one per monitor | top, left, right | top | exclusive | none | `nosh-topbar` | each enabled monitor | none |
-| Quick settings   | all four            | overlay | ignore      | exclusive | `nosh-quick-settings`      | current | none |
-| Notifications    | configured corner   | overlay | ignore      | none      | `nosh-notifications-outer` | farthest for corner | 8 / 28 |
-| App launcher     | all four            | overlay | ignore      | exclusive | `nosh-app-launcher`        | current | none |
-| Change indicator | bottom, left, right | top     | ignore      | none      | `nosh-change-indicator`    | current | none |
+| Window               | Anchor              | Layer   | Exclusivity | Keymode   | Namespace                  | Monitor              | Margins |
+| -------------------- | ------------------- | ------- | ----------- | --------- | -------------------------- | -------------------- | ------- |
+| Bar, one per monitor | top, left, right    | top     | exclusive   | none      | `nosh-topbar`              | each enabled monitor | none    |
+| Quick settings       | all four            | overlay | ignore      | exclusive | `nosh-quick-settings`      | current              | none    |
+| Notifications        | configured corner   | overlay | ignore      | none      | `nosh-notifications-outer` | farthest for corner  | 8 / 28  |
+| App launcher         | all four            | overlay | ignore      | exclusive | `nosh-app-launcher`        | current              | none    |
+| Menu                 | configured          | overlay | ignore      | exclusive | `nosh-menu-<id>`           | current              | none    |
+| Change indicator     | bottom, left, right | top     | ignore      | none      | `nosh-change-indicator`    | current              | none    |
 
 The bar is the only exclusive window. It must request an exclusive zone so Hyprland reserves space for it.
 
-Current-monitor windows: quick settings, the app launcher, and the change indicator. Set the layer-shell monitor to the compositor's focused monitor before presenting. If the window is already mapped, hide it, set the monitor, then present. The notification window uses the farthest-monitor rule from `features/monitors.md`, not the current monitor.
+Current-monitor windows: quick settings, menus, and the change indicator. Set the layer-shell monitor to the compositor's focused monitor before presenting. If the window is already mapped, hide it, set the monitor, then present. The notification window uses the farthest-monitor rule from `features/monitors.md`, not the current monitor.
 
 Layer shell windows need a nonzero size request before mapping. Set `width_request = 1` and `height_request = 1` at construction like `Astal.Window` does, then let the content expand.
 
@@ -271,18 +278,18 @@ The current shell is single-instance through `GApplication`. A second `nosh volu
 
 `command_line` maps the first argument:
 
-| Argument          | Action                                    |
-| ----------------- | ----------------------------------------- |
-| `volume-up`       | send `AudioStepVolume(+0.05)`             |
-| `volume-down`     | send `AudioStepVolume(-0.05)`             |
-| `brightness-up`   | send `BrightnessStep(+5.0)`               |
-| `brightness-down` | send `BrightnessStep(-5.0)`               |
-| `brightness-dim`  | send `BrightnessDim { value: 10.0 }`      |
-| `brightness-restore` | send `BrightnessRestore`               |
-| `app-launcher`    | toggle app launcher visibility in the UI  |
-| `monitor-cycle`   | send `MonitorCycle` for the next monitor  |
-| `power-profile`   | send `PowerProfileSet` for the next profile |
-| anything else     | print the current error text and return 0 |
+| Argument             | Action                                      |
+| -------------------- | ------------------------------------------- |
+| `volume-up`          | send `AudioStepVolume(+0.05)`               |
+| `volume-down`        | send `AudioStepVolume(-0.05)`               |
+| `brightness-up`      | send `BrightnessStep(+5.0)`                 |
+| `brightness-down`    | send `BrightnessStep(-5.0)`                 |
+| `brightness-dim`     | send `BrightnessDim { value: 10.0 }`        |
+| `brightness-restore` | send `BrightnessRestore`                    |
+| `menu <id>`          | send `MenuOpen(id)` for a configured menu   |
+| `monitor-cycle`      | send `MonitorCycle` for the next monitor    |
+| `power-profile`      | send `PowerProfileSet` for the next profile |
+| anything else        | print the current error text and return 0   |
 
 The current error text and exit behavior are in `features/command-line.md`.
 
@@ -290,17 +297,21 @@ In a dev build, the current Vala code stops `nosh.service`, starts the dev insta
 
 ## Config and state paths
 
-| Path                                     | Purpose                                            |
-| ---------------------------------------- | -------------------------------------------------- |
-| `~/.config/nosh/app_launcher.toml`       | custom launcher entries and script providers       |
-| `~/.config/nosh/config.toml`             | new: bar, time format, applet, and appearance settings |
-| `~/.config/nosh/monitors.toml`           | new: monitor layout presets and optional startup apply |
-| `~/.local/share/nosh/app_launcher.db`    | SQLite usage database                              |
-| `~/.cache/nosh/covers/`                  | MPRIS cover art cache                              |
-| `~/.cache/nosh/notifications/`           | notification image cache                           |
-| `~/.cache/nosh/brightness/snapshot.json` | brightness save/dim/restore state                  |
-| `~/.local/state/nosh/notifications.json` | persisted notification store                       |
-| `$XDG_RUNTIME_DIR/nosh/`                 | future socket or lock files                        |
+| Path                                     | Purpose                                                             |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| `~/.config/nosh/app_launcher.toml`       | custom launcher entries and script providers                        |
+| `~/.config/nosh/menus.toml`              | menu definitions, sources, views, and actions                       |
+| `~/.config/nosh/menus.d/`                | drop-in menu files (`*.toml`) and per-menu stylesheets (`<id>.css`) |
+| `~/.config/nosh/style.css`               | user stylesheet, loaded above the built-in sheet                    |
+| `~/.config/nosh/style.css`               | user stylesheet loaded above the built-in sheet                     |
+| `~/.config/nosh/config.toml`             | new: bar, time format, applet, and appearance settings              |
+| `~/.config/nosh/monitors.toml`           | new: monitor layout presets and optional startup apply              |
+| `~/.local/share/nosh/app_launcher.db`    | SQLite usage database                                               |
+| `~/.cache/nosh/covers/`                  | MPRIS cover art cache                                               |
+| `~/.cache/nosh/notifications/`           | notification image cache                                            |
+| `~/.cache/nosh/brightness/snapshot.json` | brightness save/dim/restore state                                   |
+| `~/.local/state/nosh/notifications.json` | persisted notification store                                        |
+| `$XDG_RUNTIME_DIR/nosh/`                 | future socket or lock files                                         |
 
 Use the `directories` crate or `glib::user_config_dir()` in the UI. The core should use `std::env` plus `xdg` path helpers so it stays GTK-free. Resolve paths once at startup and pass them into services.
 
@@ -308,16 +319,17 @@ Settings that need live change notification, a `gsettings` CLI, and typed keys l
 
 Settings inventory:
 
-| Group | Keys | Store |
-| --- | --- | --- |
-| Notifications | `ignore-timeout`, `dont-disturb`, `default-timeout`, `max-visible`, `display-timeout`, `position`, `monitor-policy`, `server-capabilities` | GSettings |
-| Bar | `time-format`, `show-secondary` (dev), custom applet order | GSettings and `config.toml` |
-| Brightness | `step`, `dim-value`, `backend`, `ddc-backend` | `config.toml` |
-| Auth | `service`, `lockout-attempts`, `lockout-seconds` | `config.toml` |
-| Monitor layout | `apply-on-start`, presets, per-connector layout | `monitors.toml` |
-| App launcher | `[[entry]]`, `[[provider]]`, `[[applet]]` | `app_launcher.toml` |
-| Notification payloads | persisted notifications | `notifications.json` |
-| Brightness snapshot | saved values before dim | `brightness/snapshot.json` |
+| Group                 | Keys                                                                                                                                       | Store                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| Notifications         | `ignore-timeout`, `dont-disturb`, `default-timeout`, `max-visible`, `display-timeout`, `position`, `monitor-policy`, `server-capabilities` | GSettings                   |
+| Bar                   | `time-format`, `show-secondary` (dev), custom applet order                                                                                 | GSettings and `config.toml` |
+| Brightness            | `step`, `dim-value`, `backend`, `ddc-backend`                                                                                              | `config.toml`               |
+| Auth                  | `service`, `lockout-attempts`, `lockout-seconds`                                                                                           | `config.toml`               |
+| Monitor layout        | `apply-on-start`, presets, per-connector layout                                                                                            | `monitors.toml`             |
+| App launcher          | `[[entry]]`, `[[provider]]`, `[[applet]]`                                                                                                  | `app_launcher.toml`         |
+| Menus                 | per-menu window, view, source, template, and actions                                                                                       | `menus.toml`                |
+| Notification payloads | persisted notifications                                                                                                                    | `notifications.json`        |
+| Brightness snapshot   | saved values before dim                                                                                                                    | `brightness/snapshot.json`  |
 
 The current Astal notification settings live in `io.astal.notifd`. On first run, if that schema exists, import `ignore-timeout`, `dont-disturb`, and `default-timeout` once. Do not depend on Astal or that schema at runtime.
 

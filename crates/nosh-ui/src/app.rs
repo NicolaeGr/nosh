@@ -8,12 +8,13 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::{
-    volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel, Core,
-    EndpointKind, Event, IdleInhibitEvent, IdleInhibitState, SystemStats, SystemStatsEvent,
-    TrayEvent, TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot,
+    volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel, Command, Core,
+    EndpointKind, Event, IdleInhibitEvent, IdleInhibitState, MenuEvent, SystemStats,
+    SystemStatsEvent, TrayEvent, TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot,
 };
 
 use crate::bar::BarWindow;
+use crate::menu::MenuManager;
 
 #[cfg(all(feature = "dev", feature = "stable"))]
 compile_error!("features `dev` and `stable` are mutually exclusive");
@@ -25,6 +26,23 @@ pub const APP_ID: &str = if cfg!(feature = "dev") {
 };
 
 const STYLE: &str = include_str!("../resources/style.css");
+const MENU_STYLE: &str = include_str!("../resources/menu.css");
+
+/// When this marker is present in the user stylesheet it is replaced with the
+/// complete built-in stylesheet at load time.
+const BUILTIN_MARKER: &str = "/* nosh:builtin-styles */";
+
+const USER_STYLE_TEMPLATE: &str = "\
+/*
+ * User stylesheet for nosh.
+ *
+ * The marker below is replaced with the built-in stylesheet at startup, so
+ * everything here can extend or override the shell without copying it. Add
+ * your own rules after the marker. Remove the marker to stop including the
+ * built-in rules in this file.
+ */
+/* nosh:builtin-styles */
+";
 
 struct Ui {
     app: gtk::Application,
@@ -37,6 +55,7 @@ struct Ui {
     tray: RefCell<Vec<TrayItemModel>>,
     tray_menus: RefCell<HashMap<String, TrayMenu>>,
     bars: RefCell<BTreeMap<String, BarWindow>>,
+    menus: RefCell<MenuManager>,
 }
 
 impl Ui {
@@ -52,6 +71,7 @@ impl Ui {
             tray: RefCell::new(Vec::new()),
             tray_menus: RefCell::new(HashMap::new()),
             bars: RefCell::new(BTreeMap::new()),
+            menus: RefCell::new(MenuManager::new()),
         }
     }
 
@@ -183,6 +203,7 @@ impl Ui {
             Event::Battery(event) => self.apply_battery_event(event),
             Event::IdleInhibit(event) => self.apply_idle_inhibit_event(event),
             Event::Tray(event) => self.apply_tray_event(event),
+            Event::Menu(event) => self.apply_menu_event(event),
             _ => {}
         }
     }
@@ -324,6 +345,35 @@ impl Ui {
         self.render_idle_inhibit();
     }
 
+    fn apply_menu_event(&self, event: MenuEvent) {
+        match event {
+            MenuEvent::Opened { id, menu } => {
+                self.menus
+                    .borrow_mut()
+                    .open(id, *menu, &self.app, Rc::clone(&self.core));
+            }
+            MenuEvent::Results { id, items, .. } => {
+                self.menus.borrow_mut().set_results(&id, items);
+            }
+            MenuEvent::Failed { id, message } | MenuEvent::ActionFailed { id, message } => {
+                self.menus.borrow_mut().show_error(&id, &message);
+            }
+            MenuEvent::Closed { id } => {
+                self.menus.borrow_mut().close(&id);
+            }
+            MenuEvent::ActionDone { id, after } => match after {
+                nosh_core::After::Close => self.core.send(Command::MenuClose(id)),
+                nosh_core::After::Reload => self.core.send(Command::MenuReload(id)),
+                nosh_core::After::None => {}
+            },
+        }
+    }
+
+    /// Sends a request to the core. The window appears when `Opened` arrives.
+    fn open_menu(&self, id: &str) {
+        self.core.send(Command::MenuOpen(id.to_string()));
+    }
+
     fn apply_workspace_event(&self, event: WorkspaceEvent) {
         match event {
             WorkspaceEvent::Snapshot { state, .. } => {
@@ -379,40 +429,101 @@ fn update_endpoint(
     }
 }
 
-pub fn run() -> Result<u8, Box<dyn Error>> {
-    let core = Rc::new(Core::start()?);
-    let events = core.subscribe();
+pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
+    let app = gtk::Application::builder()
+        .application_id(APP_ID)
+        .flags(gtk::gio::ApplicationFlags::HANDLES_COMMAND_LINE)
+        .build();
 
-    let app = gtk::Application::builder().application_id(APP_ID).build();
+    let pending: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    let ui_slot: Rc<RefCell<Option<Rc<Ui>>>> = Rc::new(RefCell::new(None));
 
     app.connect_startup(|_| install_css());
 
-    app.connect_activate(move |app| {
-        if !gtk4_layer_shell::is_supported() {
-            eprintln!("nosh: gtk4-layer-shell is not available on this display server");
-            app.quit();
-            return;
-        }
-
-        let ui = Rc::new(Ui::new(app.clone(), Rc::clone(&core)));
-        ui.sync_bars();
-
-        if let Some(display) = gdk::Display::default() {
-            let ui = Rc::clone(&ui);
-            display
-                .monitors()
-                .connect_items_changed(move |_, _, _, _| ui.sync_bars());
-        }
-
-        let events = events.clone();
-        glib::spawn_future_local(async move {
-            while let Ok(event) = events.recv().await {
-                ui.apply(event);
+    // A secondary `nosh menu <id>` forwards its command line to the running
+    // instance, which owns the windows.
+    {
+        let ui_slot = Rc::clone(&ui_slot);
+        let pending = Rc::clone(&pending);
+        app.connect_command_line(move |app, command_line| {
+            if let Some(id) = menu_from_arguments(&command_line.arguments()) {
+                let handled = ui_slot
+                    .borrow()
+                    .as_ref()
+                    .map(|ui| ui.open_menu(&id))
+                    .is_some();
+                if !handled {
+                    *pending.borrow_mut() = Some(id);
+                }
             }
+            app.activate();
+            glib::ExitCode::SUCCESS
         });
-    });
+    }
 
-    Ok(app.run().into())
+    {
+        let ui_slot = Rc::clone(&ui_slot);
+        let pending = Rc::clone(&pending);
+        app.connect_activate(move |app| {
+            if ui_slot.borrow().is_some() {
+                return;
+            }
+
+            if !gtk4_layer_shell::is_supported() {
+                eprintln!("nosh: gtk4-layer-shell is not available on this display server");
+                app.quit();
+                return;
+            }
+
+            // Start the core only in the primary instance. A secondary
+            // `nosh menu <id>` process forwards its command line and exits
+            // without opening audio, battery, or tray connections.
+            let core = match Core::start() {
+                Ok(core) => Rc::new(core),
+                Err(error) => {
+                    eprintln!("nosh: {error}");
+                    app.quit();
+                    return;
+                }
+            };
+            let events = core.subscribe();
+
+            let ui = Rc::new(Ui::new(app.clone(), Rc::clone(&core)));
+            ui.sync_bars();
+
+            if let Some(display) = gdk::Display::default() {
+                let ui = Rc::clone(&ui);
+                display
+                    .monitors()
+                    .connect_items_changed(move |_, _, _, _| ui.sync_bars());
+            }
+
+            let pending = pending.borrow_mut().take();
+            ui_slot.borrow_mut().replace(Rc::clone(&ui));
+            if let Some(id) = pending {
+                ui.open_menu(&id);
+            }
+
+            let events = events.clone();
+            glib::spawn_future_local(async move {
+                while let Ok(event) = events.recv().await {
+                    ui.apply(event);
+                }
+            });
+        });
+    }
+
+    Ok(app.run_with_args_os(&arguments).into())
+}
+
+fn menu_from_arguments(arguments: &[std::ffi::OsString]) -> Option<String> {
+    let mut words = arguments.iter().filter_map(|argument| argument.to_str());
+    while let Some(word) = words.next() {
+        if word == "menu" {
+            return words.next().map(ToString::to_string);
+        }
+    }
+    None
 }
 
 fn install_css() {
@@ -420,11 +531,101 @@ fn install_css() {
         return;
     };
 
+    let builtin = format!("{STYLE}\n{MENU_STYLE}");
+    add_css(&display, &builtin, gtk::STYLE_PROVIDER_PRIORITY_USER);
+
+    let Ok(paths) = nosh_core::NoshPaths::from_env() else {
+        return;
+    };
+
+    if let Err(error) = std::fs::create_dir_all(paths.menus_dir()) {
+        tracing::warn!(
+            %error,
+            path = %paths.menus_dir().display(),
+            "cannot create the menus directory"
+        );
+    }
+
+    let user_path = paths.user_styles();
+    ensure_user_style(&user_path);
+
+    match std::fs::read_to_string(&user_path) {
+        Ok(text) => {
+            let css = expand_user_style(&text, &builtin);
+            add_css(&display, &css, gtk::STYLE_PROVIDER_PRIORITY_USER + 1);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => tracing::warn!(
+            %error,
+            path = %user_path.display(),
+            "cannot read the user stylesheet"
+        ),
+    }
+}
+
+fn ensure_user_style(path: &std::path::Path) {
+    if path.exists() {
+        return;
+    }
+    if let Some(parent) = path.parent() {
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            tracing::warn!(%error, path = %parent.display(), "cannot create the config directory");
+            return;
+        }
+    }
+    match std::fs::write(path, USER_STYLE_TEMPLATE) {
+        Ok(()) => tracing::info!(path = %path.display(), "wrote the user stylesheet template"),
+        Err(error) => tracing::warn!(
+            %error,
+            path = %path.display(),
+            "cannot write the user stylesheet template"
+        ),
+    }
+}
+
+fn add_css(display: &gdk::Display, css: &str, priority: u32) {
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(STYLE);
-    gtk::style_context_add_provider_for_display(
-        &display,
-        &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_USER,
-    );
+    provider.connect_parsing_error(|_, section, error| {
+        tracing::warn!(
+            line = section.start_location().lines() + 1,
+            %error,
+            "CSS parse error"
+        );
+    });
+    provider.load_from_data(css);
+    gtk::style_context_add_provider_for_display(display, &provider, priority);
+}
+
+fn expand_user_style(text: &str, builtin: &str) -> String {
+    text.replace(BUILTIN_MARKER, builtin)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_builtin_marker_is_replaced() {
+        let text = "a\n/* nosh:builtin-styles */\nb";
+        assert_eq!(expand_user_style(text, "BUILTIN"), "a\nBUILTIN\nb");
+    }
+
+    #[test]
+    fn a_stylesheet_without_the_marker_is_unchanged() {
+        let text = ".MenuItem { opacity: 0.5; }";
+        assert_eq!(expand_user_style(text, "BUILTIN"), text);
+    }
+
+    #[test]
+    fn the_command_line_maps_menu_ids() {
+        let arguments = vec![
+            std::ffi::OsString::from("nosh"),
+            std::ffi::OsString::from("menu"),
+            std::ffi::OsString::from("wallpapers"),
+        ];
+        assert_eq!(
+            menu_from_arguments(&arguments).as_deref(),
+            Some("wallpapers")
+        );
+    }
 }

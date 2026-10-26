@@ -14,6 +14,7 @@ use crate::event::{
 };
 use crate::idle_inhibit::model::IdleInhibitState;
 use crate::idle_inhibit::service::{IdleInhibitService, IdleInhibitServiceConfig};
+use crate::menu::service::{MenuService, MenuServiceConfig};
 use crate::monitors::service::{MonitorService, MonitorServiceConfig};
 use crate::stats::service::{SystemStatsService, SystemStatsServiceConfig};
 use crate::tray::service::{TrayService, TrayServiceConfig};
@@ -29,6 +30,7 @@ pub struct CoreSettings {
     pub stats: SystemStatsServiceConfig,
     pub idle_inhibit: IdleInhibitServiceConfig,
     pub tray: TrayServiceConfig,
+    pub menu: MenuServiceConfig,
 }
 
 /// Handle to the core thread.
@@ -43,7 +45,20 @@ pub struct Core {
 
 impl Core {
     pub fn start() -> Result<Self, CoreError> {
-        Self::start_with(CoreSettings::default())
+        let mut settings = CoreSettings::default();
+
+        match crate::paths::NoshPaths::from_env() {
+            Ok(paths) => {
+                match crate::menu::load_menu_config(&paths.config_dir) {
+                    Ok(config) => settings.menu.menus = config.menus,
+                    Err(error) => tracing::error!(%error, "the menu config could not be loaded"),
+                }
+                settings.menu.paths = Some(paths);
+            }
+            Err(error) => tracing::error!(%error, "the config paths could not be resolved"),
+        }
+
+        Self::start_with(settings)
     }
 
     pub fn start_with(settings: CoreSettings) -> Result<Self, CoreError> {
@@ -63,6 +78,7 @@ impl Core {
         let (stats_commands, stats_receiver) = async_channel::unbounded();
         let (idle_inhibit_commands, idle_inhibit_receiver) = async_channel::unbounded();
         let (tray_commands, tray_receiver) = async_channel::unbounded();
+        let (menu_commands, menu_receiver) = async_channel::unbounded();
 
         let thread = thread::Builder::new()
             .name("nosh-core".to_string())
@@ -79,6 +95,7 @@ impl Core {
                             _stats: stats_commands,
                             idle_inhibit: idle_inhibit_commands,
                             tray: tray_commands,
+                            menu: menu_commands,
                         },
                     ));
                     let merger = tokio::spawn(merge_events(service_event_receiver, event_sender));
@@ -99,6 +116,8 @@ impl Core {
                         .run(idle_inhibit_receiver, service_events.clone());
                     let tray = TrayService::from_env_with(settings.tray)
                         .run(tray_receiver, service_events.clone());
+                    let menu =
+                        MenuService::new(settings.menu).run(menu_receiver, service_events.clone());
                     // The services own a clone. Dropping the original lets the
                     // merger finish once every service returns.
                     drop(service_events);
@@ -111,7 +130,8 @@ impl Core {
                         battery,
                         stats,
                         idle_inhibit,
-                        tray
+                        tray,
+                        menu
                     );
                     router.abort();
                     let _ = merger.await;
@@ -166,6 +186,7 @@ struct ServiceSenders {
     _stats: Sender<Command>,
     idle_inhibit: Sender<Command>,
     tray: Sender<Command>,
+    menu: Sender<Command>,
 }
 
 async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
@@ -180,6 +201,8 @@ async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
             &senders.idle_inhibit
         } else if command.is_tray() {
             &senders.tray
+        } else if command.is_menu() {
+            &senders.menu
         } else {
             &senders.workspaces
         };
@@ -469,6 +492,7 @@ mod tests {
         let (stats_tx, _stats_rx) = async_channel::unbounded();
         let (idle_inhibit_tx, idle_inhibit_rx) = async_channel::unbounded();
         let (tray_tx, tray_rx) = async_channel::unbounded();
+        let (menu_tx, _menu_rx) = async_channel::unbounded();
 
         let task = tokio::spawn(route_commands(
             public_rx,
@@ -481,6 +505,7 @@ mod tests {
                 _stats: stats_tx,
                 idle_inhibit: idle_inhibit_tx,
                 tray: tray_tx,
+                menu: menu_tx,
             },
         ));
 

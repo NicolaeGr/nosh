@@ -173,7 +173,7 @@ Keep these constants in one module. They are part of the ranking users feel.
 
 ### SQLite
 
-Path `~/.local/share/nosh/app_launcher.db`.
+Path `~/.local/share/nosh/app_launcher.db`. The Rust menu engine replaced this SQLite database with the JSON launch log at `~/.local/share/nosh/app_usage.json`. See [menus.md](menus.md#ordering-by-launch-history).
 
 ```sql
 CREATE TABLE IF NOT EXISTS app_usage (
@@ -394,6 +394,8 @@ Do not build a dynamic plugin loader in v1. A trait with two built-ins is enough
 
 ## UI
 
+> The generic menu engine now owns this window. The launcher is the `apps` builtin, opened with `nosh menu apps`. See [menus.md](menus.md) for the shared window, view, and focus model. The rest of this section records the original launcher behavior and remains the visual reference for the `apps` menu.
+
 ### Window
 
 Create a `gtk::Window` with `gtk4-layer-shell`:
@@ -484,7 +486,7 @@ Keep the `AppLauncher.scss` selectors:
 
 ## Definition of done
 
-- `nosh app-launcher` opens the window centered over the current workspace.
+- `nosh menu apps` opens the window centered over the current workspace.
 - The search entry is focused.
 - An empty query lists all apps, most frequent first.
 - Typing filters with the current score, then frequency order.

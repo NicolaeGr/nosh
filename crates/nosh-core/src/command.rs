@@ -69,6 +69,17 @@ pub enum Command {
         menu_id: i32,
         event: String,
     },
+    MenuOpen(String),
+    MenuQuery {
+        id: String,
+        query: String,
+    },
+    MenuActivate {
+        id: String,
+        index: usize,
+    },
+    MenuReload(String),
+    MenuClose(String),
 }
 
 /// The idle inhibitor command behind a routed [`Command`].
@@ -129,6 +140,18 @@ impl Command {
         )
     }
 
+    /// Whether the menu service handles this command.
+    pub fn is_menu(&self) -> bool {
+        matches!(
+            self,
+            Self::MenuOpen(_)
+                | Self::MenuQuery { .. }
+                | Self::MenuActivate { .. }
+                | Self::MenuReload(_)
+                | Self::MenuClose(_)
+        )
+    }
+
     /// Whether the idle inhibitor service handles this command.
     pub fn is_idle_inhibit(&self) -> bool {
         self.idle_inhibit().is_some()
@@ -147,6 +170,26 @@ impl Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn menu_commands_are_classified_for_routing() {
+        assert!(Command::MenuOpen("apps".to_string()).is_menu());
+        assert!(Command::MenuQuery {
+            id: "apps".to_string(),
+            query: "fire".to_string(),
+        }
+        .is_menu());
+        assert!(Command::MenuActivate {
+            id: "apps".to_string(),
+            index: 0,
+        }
+        .is_menu());
+        assert!(Command::MenuReload("apps".to_string()).is_menu());
+        assert!(Command::MenuClose("apps".to_string()).is_menu());
+
+        assert!(!Command::IdleInhibitToggle.is_menu());
+        assert!(!Command::AudioSetVolume(0.5).is_menu());
+    }
 
     #[test]
     fn monitor_commands_are_classified_for_routing() {

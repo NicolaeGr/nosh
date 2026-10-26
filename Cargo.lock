@@ -768,6 +768,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "toml",
  "tracing",
  "wayland-client",
  "wayland-protocols",

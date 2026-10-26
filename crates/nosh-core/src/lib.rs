@@ -14,6 +14,7 @@ pub mod error;
 pub mod event;
 pub mod hyprland;
 pub mod idle_inhibit;
+pub mod menu;
 pub mod monitors;
 pub mod origin;
 pub mod paths;
@@ -52,6 +53,13 @@ pub use event::{
 pub use idle_inhibit::{
     IdleInhibitBackend, IdleInhibitService, IdleInhibitServiceConfig, IdleInhibitState,
     InhibitBackendEvent, InhibitCommand, InhibitSession, WaylandBackend,
+};
+pub use menu::{
+    default_menus, expand_argv, load_menu_config, load_menus, menu_source, parse_menus,
+    spawn_detached, ActionDef, After, ItemLayout, ItemState, MenuConfig, MenuConfigError, MenuDef,
+    MenuEvent, MenuIcon, MenuItem, MenuPreview, MenuService, MenuServiceConfig, MenuSource,
+    MenuValue, SearchMode, SourceDef, SourceEnv, SourceError, SourceKind, Template, ViewDef,
+    ViewKind, WindowDef,
 };
 pub use monitors::{
     extend, mirror, panning, preset_layout, resolve_target, score, select_monitor, single, Corner,

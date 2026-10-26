@@ -26,17 +26,17 @@ Current files: `src/App.vala`, `src/utils/RequestHandler.vala`, `src/utils/syste
 
 `RequestHandler` handles:
 
-| Command | Action |
-| --- | --- |
-| `volume-up` | `volume.increase()` |
-| `volume-down` | `volume.decrease()` |
-| `brightness-up` | `brightness.increase()` |
-| `brightness-down` | `brightness.decrease()` |
-| `brightness-dim` | save the current state and dim all displays |
-| `brightness-restore` | restore the saved brightness state |
-| `app-launcher` | toggle `AppState.app_launcher_open` |
-| `monitor-cycle` | cycle the target monitor through the layout presets |
-| `power-profile` | cycle the active power profile |
+| Command              | Action                                              |
+| -------------------- | --------------------------------------------------- |
+| `volume-up`          | `volume.increase()`                                 |
+| `volume-down`        | `volume.decrease()`                                 |
+| `brightness-up`      | `brightness.increase()`                             |
+| `brightness-down`    | `brightness.decrease()`                             |
+| `brightness-dim`     | save the current state and dim all displays         |
+| `brightness-restore` | restore the saved brightness state                  |
+| `menu <id>`          | open the named menu from `menus.toml`               |
+| `monitor-cycle`      | cycle the target monitor through the layout presets |
+| `power-profile`      | cycle the active power profile                      |
 
 `monitor-cycle` accepts an optional connector or index, for example `nosh monitor-cycle DP-2` or `nosh monitor-cycle 2`. Without an argument it targets the next non-primary monitor. `power-profile` cycles `power-saver -> balanced -> performance` using the available profiles from the daemon.
 | anything else | warning and return false |
@@ -70,7 +70,7 @@ match command {
     "brightness-down" => core.send(Command::BrightnessStep(-5.0)),
     "brightness-dim" => core.send(Command::BrightnessDim { value: 10.0 }),
     "brightness-restore" => core.send(Command::BrightnessRestore),
-    "app-launcher" => ui.toggle_app_launcher(),
+    "menu" => ui.open_menu(&id),
     "monitor-cycle" => core.send(Command::MonitorCycle { target: "next".into(), mode: None }),
     "power-profile" => core.send(Command::PowerProfileCycle),
     _ => { eprintln!("Unknown command or failed to handle command. \nIf you intended to start the main instance, it is already running.\n"); }
@@ -79,7 +79,7 @@ match command {
 
 Return `0` in every case, matching the current behavior. Do not use a nonzero exit code for an unknown command. Keybinds and scripts may depend on it.
 
-`app-launcher` is UI state. If the command reaches a remote instance, it must be delivered to the GTK thread. Use a `glib::MainContext::invoke` or an `async_channel` read on the GTK side. Do not send it to the core.
+`menu <id>` opens any configured menu. The app launcher is the `apps` menu, so `nosh menu apps` opens it. The UI sends `Command::MenuOpen(id)` and the core reports `MenuEvent::Opened` with the definition. The window is created from that event, so the menu definition stays in one place.
 
 ### Local startup
 
@@ -115,7 +115,8 @@ If a future command needs a reply, add a `oneshot` and send the result back thro
 - A second `nosh volume-up` changes the running instance and exits 0.
 - `nosh brightness-down` changes brightness.
 - `nosh brightness-dim` saves and dims all displays; `nosh brightness-restore` restores them.
-- `nosh app-launcher` toggles the launcher in the running instance on the current monitor.
+- `nosh menu apps` opens the app launcher in the running instance on the current monitor.
+- `nosh menu <id>` opens the named menu in the running instance.
 - `nosh monitor-cycle` applies the next layout preset to the next monitor.
 - `nosh power-profile` cycles the active power profile.
 - An unknown command prints the current message and exits 0.

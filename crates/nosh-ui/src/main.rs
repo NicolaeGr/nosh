@@ -1,5 +1,6 @@
 mod app;
 mod bar;
+mod indicator;
 mod menu;
 
 use std::process::ExitCode;
@@ -37,9 +38,8 @@ fn validate_arguments(arguments: &[std::ffi::OsString]) -> Result<(), String> {
         .collect();
 
     match words.as_slice() {
-        [] => Ok(()),
-        ["menu", id] if !id.is_empty() => Ok(()),
         ["menu"] => Err("menu needs an id: nosh menu <id>".to_string()),
-        _ => Err("usage: nosh menu <id>".to_string()),
+        ["menu", ""] => Err("menu needs an id: nosh menu <id>".to_string()),
+        _ => Ok(()),
     }
 }

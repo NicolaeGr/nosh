@@ -81,28 +81,28 @@ Some events have no payload. Split once at `>>` and validate the payload before 
 
 ## Events used
 
-| Event | Payload | Action |
-| --- | --- | --- |
-| `workspacev2` | `id,name` | Refresh workspaces and monitors; set focused workspace |
-| `focusedmon` | `monitor,workspace` | Refresh monitors; set focused monitor and workspace |
-| `createworkspacev2` | `id,name` | Add workspace; refresh |
-| `destroyworkspacev2` | `id,name` | Remove workspace; refresh |
-| `moveworkspacev2` | `id,name,monitor` | Refresh workspaces and monitors |
-| `renameworkspace` | `id,new_name` | Refresh workspaces |
-| `activespecial` | `name,monitor` | Refresh monitors and workspaces; keep special workspaces hidden |
-| `openwindow` | `address,workspace,class,title` | Refresh clients if needed |
-| `closewindow` | `address` | Remove client; refresh workspaces |
-| `movewindowv2` | `address,workspace,monitor` | Refresh clients and workspaces |
-| `urgent` | `address` | Mark the client's workspace urgent if not focused |
-| `activewindowv2` | `address` | Set focused client |
-| `changefloatingmode` | `address,floating` | Refresh clients |
-| `fullscreen` | `fullscreen` | Refresh clients |
-| `windowtitlev2` | `address,title` | Refresh clients |
-| `configreloaded` | none | Re-read provider and version |
-| `monitoraddedv2` | `id,name,description` | Refresh monitors and workspaces |
-| `monitorremoved` | `name` | Refresh monitors and workspaces |
-| `submap` | `name` | Optional UI state |
-| `activelayout` | `keyboard,layout` | Optional UI state |
+| Event                | Payload                         | Action                                                          |
+| -------------------- | ------------------------------- | --------------------------------------------------------------- |
+| `workspacev2`        | `id,name`                       | Refresh workspaces and monitors; set focused workspace          |
+| `focusedmon`         | `monitor,workspace`             | Refresh monitors; set focused monitor and workspace             |
+| `createworkspacev2`  | `id,name`                       | Add workspace; refresh                                          |
+| `destroyworkspacev2` | `id,name`                       | Remove workspace; refresh                                       |
+| `moveworkspacev2`    | `id,name,monitor`               | Refresh workspaces and monitors                                 |
+| `renameworkspace`    | `id,new_name`                   | Refresh workspaces                                              |
+| `activespecial`      | `name,monitor`                  | Refresh monitors and workspaces; keep special workspaces hidden |
+| `openwindow`         | `address,workspace,class,title` | Refresh clients if needed                                       |
+| `closewindow`        | `address`                       | Remove client; refresh workspaces                               |
+| `movewindowv2`       | `address,workspace,monitor`     | Refresh clients and workspaces                                  |
+| `urgent`             | `address`                       | Mark the client's workspace urgent if not focused               |
+| `activewindowv2`     | `address`                       | Set focused client                                              |
+| `changefloatingmode` | `address,floating`              | Refresh clients                                                 |
+| `fullscreen`         | `fullscreen`                    | Refresh clients                                                 |
+| `windowtitlev2`      | `address,title`                 | Refresh clients                                                 |
+| `configreloaded`     | none                            | Re-read provider and version                                    |
+| `monitoraddedv2`     | `id,name,description`           | Refresh monitors and workspaces                                 |
+| `monitorremoved`     | `name`                          | Refresh monitors and workspaces                                 |
+| `submap`             | `name`                          | Optional UI state                                               |
+| `activelayout`       | `keyboard,layout`               | Optional UI state                                               |
 
 Ignore group events for now. If group support is added, parse `togglegroup`, `moveintogroup`, `moveoutofgroup`, `ignoregrouplock`, and `lockgroups` without crashing on unknown fields.
 
@@ -233,7 +233,9 @@ eval hl.unbind("SUPER + Space")
 eval hl.bind("SUPER + Space", hl.dsp.exec_cmd("nosh menu apps"))
 ```
 
-A managed bind has dispatcher `exec` and an argument starting with `nosh menu `. Remove stale managed binds before binding the installed set. Re-apply binds after a reconnect and after `configreloaded`, because a restart clears runtime binds and a reload may duplicate them.
+A managed bind has the description `nosh ...` under Lua, or dispatcher `exec` and an argument that is `nosh` or starts with `nosh ` under hyprlang. Remove stale managed binds before binding the installed set. Re-apply binds after a reconnect and after `configreloaded`, because a restart clears runtime binds and a reload may duplicate them.
+
+Pass `{ repeating = true }` to `hl.bind` to repeat while the key is held. Hyprlang uses `keyword bindr` for the same result.
 
 Chord keys are normalized to uppercase for normal keys, so `hl.unbind` matches the bind it removes. Keys with a `code:` prefix and `XF86...` keys keep their original case.
 

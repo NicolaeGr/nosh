@@ -74,6 +74,7 @@ mod enabled {
                             ChangeOrigin::User => "user",
                             ChangeOrigin::External => "external",
                             ChangeOrigin::Restore => "restore",
+                            ChangeOrigin::Automatic => "automatic",
                         }
                     );
                     break;

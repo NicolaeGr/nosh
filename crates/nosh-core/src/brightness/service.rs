@@ -789,7 +789,7 @@ async fn dim(
 
     let target = clamp_percent(value);
     for id in state.available_ids() {
-        apply_target(state, &id, target, ChangeOrigin::User, events).await?;
+        apply_target(state, &id, target, ChangeOrigin::Automatic, events).await?;
     }
     emit_snapshot(events, state).await
 }
@@ -1192,7 +1192,7 @@ mod tests {
             matches!(
                 event,
                 Event::Brightness(BrightnessEvent::DeviceChanged {
-                    origin: ChangeOrigin::User,
+                    origin: ChangeOrigin::Automatic,
                     percent: 10.0,
                     ..
                 })

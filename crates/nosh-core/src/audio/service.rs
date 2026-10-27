@@ -481,6 +481,23 @@ async fn handle_command(
             )
             .await
         }
+        Command::AudioToggleMute(kind) => {
+            let Some(endpoint) = state.model.default_for(kind).cloned() else {
+                return fail(events, &format!("no default {} is available", kind.label())).await;
+            };
+            let target = UserTarget::Mute {
+                kind,
+                id: endpoint.id,
+            };
+            write_and_refresh(
+                backend,
+                backend.set_muted(kind, endpoint.id, !endpoint.muted),
+                state,
+                events,
+                target,
+            )
+            .await
+        }
         Command::AudioSetDefault(id) => {
             let kind = if state.model.endpoint(EndpointKind::Sink, id).is_some() {
                 EndpointKind::Sink
@@ -968,6 +985,51 @@ mod tests {
             }
             other => panic!("unexpected event {other:?}"),
         }
+
+        drop(command_tx);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_user_mute_toggle_flips_the_default_and_reports_the_user_origin() {
+        let backend = FakeAudioBackend::new("fake", model(0.3)).arc();
+        let (command_tx, command_rx) = async_channel::unbounded();
+        let (event_tx, event_rx) = async_channel::unbounded();
+        let service = AudioService::with_candidates(vec![candidate(backend.clone())], config());
+        let task = tokio::spawn(service.run(command_rx, event_tx));
+
+        backend.wait_until_watching().await;
+        command_tx
+            .send(Command::AudioToggleMute(EndpointKind::Sink))
+            .await
+            .unwrap();
+
+        let event = wait_for_audio(&event_rx, |event| {
+            matches!(event, Event::Audio(AudioEvent::MuteChanged { .. }))
+        })
+        .await;
+        match event {
+            Event::Audio(AudioEvent::MuteChanged {
+                kind,
+                id,
+                muted,
+                origin,
+            }) => {
+                assert_eq!(kind, EndpointKind::Sink);
+                assert_eq!(id, 1);
+                assert!(muted);
+                assert_eq!(origin, ChangeOrigin::User);
+            }
+            other => panic!("unexpected event {other:?}"),
+        }
+        assert_eq!(
+            backend.writes().await,
+            vec![FakeWrite::Muted {
+                kind: EndpointKind::Sink,
+                id: 1,
+                muted: true,
+            }]
+        );
 
         drop(command_tx);
         task.await.unwrap();

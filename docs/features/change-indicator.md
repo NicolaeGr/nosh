@@ -50,7 +50,9 @@ The window has no input. It is a passive overlay.
 ### CSS
 
 ```css
-.ChangeIndicator { background-color: transparent; }
+.ChangeIndicator {
+  background-color: transparent;
+}
 .indicator-card {
   background-color: alpha(@window_bg_color, 0.7);
   border-radius: 16px;
@@ -59,11 +61,32 @@ The window has no input. It is a passive overlay.
   min-width: 280px;
   backdrop-filter: blur(8px);
 }
-.indicator-icon { font-size: 32pt; color: alpha(@window_fg_color, 0.9); min-width: 40px; }
-.indicator-value { font-weight: 700; color: alpha(@window_fg_color, 0.95); font-size: 24pt; min-width: 80px; }
-.indicator-bar { min-height: 10px; border-radius: 5px; background-color: alpha(@window_fg_color, 0.1); }
-.indicator-bar trough { background-color: alpha(@window_fg_color, 0.1); border-radius: 5px; min-height: 10px; }
-.indicator-bar progress { background-color: @accent_bg_color; border-radius: 5px; min-height: 10px; }
+.indicator-icon {
+  font-size: 32pt;
+  color: alpha(@window_fg_color, 0.9);
+  min-width: 40px;
+}
+.indicator-value {
+  font-weight: 700;
+  color: alpha(@window_fg_color, 0.95);
+  font-size: 24pt;
+  min-width: 80px;
+}
+.indicator-bar {
+  min-height: 10px;
+  border-radius: 5px;
+  background-color: alpha(@window_fg_color, 0.1);
+}
+.indicator-bar trough {
+  background-color: alpha(@window_fg_color, 0.1);
+  border-radius: 5px;
+  min-height: 10px;
+}
+.indicator-bar progress {
+  background-color: @accent_bg_color;
+  border-radius: 5px;
+  min-height: 10px;
+}
 ```
 
 The overamp class turns the progress bar red, from `src/style/common/_index.scss`.
@@ -76,15 +99,17 @@ The indicator is UI, but it needs to know whether a change came from the shell o
 pub enum ChangeOrigin {
     User,
     External,
-    Initial,
+    Restore,
+    Automatic,
 }
 ```
 
 - `User`: the shell sent the command. Show the indicator.
-- `External`: another application or keybind changed the value. Update widgets, no indicator.
-- `Initial`: the first snapshot. Never show the indicator.
+- `External`: another application or device changed the value. Update widgets, no indicator.
+- `Restore`: a saved brightness snapshot was restored. No indicator.
+- `Automatic`: the shell changed the value without a user gesture, such as idle dimming. No indicator.
 
-The current `VolumeControl.volume_changed` and `BrightnessControl.brightness_changed` only fire from the shell's own methods, so every change shows the OSD. That is acceptable for parity, but it misses external changes. Use the origin model instead of porting the limitation.
+The first snapshot does not emit a change event, so it never shows the indicator. The Rust services publish the origin with each change. The UI shows the indicator only for `User`.
 
 ## UI
 
@@ -106,11 +131,12 @@ fn show_volume(&mut self, volume: f64, origin: ChangeOrigin)
 fn show_brightness(&mut self, percent: f64, origin: ChangeOrigin)
 ```
 
-- Ignore `Initial` and `External`.
+- Ignore every origin except `User`.
 - Set the icon, label, and fraction.
 - For volume, fraction is `(volume / 1.5).clamp(0.0, 1.0)`, label is `round(volume * 100)`.
 - For brightness, fraction is `(percent / 100.0).clamp(0.0, 1.0)`, label is the integer percent.
-- Add `overamp` on the progress bar when the volume percent exceeds 100.
+- Add `overamp` on the progress bar when the volume percent exceeds 100%.
+- Draw a vertical marker at `1 / 1.5` of the bar width for output volume, so the 100% point is visible. The marker is not shown for input or brightness.
 - Set the window visible.
 - Restart an 800 ms hide timer. Use `glib::timeout_add_local_once` or a source ID that can be removed.
 
@@ -129,16 +155,20 @@ If a volume and a brightness change arrive close together, the latest one wins a
 Keep the current class names and values. The overamp rule lives in the global style:
 
 ```css
-scale.overamp slider, progressbar.overamp progress {
+scale.overamp slider,
+progressbar.overamp progress {
   background-color: #ff6464;
   border-color: #ff6464;
 }
-progressbar.overamp progress:hover { background-color: #ff7a7a; border-color: #ff7a7a; }
+progressbar.overamp progress:hover {
+  background-color: #ff7a7a;
+  border-color: #ff7a7a;
+}
 ```
 
 ## Defects to fix
 
-- Use `ChangeOrigin` so startup and external changes do not flash the indicator.
+- `ChangeOrigin` so startup, restore, automatic, and external changes do not flash the indicator.
 - Do not create a new timer source without removing the old one.
 - Clamp the fraction before setting the progress bar.
 - Do not show a floating-point label such as `42.0%`. Format an integer.

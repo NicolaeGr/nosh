@@ -84,6 +84,7 @@ Return `0` in every case, matching the current behavior. Do not use a nonzero ex
 The Rust build wires these commands:
 
 - `volume-up` and `volume-down`
+- `volume-mute` and `mic-mute`, which toggle the default sink and source
 - `brightness-up` and `brightness-down`
 - `brightness-dim` and `brightness-restore`
 - `menu <id>`

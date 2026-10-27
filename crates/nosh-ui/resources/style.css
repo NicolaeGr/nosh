@@ -222,6 +222,68 @@ window.Bar.secondary-instance {
     padding: 0 0.125em;
 }
 
+/* Change indicator */
+window.ChangeIndicator {
+    font-size: 12px;
+    background-color: transparent;
+    color: @bar_ink;
+    border: none;
+    box-shadow: none;
+}
+
+.IndicatorWrap {
+    margin-bottom: 2em;
+}
+
+.IndicatorCard {
+    min-width: 14em;
+    padding: 0.75em 1em;
+    background-color: @bar_surface;
+    border: 0.0625em solid @bar_surface_edge;
+    border-left-color: @bar_accent;
+    border-bottom-color: @bar_accent;
+    border-radius: 0 1em 0 1em;
+    box-shadow:
+        0 0.4375em 1.5em @bar_shadow,
+        inset 0 0.0625em 0 @bar_highlight;
+}
+
+.IndicatorIcon {
+    -gtk-icon-size: 1.3333em;
+    color: @bar_muted_strong;
+}
+
+.IndicatorValue {
+    font-size: 1.1667em;
+    font-weight: 700;
+}
+
+.IndicatorBar {
+    min-height: 0.5em;
+    background-color: @bar_row;
+    border-radius: 0 0.25em 0 0.25em;
+}
+
+.IndicatorBar trough {
+    min-height: 0.5em;
+    background-color: @bar_row;
+    border-radius: 0 0.25em 0 0.25em;
+}
+
+.IndicatorBar progress {
+    min-height: 0.5em;
+    background-color: @bar_accent;
+    border-radius: 0 0.25em 0 0.25em;
+}
+
+.IndicatorBar.overamp progress {
+    background-color: @error_color;
+}
+
+.IndicatorMarker {
+    color: @bar_muted_strong;
+}
+
 /* Documented utility classes. */
 .min-h-6 {
     min-height: 1.5em;

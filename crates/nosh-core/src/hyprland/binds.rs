@@ -1,10 +1,12 @@
-//! Automatic keybind registration for menus.
+//! Automatic keybind registration.
 //!
-//! Menus can declare a bind in `menus.toml`. This module registers those chords
-//! over the Hyprland command socket, skipping chords that another program
-//! already owns and avoiding duplicates among the menus themselves.
+//! Menus can declare a bind in `menus.toml`, and the standard media keys are
+//! always registered. This module writes those chords over the Hyprland
+//! command socket, skipping chords that another program already owns unless
+//! the bind is forced, and avoiding duplicates in the set.
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use thiserror::Error;
@@ -179,6 +181,8 @@ impl Chord {
 pub struct BindSpec {
     pub chord: Chord,
     pub forced: bool,
+    /// Repeat while the chord is held.
+    pub repeating: bool,
     pub command: Vec<String>,
     pub label: String,
 }
@@ -254,8 +258,45 @@ pub struct BindSyncOutcome {
     pub missing: Vec<String>,
 }
 
+/// Binds the standard media keys to the matching shell command.
+///
+/// The keysym names are fixed by the XDG keyboard specification, so these
+/// binds need no configuration. They are forced because the shell owns the
+/// media keys, and an existing bind would otherwise hide the change indicator.
+pub fn media_binds(executable: &str) -> Vec<BindSpec> {
+    const BINDS: [(&str, &str, &str); 6] = [
+        ("XF86AudioRaiseVolume", "volume-up", "volume up"),
+        ("XF86AudioLowerVolume", "volume-down", "volume down"),
+        ("XF86AudioMute", "volume-mute", "volume mute"),
+        ("XF86AudioMicMute", "mic-mute", "microphone mute"),
+        ("XF86MonBrightnessUp", "brightness-up", "brightness up"),
+        (
+            "XF86MonBrightnessDown",
+            "brightness-down",
+            "brightness down",
+        ),
+    ];
+
+    BINDS
+        .into_iter()
+        .map(|(key, command, label)| BindSpec {
+            chord: Chord {
+                modifiers: Vec::new(),
+                key: key.to_string(),
+            },
+            forced: true,
+            repeating: true,
+            command: vec![executable.to_string(), command.to_string()],
+            label: label.to_string(),
+        })
+        .collect()
+}
+
 /// Builds the specs for every menu that declares a bind.
-pub fn menu_binds(menus: &BTreeMap<String, MenuDef>) -> (Vec<BindSpec>, Vec<String>) {
+pub fn menu_binds(
+    menus: &BTreeMap<String, MenuDef>,
+    executable: &str,
+) -> (Vec<BindSpec>, Vec<String>) {
     let mut specs = Vec::new();
     let mut errors = Vec::new();
 
@@ -268,7 +309,8 @@ pub fn menu_binds(menus: &BTreeMap<String, MenuDef>) -> (Vec<BindSpec>, Vec<Stri
             Ok(chord) => specs.push(BindSpec {
                 chord,
                 forced: bind.forced,
-                command: vec!["nosh".to_string(), "menu".to_string(), id.clone()],
+                repeating: false,
+                command: vec![executable.to_string(), "menu".to_string(), id.clone()],
                 label: format!("menu {id}"),
             }),
             Err(error) => errors.push(format!("menu {id}: {error}")),
@@ -326,7 +368,7 @@ pub fn plan(specs: &[BindSpec], existing: &[HyprBind]) -> BindPlan {
                     dispatcher = %bind.dispatcher,
                     arg = %bind.arg,
                     label = %spec.label,
-                    "forced menu keybind overrides an existing bind"
+                    "forced keybind overrides an existing bind"
                 );
                 entries.push(PlannedBind {
                     spec: spec.clone(),
@@ -422,14 +464,16 @@ pub async fn sync(hypr: &Hyprland, specs: &[BindSpec]) -> Result<BindSyncOutcome
 
 /// Runs one sync at startup, then again after a reconnect or a config reload.
 pub async fn run(hypr: Arc<Hyprland>, menus: BTreeMap<String, MenuDef>) {
-    let (specs, errors) = menu_binds(&menus);
+    let executable = executable();
+    let (mut specs, errors) = menu_binds(&menus, &executable);
+    specs.extend(media_binds(&executable));
     for error in errors {
         tracing::warn!(%error, "a menu bind was ignored");
     }
 
     match sync(&hypr, &specs).await {
         Ok(outcome) => report(&outcome),
-        Err(error) => tracing::warn!(%error, "the menu keybind sync failed"),
+        Err(error) => tracing::warn!(%error, "the keybind sync failed"),
     }
 
     let mut events = hypr.events();
@@ -438,7 +482,7 @@ pub async fn run(hypr: Arc<Hyprland>, menus: BTreeMap<String, MenuDef>) {
             Ok(HyprlandEvent::ConfigReloaded | HyprlandEvent::Connected) => {
                 match sync(&hypr, &specs).await {
                     Ok(outcome) => report(&outcome),
-                    Err(error) => tracing::warn!(%error, "the menu keybind sync failed"),
+                    Err(error) => tracing::warn!(%error, "the keybind sync failed"),
                 }
             }
             Ok(_) => {}
@@ -454,23 +498,69 @@ fn report(outcome: &BindSyncOutcome) {
     tracing::info!(
         installed = outcome.installed.len(),
         changed = outcome.changed,
-        "menu keybinds are in sync"
+        "keybinds are in sync"
     );
 
     for (label, reason) in &outcome.skipped {
-        tracing::warn!(label, %reason, "a menu keybind was skipped");
+        tracing::warn!(label, %reason, "a keybind was skipped");
     }
 
     for label in &outcome.missing {
         tracing::warn!(
             label,
-            "a menu keybind is missing: the compositor did not report the bind after registration"
+            "a keybind is missing: the compositor did not report the bind after registration"
         );
     }
 }
 
 fn is_ours(bind: &HyprBind) -> bool {
-    bind.dispatcher == "exec" && bind.arg.trim().starts_with("nosh menu ")
+    if bind.has_description {
+        return bind.description.starts_with("nosh ");
+    }
+    if bind.dispatcher != "exec" {
+        return false;
+    }
+
+    let program = bind.arg.split_whitespace().next().unwrap_or("");
+    Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == "nosh")
+}
+
+/// The binary that registered the binds, so a keybind does not depend on
+/// `nosh` being on the compositor's `PATH`.
+fn executable() -> String {
+    let Some(argument) = std::env::args_os().next().map(PathBuf::from) else {
+        return "nosh".to_string();
+    };
+
+    let path = if argument.is_absolute() {
+        Some(argument)
+    } else if argument.components().count() > 1 {
+        std::path::absolute(&argument).ok()
+    } else {
+        std::env::var_os("PATH")
+            .into_iter()
+            .flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+            .map(|directory| directory.join(&argument))
+            .find(|candidate| is_executable(candidate))
+    };
+
+    path.map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "nosh".to_string())
+}
+
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    path.metadata()
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
 }
 
 fn unbind_request(provider: ConfigProvider, chord: &Chord) -> String {
@@ -488,15 +578,26 @@ fn bind_request(provider: ConfigProvider, spec: &BindSpec) -> String {
     let command = spec.command.join(" ");
     match provider {
         ConfigProvider::Hyprlang => format!(
-            "keyword bind \"{}, exec, {}\"",
+            "keyword {} \"{}, exec, {}\"",
+            if spec.repeating { "bindr" } else { "bind" },
             spec.chord.render_hyprlang(),
             command
         ),
-        ConfigProvider::Lua => format!(
-            "eval hl.bind(\"{}\", hl.dsp.exec_cmd(\"{}\"))",
-            spec.chord.render_lua(),
-            escape_lua(&command)
-        ),
+        ConfigProvider::Lua => {
+            let mut options = vec![format!(
+                "description = \"{}\"",
+                escape_lua(&format!("nosh {}", spec.label))
+            )];
+            if spec.repeating {
+                options.push("repeating = true".to_string());
+            }
+            format!(
+                "eval hl.bind(\"{}\", hl.dsp.exec_cmd(\"{}\"), {{ {} }})",
+                spec.chord.render_lua(),
+                escape_lua(&command),
+                options.join(", ")
+            )
+        }
     }
 }
 
@@ -527,6 +628,7 @@ mod tests {
         BindSpec {
             chord: Chord::parse(chord).unwrap(),
             forced,
+            repeating: false,
             command: vec!["nosh".to_string(), "menu".to_string(), label.to_string()],
             label: label.to_string(),
         }
@@ -638,7 +740,7 @@ chord = "nope"
         )
         .unwrap();
 
-        let (specs, errors) = menu_binds(&config.menus);
+        let (specs, errors) = menu_binds(&config.menus, "nosh");
 
         assert_eq!(specs.len(), 1);
         assert_eq!(specs[0].label, "menu apps");
@@ -667,14 +769,63 @@ chord = "nope"
     }
 
     #[test]
-    fn a_manual_nosh_command_is_not_managed() {
-        let existing = vec![bind("SPACE", 64, "exec", "nosh volume-up")];
+    fn a_managed_nosh_command_is_cleaned_up() {
+        let existing = vec![bind("V", 64, "exec", "nosh volume-up")];
 
         let plan = plan(&[spec("SUPER, Space", false, "apps")], &existing);
 
-        assert_eq!(plan.installed().len(), 0);
-        assert!(plan.stale.is_empty());
-        assert!(plan.requests(ConfigProvider::Hyprlang).is_empty());
+        assert_eq!(plan.installed().len(), 1);
+        assert_eq!(
+            plan.requests(ConfigProvider::Hyprlang),
+            vec![
+                "keyword unbind \"SUPER, V\"",
+                "keyword unbind \"SUPER, SPACE\"",
+                "keyword bind \"SUPER, SPACE, exec, nosh menu apps\"",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_lua_description_marks_a_bind_as_ours() {
+        let mut managed = bind("SPACE", 64, "__lua", "7");
+        managed.has_description = true;
+        managed.description = "nosh menu apps".to_string();
+        let mut foreign = bind("RETURN", 64, "__lua", "8");
+        foreign.has_description = true;
+        foreign.description = "other".to_string();
+
+        let plan = plan(&[], &[managed, foreign]);
+
+        assert_eq!(plan.stale.len(), 1);
+        assert_eq!(
+            plan.requests(ConfigProvider::Lua),
+            vec!["eval hl.unbind(\"SUPER + SPACE\")"]
+        );
+    }
+
+    #[test]
+    fn media_binds_cover_the_standard_keys() {
+        let specs = media_binds("nosh");
+        let keys: Vec<&str> = specs.iter().map(|spec| spec.chord.key.as_str()).collect();
+
+        assert_eq!(
+            keys,
+            [
+                "XF86AudioRaiseVolume",
+                "XF86AudioLowerVolume",
+                "XF86AudioMute",
+                "XF86AudioMicMute",
+                "XF86MonBrightnessUp",
+                "XF86MonBrightnessDown",
+            ]
+        );
+        assert!(specs.iter().all(|spec| spec.chord.modifiers.is_empty()));
+        assert!(specs.iter().all(|spec| spec.forced));
+        assert!(specs.iter().all(|spec| spec.repeating));
+        assert_eq!(specs[0].command, vec!["nosh", "volume-up"]);
+        assert_eq!(specs[0].chord.render_lua(), "XF86AudioRaiseVolume");
+        assert_eq!(specs[0].chord.render_hyprlang(), ", XF86AudioRaiseVolume");
+        assert_eq!(specs[3].command, vec!["nosh", "mic-mute"]);
     }
 
     #[test]
@@ -737,7 +888,37 @@ chord = "nope"
             plan.requests(ConfigProvider::Lua),
             vec![
                 "eval hl.unbind(\"SUPER + SPACE\")",
-                "eval hl.bind(\"SUPER + SPACE\", hl.dsp.exec_cmd(\"nosh menu apps\"))",
+                "eval hl.bind(\"SUPER + SPACE\", hl.dsp.exec_cmd(\"nosh menu apps\"), { description = \"nosh apps\" })",
+            ]
+        );
+    }
+
+    #[test]
+    fn repeating_requests_use_bindr_and_the_lua_option() {
+        let entry = BindSpec {
+            chord: Chord {
+                modifiers: Vec::new(),
+                key: "XF86AudioRaiseVolume".to_string(),
+            },
+            forced: true,
+            repeating: true,
+            command: vec!["/usr/bin/nosh".to_string(), "volume-up".to_string()],
+            label: "volume up".to_string(),
+        };
+        let plan = plan(&[entry], &[]);
+
+        assert_eq!(
+            plan.requests(ConfigProvider::Hyprlang),
+            vec![
+                "keyword unbind \", XF86AudioRaiseVolume\"",
+                "keyword bindr \", XF86AudioRaiseVolume, exec, /usr/bin/nosh volume-up\"",
+            ]
+        );
+        assert_eq!(
+            plan.requests(ConfigProvider::Lua),
+            vec![
+                "eval hl.unbind(\"XF86AudioRaiseVolume\")",
+                "eval hl.bind(\"XF86AudioRaiseVolume\", hl.dsp.exec_cmd(\"/usr/bin/nosh volume-up\"), { description = \"nosh volume up\", repeating = true })",
             ]
         );
     }
@@ -752,7 +933,7 @@ chord = "nope"
             plan.requests(ConfigProvider::Lua),
             vec![
                 "eval hl.unbind(\"SUPER + SPACE\")",
-                "eval hl.bind(\"SUPER + SPACE\", hl.dsp.exec_cmd(\"notify-send \\\"hi\\\" C:\\\\tmp\"))",
+                "eval hl.bind(\"SUPER + SPACE\", hl.dsp.exec_cmd(\"notify-send \\\"hi\\\" C:\\\\tmp\"), { description = \"nosh apps\" })",
             ]
         );
     }
@@ -766,12 +947,13 @@ chord = "nope"
         ];
 
         let plan = plan(&specs, &existing);
-        assert_eq!(plan.stale.len(), 1);
+        assert_eq!(plan.stale.len(), 2);
 
         assert_eq!(
             plan.requests(ConfigProvider::Hyprlang),
             vec![
                 "keyword unbind \"SUPER, RETURN\"",
+                "keyword unbind \"SUPER, P\"",
                 "keyword unbind \"SUPER, SPACE\"",
                 "keyword bind \"SUPER, SPACE, exec, nosh menu apps\"",
             ]
@@ -780,8 +962,9 @@ chord = "nope"
             plan.requests(ConfigProvider::Lua),
             vec![
                 "eval hl.unbind(\"SUPER + RETURN\")",
+                "eval hl.unbind(\"SUPER + P\")",
                 "eval hl.unbind(\"SUPER + SPACE\")",
-                "eval hl.bind(\"SUPER + SPACE\", hl.dsp.exec_cmd(\"nosh menu apps\"))",
+                "eval hl.bind(\"SUPER + SPACE\", hl.dsp.exec_cmd(\"nosh menu apps\"), { description = \"nosh apps\" })",
             ]
         );
     }

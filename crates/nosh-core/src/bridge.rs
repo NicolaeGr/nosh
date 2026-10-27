@@ -103,14 +103,10 @@ impl Core {
                     ));
                     let merger = tokio::spawn(merge_events(service_event_receiver, event_sender));
 
-                    let bind_sync = if menu_map.is_empty() {
-                        None
-                    } else {
-                        Hyprland::detect()
-                            .ok()
-                            .flatten()
-                            .map(|hypr| tokio::spawn(binds::run(hypr, menu_map)))
-                    };
+                    let bind_sync = Hyprland::detect()
+                        .ok()
+                        .flatten()
+                        .map(|hypr| tokio::spawn(binds::run(hypr, menu_map)));
 
                     let workspaces = WorkspaceService::from_env_with(settings.workspaces)
                         .run(workspace_receiver, service_events.clone());

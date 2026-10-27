@@ -1,3 +1,4 @@
+use crate::audio::model::EndpointKind;
 use crate::brightness::model::BrightnessDeviceId;
 use crate::monitors::LayoutPreset;
 use crate::monitors::MonitorLayout;
@@ -12,6 +13,7 @@ pub enum Command {
     AudioStepVolume(f64),
     AudioSetSourceVolume(f64),
     AudioSetMuted(bool),
+    AudioToggleMute(EndpointKind),
     AudioSetDefault(u32),
     BrightnessSet(f64),
     BrightnessStep(f64),
@@ -98,6 +100,7 @@ impl Command {
                 | Self::AudioStepVolume(_)
                 | Self::AudioSetSourceVolume(_)
                 | Self::AudioSetMuted(_)
+                | Self::AudioToggleMute(_)
                 | Self::AudioSetDefault(_)
         )
     }
@@ -243,6 +246,7 @@ mod tests {
         assert!(Command::AudioStepVolume(-0.05).is_audio());
         assert!(Command::AudioSetSourceVolume(0.5).is_audio());
         assert!(Command::AudioSetMuted(true).is_audio());
+        assert!(Command::AudioToggleMute(EndpointKind::Sink).is_audio());
         assert!(Command::AudioSetDefault(3).is_audio());
 
         assert!(!Command::WorkspaceActivate("1".to_string()).is_audio());

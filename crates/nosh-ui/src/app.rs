@@ -8,13 +8,15 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::{
-    volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel, Command, Core,
-    EndpointKind, Event, IdleInhibitEvent, IdleInhibitState, LayoutPreset, MenuEvent, SystemStats,
-    SystemStatsEvent, TrayEvent, TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot,
-    BRIGHTNESS_STEP, DIM_PERCENT, VOLUME_STEP,
+    volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel,
+    BrightnessEvent, ChangeOrigin, Command, Core, EndpointKind, Event, IdleInhibitEvent,
+    IdleInhibitState, LayoutPreset, MenuEvent, SystemStats, SystemStatsEvent, TrayEvent,
+    TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot, BRIGHTNESS_STEP, DIM_PERCENT,
+    VOLUME_STEP,
 };
 
 use crate::bar::BarWindow;
+use crate::indicator::ChangeIndicator;
 use crate::menu::MenuManager;
 
 #[cfg(all(feature = "dev", feature = "stable"))]
@@ -57,10 +59,12 @@ struct Ui {
     tray_menus: RefCell<HashMap<String, TrayMenu>>,
     bars: RefCell<BTreeMap<String, BarWindow>>,
     menus: RefCell<MenuManager>,
+    indicator: ChangeIndicator,
 }
 
 impl Ui {
     fn new(app: gtk::Application, core: Rc<Core>) -> Self {
+        let indicator = ChangeIndicator::new(&app);
         Self {
             app,
             core,
@@ -73,6 +77,7 @@ impl Ui {
             tray_menus: RefCell::new(HashMap::new()),
             bars: RefCell::new(BTreeMap::new()),
             menus: RefCell::new(MenuManager::new()),
+            indicator,
         }
     }
 
@@ -168,6 +173,57 @@ impl Ui {
         }
     }
 
+    fn show_indicator(&self, change: IndicatorChange) {
+        let monitor = self.active_monitor();
+        match change {
+            IndicatorChange::Audio {
+                kind,
+                volume,
+                muted,
+            } => self
+                .indicator
+                .show_audio(monitor.as_ref(), kind, volume, muted),
+            IndicatorChange::Brightness(percent) => {
+                self.indicator.show_brightness(monitor.as_ref(), percent)
+            }
+        }
+    }
+
+    /// The monitor of the focused workspace, falling back to the first output.
+    fn active_monitor(&self) -> Option<gdk::Monitor> {
+        let display = gdk::Display::default()?;
+        let connector = {
+            let snapshot = self.workspaces.borrow();
+            snapshot
+                .focused_workspace
+                .as_ref()
+                .and_then(|id| snapshot.workspace(id))
+                .and_then(|workspace| workspace.monitor.clone())
+                .or_else(|| {
+                    snapshot
+                        .monitors
+                        .iter()
+                        .find(|monitor| monitor.focused)
+                        .map(|monitor| monitor.connector.clone())
+                })
+        };
+
+        let monitors = display.monitors();
+        if let Some(connector) = connector {
+            for index in 0..monitors.n_items() {
+                let Some(monitor) = monitors.item(index).and_downcast::<gdk::Monitor>() else {
+                    continue;
+                };
+                let name = monitor.connector().map(|value| value.to_string());
+                if name.as_deref() == Some(connector.as_str()) {
+                    return Some(monitor);
+                }
+            }
+        }
+
+        monitors.item(0).and_downcast::<gdk::Monitor>()
+    }
+
     fn apply(&self, event: Event) {
         match event {
             Event::Snapshot(snapshot) => {
@@ -201,6 +257,7 @@ impl Ui {
                 self.render_stats();
             }
             Event::Audio(event) => self.apply_audio_event(event),
+            Event::Brightness(event) => self.apply_brightness_event(event),
             Event::Battery(event) => self.apply_battery_event(event),
             Event::IdleInhibit(event) => self.apply_idle_inhibit_event(event),
             Event::Tray(event) => self.apply_tray_event(event),
@@ -275,24 +332,58 @@ impl Ui {
     }
 
     fn apply_audio_event(&self, event: AudioEvent) {
+        let mut change = None;
         {
             let mut model = self.audio.borrow_mut();
             match event {
                 AudioEvent::Snapshot(snapshot) => *model = snapshot,
                 AudioEvent::VolumeChanged {
-                    kind, id, volume, ..
-                } => update_endpoint(&mut model, kind, id, |endpoint| {
-                    endpoint.volume = volume;
-                    endpoint.icon_name =
-                        volume_icon(kind, endpoint.volume, endpoint.muted).to_string();
-                }),
+                    kind,
+                    id,
+                    volume,
+                    origin,
+                    ..
+                } => {
+                    update_endpoint(&mut model, kind, id, |endpoint| {
+                        endpoint.volume = volume;
+                        endpoint.icon_name =
+                            volume_icon(kind, endpoint.volume, endpoint.muted).to_string();
+                    });
+                    if origin == ChangeOrigin::User {
+                        let muted = model
+                            .endpoint(kind, id)
+                            .map(|item| item.muted)
+                            .unwrap_or(false);
+                        change = Some(IndicatorChange::Audio {
+                            kind,
+                            volume,
+                            muted,
+                        });
+                    }
+                }
                 AudioEvent::MuteChanged {
-                    kind, id, muted, ..
-                } => update_endpoint(&mut model, kind, id, |endpoint| {
-                    endpoint.muted = muted;
-                    endpoint.icon_name =
-                        volume_icon(kind, endpoint.volume, endpoint.muted).to_string();
-                }),
+                    kind,
+                    id,
+                    muted,
+                    origin,
+                } => {
+                    update_endpoint(&mut model, kind, id, |endpoint| {
+                        endpoint.muted = muted;
+                        endpoint.icon_name =
+                            volume_icon(kind, endpoint.volume, endpoint.muted).to_string();
+                    });
+                    if origin == ChangeOrigin::User {
+                        let volume = model
+                            .endpoint(kind, id)
+                            .map(|item| item.volume)
+                            .unwrap_or(0.0);
+                        change = Some(IndicatorChange::Audio {
+                            kind,
+                            volume,
+                            muted,
+                        });
+                    }
+                }
                 AudioEvent::DefaultChanged { kind, endpoint } => match kind {
                     EndpointKind::Sink => {
                         for sink in &mut model.sinks {
@@ -315,6 +406,20 @@ impl Ui {
         }
 
         self.render_audio();
+        if let Some(change) = change {
+            self.show_indicator(change);
+        }
+    }
+
+    fn apply_brightness_event(&self, event: BrightnessEvent) {
+        if let BrightnessEvent::DeviceChanged {
+            percent,
+            origin: ChangeOrigin::User,
+            ..
+        } = event
+        {
+            self.show_indicator(IndicatorChange::Brightness(percent));
+        }
     }
 
     fn apply_battery_event(&self, event: BatteryEvent) {
@@ -405,6 +510,15 @@ impl Ui {
 
         self.render_workspaces();
     }
+}
+
+enum IndicatorChange {
+    Audio {
+        kind: EndpointKind,
+        volume: f64,
+        muted: bool,
+    },
+    Brightness(f64),
 }
 
 fn update_endpoint(
@@ -556,6 +670,16 @@ fn startup_action(arguments: &[std::ffi::OsString]) -> Option<StartupAction> {
             "volume-down" => {
                 return Some(StartupAction::Command(Command::AudioStepVolume(
                     -VOLUME_STEP,
+                )))
+            }
+            "volume-mute" => {
+                return Some(StartupAction::Command(Command::AudioToggleMute(
+                    EndpointKind::Sink,
+                )))
+            }
+            "mic-mute" => {
+                return Some(StartupAction::Command(Command::AudioToggleMute(
+                    EndpointKind::Source,
                 )))
             }
             "brightness-up" => {
@@ -711,6 +835,18 @@ mod tests {
             startup_action(&arguments(&["volume-down"])),
             Some(StartupAction::Command(Command::AudioStepVolume(
                 -VOLUME_STEP
+            )))
+        );
+        assert_eq!(
+            startup_action(&arguments(&["volume-mute"])),
+            Some(StartupAction::Command(Command::AudioToggleMute(
+                EndpointKind::Sink
+            )))
+        );
+        assert_eq!(
+            startup_action(&arguments(&["mic-mute"])),
+            Some(StartupAction::Command(Command::AudioToggleMute(
+                EndpointKind::Source
             )))
         );
         assert_eq!(

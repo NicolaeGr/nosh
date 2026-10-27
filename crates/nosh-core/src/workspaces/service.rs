@@ -8,7 +8,7 @@ use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::BackendError;
 use crate::event::{Event, Service, Snapshot, WorkspaceEvent};
-use crate::hyprland::HyprlandWorkspaceBackend;
+use crate::hyprland::{Hyprland, HyprlandWorkspaceBackend};
 use crate::workspaces::backend::{WorkspaceBackend, WorkspaceBackendEvent, WorkspaceBackendRef};
 use crate::workspaces::model::WorkspaceCapabilities;
 use crate::workspaces::resolver::{resolve_workspace, ResolvedWorkspace, WorkspaceCandidate};
@@ -91,14 +91,22 @@ impl WorkspaceService {
     }
 
     pub fn from_env_with(config: WorkspaceServiceConfig) -> Self {
-        let hyprland =
-            WorkspaceCandidate::new("hyprland", || match HyprlandWorkspaceBackend::detect() {
-                Ok(Some(backend)) => Ok(Arc::new(backend) as WorkspaceBackendRef),
-                Ok(None) => Err(BackendError::Unavailable(
+        let connection = Hyprland::detect().unwrap_or_else(|error| {
+            tracing::debug!(%error, "cannot resolve the Hyprland connection");
+            None
+        });
+
+        let hyprland = WorkspaceCandidate::new("hyprland", {
+            let connection = connection.clone();
+            move || match &connection {
+                Some(connection) => Ok(Arc::new(HyprlandWorkspaceBackend::with_connection(
+                    Arc::clone(connection),
+                )) as WorkspaceBackendRef),
+                None => Err(BackendError::Unavailable(
                     "HYPRLAND_INSTANCE_SIGNATURE is not set".to_string(),
                 )),
-                Err(error) => Err(BackendError::Unavailable(error.to_string())),
-            });
+            }
+        });
         let static_backend = WorkspaceCandidate::new("static", || {
             Ok(Arc::new(StaticWorkspaceBackend) as WorkspaceBackendRef)
         });

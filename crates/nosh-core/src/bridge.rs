@@ -12,6 +12,7 @@ use crate::event::{
     AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, Snapshot,
     SystemStatsEvent, TrayEvent, WorkspaceEvent,
 };
+use crate::hyprland::{binds, Hyprland};
 use crate::idle_inhibit::model::IdleInhibitState;
 use crate::idle_inhibit::service::{IdleInhibitService, IdleInhibitServiceConfig};
 use crate::menu::service::{MenuService, MenuServiceConfig};
@@ -62,6 +63,8 @@ impl Core {
     }
 
     pub fn start_with(settings: CoreSettings) -> Result<Self, CoreError> {
+        let menu_map = settings.menu.menus.clone();
+
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .thread_name("nosh-core")
@@ -100,6 +103,15 @@ impl Core {
                     ));
                     let merger = tokio::spawn(merge_events(service_event_receiver, event_sender));
 
+                    let bind_sync = if menu_map.is_empty() {
+                        None
+                    } else {
+                        Hyprland::detect()
+                            .ok()
+                            .flatten()
+                            .map(|hypr| tokio::spawn(binds::run(hypr, menu_map)))
+                    };
+
                     let workspaces = WorkspaceService::from_env_with(settings.workspaces)
                         .run(workspace_receiver, service_events.clone());
                     let monitors = MonitorService::from_env_with(settings.monitors)
@@ -134,6 +146,9 @@ impl Core {
                         menu
                     );
                     router.abort();
+                    if let Some(bind_sync) = bind_sync {
+                        bind_sync.abort();
+                    }
                     let _ = merger.await;
                 });
             })?;

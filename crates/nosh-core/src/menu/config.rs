@@ -206,6 +206,12 @@ impl MenuDef {
             validate_action(&format!("context_menu.{name}"), action)?;
         }
 
+        if let Some(bind) = &self.bind {
+            if bind.chord.trim().is_empty() {
+                return Err("bind.chord must not be empty".to_string());
+            }
+        }
+
         Ok(())
     }
 }
@@ -401,6 +407,49 @@ name = "static"
 command = []
 "#;
         assert!(parse_menus(text).is_err());
+    }
+
+    #[test]
+    fn a_menu_with_a_valid_bind_parses() {
+        let text = r#"
+schema = 1
+
+[menu.apps]
+title = "Apps"
+
+[menu.apps.source]
+type = "builtin"
+name = "apps"
+
+[menu.apps.bind]
+chord = "SUPER, Space"
+"#;
+        let config = parse_menus(text).unwrap();
+        let bind = config.menus.get("apps").unwrap().bind.as_ref().unwrap();
+
+        assert_eq!(bind.chord, "SUPER, Space");
+        assert!(!bind.forced);
+    }
+
+    #[test]
+    fn an_empty_bind_chord_is_rejected() {
+        let text = r#"
+schema = 1
+
+[menu.apps]
+title = "Apps"
+
+[menu.apps.source]
+type = "builtin"
+name = "apps"
+
+[menu.apps.bind]
+chord = "  "
+"#;
+        let error = parse_menus(text).unwrap_err();
+
+        assert!(matches!(error, MenuConfigError::InvalidMenu { id, message }
+                if id == "apps" && message.contains("bind.chord")));
     }
 
     #[test]

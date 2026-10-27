@@ -34,6 +34,7 @@ fn monitor_json() -> String {
 struct Server {
     requests: Arc<Mutex<Vec<String>>>,
     monitor_response: Arc<Mutex<String>>,
+    config_provider: Arc<Mutex<String>>,
     write_response: Arc<Mutex<String>>,
     task: JoinHandle<()>,
 }
@@ -43,11 +44,13 @@ impl Server {
         let listener = UnixListener::bind(&paths.command_socket).unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));
         let monitor_response = Arc::new(Mutex::new(monitor_json()));
+        let config_provider = Arc::new(Mutex::new("hyprlang".to_string()));
         let write_response = Arc::new(Mutex::new("ok".to_string()));
 
         let task = {
             let requests = requests.clone();
             let monitor_response = monitor_response.clone();
+            let config_provider = config_provider.clone();
             let write_response = write_response.clone();
             tokio::spawn(async move {
                 loop {
@@ -66,9 +69,14 @@ impl Server {
                             r#"{"tag":"v0.56.2","commit":"abc","branch":"main","flags":["nix"]}"#
                                 .to_string()
                         }
-                        "j/status" => r#"{"configProvider":"lua"}"#.to_string(),
+                        "j/status" => {
+                            format!(r#"{{"configProvider":"{}"}}"#, config_provider.lock().await)
+                        }
                         "j/monitors" => monitor_response.lock().await.clone(),
-                        request if request.starts_with("keyword monitor ") => {
+                        request
+                            if request.starts_with("keyword monitor ")
+                                || request.starts_with("eval hl.monitor(") =>
+                        {
                             write_response.lock().await.clone()
                         }
                         other => panic!("unexpected request: {other}"),
@@ -86,6 +94,7 @@ impl Server {
         Self {
             requests,
             monitor_response,
+            config_provider,
             write_response,
             task,
         }
@@ -101,6 +110,18 @@ impl Server {
             .into_iter()
             .filter(|request| request.starts_with("keyword monitor "))
             .collect()
+    }
+
+    async fn lua_requests(&self) -> Vec<String> {
+        self.requests()
+            .await
+            .into_iter()
+            .filter(|request| request.starts_with("eval hl.monitor("))
+            .collect()
+    }
+
+    async fn set_config_provider(&self, provider: &str) {
+        *self.config_provider.lock().await = provider.to_string();
     }
 
     async fn set_write_response(&self, response: &str) {
@@ -269,6 +290,39 @@ async fn apply_disables_first_then_writes_enabled_monitors() {
             "keyword monitor \"HDMI-A-1,disable\"".to_string(),
             "keyword monitor \"DP-1,1920x1080@60.00,0x0,1,mirror,DP-2\"".to_string(),
             "keyword monitor \"DP-2,1920x1080@60.00,3840x0,1\"".to_string(),
+        ]
+    );
+
+    server.task.abort();
+}
+
+#[tokio::test]
+async fn apply_writes_lua_monitor_calls_when_the_provider_is_lua() {
+    let directory = tempfile::tempdir().unwrap();
+    let paths = paths(&directory);
+    let server = Server::spawn(&paths).await;
+    server.set_config_provider("lua").await;
+    let backend = HyprlandMonitorBackend::new(paths);
+
+    let mut layout = MonitorLayout {
+        monitors: vec![
+            monitor("DP-1", 0, true),
+            monitor("HDMI-A-1", 1, false),
+            monitor("DP-2", 2, true),
+        ],
+        primary: None,
+    };
+    layout.monitors[0].mirror_of = Some("DP-2".to_string());
+
+    backend.apply(&layout).await.unwrap();
+
+    let requests = server.lua_requests().await;
+    assert_eq!(
+        requests,
+        [
+            "eval hl.monitor({ output = \"HDMI-A-1\", disabled = true })".to_string(),
+            "eval hl.monitor({ output = \"DP-1\", mode = \"1920x1080@60.00\", position = \"0x0\", scale = 1, mirror = \"DP-2\" })".to_string(),
+            "eval hl.monitor({ output = \"DP-2\", mode = \"1920x1080@60.00\", position = \"3840x0\", scale = 1 })".to_string(),
         ]
     );
 

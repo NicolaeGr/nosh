@@ -64,7 +64,14 @@ pub fn resolve_target<'a>(
     target: &str,
 ) -> Result<&'a MonitorModel, MonitorError> {
     let target = target.trim();
-    if !target.is_empty() && target.chars().all(|character| character.is_ascii_digit()) {
+    if target.is_empty() {
+        return layout
+            .focused()
+            .or_else(|| layout.enabled().next())
+            .ok_or(MonitorError::NoTarget);
+    }
+
+    if target.chars().all(|character| character.is_ascii_digit()) {
         let index: usize = target
             .parse()
             .map_err(|_| MonitorError::TargetNotFound(target.to_string()))?;
@@ -367,6 +374,27 @@ mod tests {
         assert!(matches!(
             resolve_target(&layout, "4"),
             Err(MonitorError::TargetNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn an_empty_target_uses_the_focused_monitor_then_the_first_enabled_one() {
+        let mut layout = layout();
+        layout.monitors[1].focused = true;
+
+        assert_eq!(resolve_target(&layout, "  ").unwrap().connector(), "DP-1");
+
+        layout.monitors[1].focused = false;
+        assert_eq!(resolve_target(&layout, "").unwrap().connector(), "HDMI-A-1");
+
+        layout.monitors[0].enabled = false;
+        layout.monitors[1].enabled = false;
+        assert_eq!(resolve_target(&layout, "").unwrap().connector(), "DP-2");
+
+        layout.monitors[2].enabled = false;
+        assert!(matches!(
+            resolve_target(&layout, ""),
+            Err(MonitorError::NoTarget)
         ));
     }
 

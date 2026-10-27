@@ -18,10 +18,10 @@ pub use config::{
 };
 pub use model::{
     dedupe_ids, ActionDef, After, Anchor, IconKind, IconRef, ItemError, ItemLayout, ItemState,
-    ItemViewDef, Keyboard, Layer, MenuDef, MenuIcon, MenuItem, MenuPreview, MenuValue, PreviewKind,
-    PreviewRef, SearchMode, SourceDef, SourceKind, Template, ViewDef, ViewKind, WindowDef,
-    DEFAULT_DEBOUNCE_MS, DEFAULT_LIMIT, DEFAULT_TIMEOUT_MS, MAX_LINE_BYTES, MAX_OUTPUT_BYTES,
-    SCHEMA_VERSION,
+    ItemViewDef, Keyboard, Layer, MenuBind, MenuDef, MenuIcon, MenuItem, MenuPreview, MenuValue,
+    PreviewKind, PreviewRef, SearchMode, SourceDef, SourceKind, Template, ViewDef, ViewKind,
+    WindowDef, DEFAULT_DEBOUNCE_MS, DEFAULT_LIMIT, DEFAULT_TIMEOUT_MS, MAX_LINE_BYTES,
+    MAX_OUTPUT_BYTES, SCHEMA_VERSION,
 };
 pub use query::{filter_and_sort, fuzzy_score};
 pub use service::{MenuEvent, MenuService, MenuServiceConfig};

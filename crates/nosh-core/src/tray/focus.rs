@@ -6,12 +6,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::sync::RwLock;
 
 use crate::error::{BackendError, PathError};
-use crate::hyprland::client::HyprlandClient;
-use crate::hyprland::dispatch::{detect_provider, format_dispatch, ConfigProvider, Dispatch};
-use crate::hyprland::json::{HyprClient, HyprStatus, HyprVersion, HyprWorkspace};
+use crate::hyprland::connection::Hyprland;
+use crate::hyprland::dispatch::Dispatch;
+use crate::hyprland::json::{HyprClient, HyprWorkspace};
 use crate::paths::HyprlandPaths;
 use crate::tray::model::TrayItemModel;
 
@@ -154,21 +153,21 @@ fn bus_app_name(bus_name: &str) -> Option<&str> {
 
 /// Focuses a Hyprland client that matches a tray item.
 pub struct HyprlandFocus {
-    client: HyprlandClient,
-    provider: RwLock<Option<ConfigProvider>>,
+    hypr: Arc<Hyprland>,
 }
 
 impl HyprlandFocus {
     /// Returns `None` when Hyprland is not the running compositor.
     pub fn detect() -> Result<Option<Self>, PathError> {
-        Ok(HyprlandPaths::from_env()?.map(Self::new))
+        Ok(Hyprland::detect()?.map(Self::with_connection))
     }
 
     pub fn new(paths: HyprlandPaths) -> Self {
-        Self {
-            client: HyprlandClient::new(paths.command_socket),
-            provider: RwLock::new(None),
-        }
+        Self::with_connection(Hyprland::connect(paths))
+    }
+
+    pub fn with_connection(hypr: Arc<Hyprland>) -> Self {
+        Self { hypr }
     }
 
     pub fn from_env() -> Option<Self> {
@@ -181,38 +180,16 @@ impl HyprlandFocus {
         }
     }
 
-    async fn provider(&self) -> ConfigProvider {
-        if let Some(provider) = *self.provider.read().await {
-            return provider;
-        }
-
-        let status: Option<HyprStatus> = self.client.query_json("j/status").await.ok();
-        let version: Option<HyprVersion> = self.client.query_json("j/version").await.ok();
-        let provider = detect_provider(
-            status
-                .as_ref()
-                .and_then(|status| status.config_provider.as_deref()),
-            version.as_ref().map(|version| version.tag.as_str()),
-        );
-        *self.provider.write().await = Some(provider);
-        provider
-    }
-
     async fn focus_client(&self, address: &str) -> Result<(), BackendError> {
-        let provider = self.provider().await;
-        let request = format_dispatch(provider, Dispatch::FocusClient(address));
-        match self.client.query(&request).await {
-            Ok(_) => Ok(()),
+        match self.hypr.dispatch(Dispatch::FocusClient(address)).await {
+            Ok(()) => Ok(()),
             Err(first_error) => {
                 // The provider can change after a compositor restart or a config
                 // reload. Detect again once.
-                *self.provider.write().await = None;
-                let provider = self.provider().await;
-                let request = format_dispatch(provider, Dispatch::FocusClient(address));
-                self.client
-                    .query(&request)
+                self.hypr.invalidate_provider().await;
+                self.hypr
+                    .dispatch(Dispatch::FocusClient(address))
                     .await
-                    .map(|_| ())
                     .map_err(|_| first_error)
             }
         }
@@ -222,14 +199,14 @@ impl HyprlandFocus {
 #[async_trait]
 impl WindowFocus for HyprlandFocus {
     async fn focus(&self, hint: &WindowHint) -> Result<bool, BackendError> {
-        let clients: Vec<HyprClient> = self.client.query_json("j/clients").await?;
+        let clients: Vec<HyprClient> = self.hypr.query_json("j/clients").await?;
         let Some(target) = pick_window(&clients, hint) else {
             return Ok(false);
         };
 
         // A window on another workspace is left to `Activate`, which marks that
         // workspace urgent. Focusing it here would switch to it.
-        let active: Option<HyprWorkspace> = self.client.query_json("j/activeworkspace").await.ok();
+        let active: Option<HyprWorkspace> = self.hypr.query_json("j/activeworkspace").await.ok();
         if !on_active_workspace(target, active.as_ref()) {
             return Ok(false);
         }

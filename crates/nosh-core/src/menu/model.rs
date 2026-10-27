@@ -594,6 +594,14 @@ pub fn dedupe_ids(items: &mut [MenuItem]) {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct MenuBind {
+    pub chord: String,
+    #[serde(default)]
+    pub forced: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MenuDef {
     pub title: String,
     #[serde(default)]
@@ -611,6 +619,8 @@ pub struct MenuDef {
     pub context_menu: BTreeMap<String, ActionDef>,
     #[serde(default)]
     pub placeholder: Option<String>,
+    #[serde(default)]
+    pub bind: Option<MenuBind>,
 }
 
 impl MenuDef {
@@ -805,6 +815,7 @@ mod tests {
             actions: BTreeMap::new(),
             context_menu: BTreeMap::new(),
             placeholder: None,
+            bind: None,
         };
 
         assert_eq!(menu.width(), 560);

@@ -69,6 +69,8 @@ pub enum HyprlandEvent {
         title: String,
     },
     ConfigReloaded,
+    /// Emitted by the connection reader after the event socket connects.
+    Connected,
     MonitorAdded {
         id: i64,
         name: String,

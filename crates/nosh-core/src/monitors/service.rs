@@ -9,7 +9,7 @@ use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::{BackendError, MonitorError};
 use crate::event::{Event, MonitorEvent, Service, Snapshot};
-use crate::hyprland::HyprlandMonitorBackend;
+use crate::hyprland::{Hyprland, HyprlandMonitorBackend};
 use crate::monitors::backend::{
     resolve_monitor, MonitorBackend, MonitorBackendEvent, MonitorBackendRef, MonitorCandidate,
     ResolvedMonitor,
@@ -88,26 +88,37 @@ impl MonitorService {
     }
 
     pub fn from_env_with(config: MonitorServiceConfig) -> Self {
-        let read_hyprland =
-            MonitorCandidate::new("hyprland", || match HyprlandMonitorBackend::detect() {
-                Ok(Some(backend)) => Ok(Arc::new(backend) as MonitorBackendRef),
-                Ok(None) => Err(BackendError::Unavailable(
+        let connection = Hyprland::detect().unwrap_or_else(|error| {
+            tracing::debug!(%error, "cannot resolve the Hyprland connection");
+            None
+        });
+
+        let read_hyprland = MonitorCandidate::new("hyprland", {
+            let connection = connection.clone();
+            move || match &connection {
+                Some(connection) => Ok(Arc::new(HyprlandMonitorBackend::with_connection(
+                    Arc::clone(connection),
+                )) as MonitorBackendRef),
+                None => Err(BackendError::Unavailable(
                     "HYPRLAND_INSTANCE_SIGNATURE is not set".to_string(),
                 )),
-                Err(error) => Err(BackendError::Unavailable(error.to_string())),
-            });
+            }
+        });
         let read_static = MonitorCandidate::new("static", || {
             Ok(Arc::new(StaticMonitorBackend) as MonitorBackendRef)
         });
 
-        let write_hyprland =
-            MonitorCandidate::new("hyprland", || match HyprlandMonitorBackend::detect() {
-                Ok(Some(backend)) => Ok(Arc::new(backend) as MonitorBackendRef),
-                Ok(None) => Err(BackendError::Unavailable(
+        let write_hyprland = MonitorCandidate::new("hyprland", {
+            let connection = connection.clone();
+            move || match &connection {
+                Some(connection) => Ok(Arc::new(HyprlandMonitorBackend::with_connection(
+                    Arc::clone(connection),
+                )) as MonitorBackendRef),
+                None => Err(BackendError::Unavailable(
                     "HYPRLAND_INSTANCE_SIGNATURE is not set".to_string(),
                 )),
-                Err(error) => Err(BackendError::Unavailable(error.to_string())),
-            });
+            }
+        });
 
         Self::with_candidates(
             vec![read_hyprland, read_static],

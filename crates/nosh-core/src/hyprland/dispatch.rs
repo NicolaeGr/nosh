@@ -185,7 +185,7 @@ fn lua_value(value: &str) -> String {
     }
 }
 
-fn escape_lua(value: &str) -> String {
+pub(crate) fn escape_lua(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 

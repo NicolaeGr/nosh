@@ -1,99 +1,51 @@
-//! Hyprland workspace backend: `j/workspaces` reads, event socket updates, and
+//! Hyprland workspace backend: `j/workspaces` reads, shared event updates, and
 //! workspace dispatches.
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::Arc;
 
 use async_channel::Sender;
 use async_trait::async_trait;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::net::UnixStream;
-use tokio::sync::{Mutex, RwLock};
-use tokio::time::timeout;
+use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::Mutex;
 
 use crate::error::{BackendError, PathError};
-use crate::hyprland::client::HyprlandClient;
-use crate::hyprland::dispatch::{detect_provider, format_dispatch, ConfigProvider, Dispatch};
-use crate::hyprland::events::{parse_event, HyprlandEvent};
-use crate::hyprland::json::{
-    build_workspace_state, HyprClient, HyprMonitor, HyprStatus, HyprVersion, HyprWorkspace,
-};
+use crate::hyprland::connection::{Hyprland, HyprlandState};
+use crate::hyprland::dispatch::{format_dispatch, Dispatch};
+use crate::hyprland::events::HyprlandEvent;
+use crate::hyprland::json::{build_workspace_state, HyprClient, HyprMonitor, HyprWorkspace};
 use crate::paths::HyprlandPaths;
 use crate::workspaces::backend::{WorkspaceBackend, WorkspaceBackendEvent};
 use crate::workspaces::model::WorkspaceCapabilities;
 use crate::workspaces::state::WorkspaceState;
 
-const EVENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
-
 pub struct HyprlandWorkspaceBackend {
-    paths: HyprlandPaths,
-    client: HyprlandClient,
+    hypr: Arc<Hyprland>,
     state: Mutex<WorkspaceState>,
-    provider: RwLock<Option<ConfigProvider>>,
     dispatch_failure_logged: AtomicBool,
 }
 
 impl HyprlandWorkspaceBackend {
     /// Returns `None` when Hyprland is not the running compositor.
     pub fn detect() -> Result<Option<Self>, PathError> {
-        Ok(HyprlandPaths::from_env()?.map(Self::new))
+        Ok(Hyprland::detect()?.map(Self::with_connection))
     }
 
     pub fn new(paths: HyprlandPaths) -> Self {
-        let client = HyprlandClient::new(paths.command_socket.clone());
+        Self::with_connection(Hyprland::connect(paths))
+    }
+
+    pub fn with_connection(hypr: Arc<Hyprland>) -> Self {
         Self {
-            paths,
-            client,
+            hypr,
             state: Mutex::new(WorkspaceState::default()),
-            provider: RwLock::new(None),
             dispatch_failure_logged: AtomicBool::new(false),
         }
     }
 
     pub fn paths(&self) -> &HyprlandPaths {
-        &self.paths
-    }
-
-    async fn provider(&self) -> ConfigProvider {
-        if let Some(provider) = *self.provider.read().await {
-            return provider;
-        }
-
-        let provider = self.query_provider().await;
-        *self.provider.write().await = Some(provider);
-        provider
-    }
-
-    async fn query_provider(&self) -> ConfigProvider {
-        let status: Option<HyprStatus> = match self.client.query_json("j/status").await {
-            Ok(status) => Some(status),
-            Err(error) => {
-                tracing::debug!(%error, "Hyprland status query failed");
-                None
-            }
-        };
-        let version: Option<HyprVersion> = match self.client.query_json("j/version").await {
-            Ok(version) => Some(version),
-            Err(error) => {
-                tracing::debug!(%error, "Hyprland version query failed");
-                None
-            }
-        };
-
-        let provider = detect_provider(
-            status
-                .as_ref()
-                .and_then(|status| status.config_provider.as_deref()),
-            version.as_ref().map(|version| version.tag.as_str()),
-        );
-        tracing::debug!(?provider, "detected Hyprland config provider");
-        provider
-    }
-
-    async fn refresh_provider(&self) {
-        let provider = self.query_provider().await;
-        *self.provider.write().await = Some(provider);
+        self.hypr.paths()
     }
 
     async fn handle_event(
@@ -118,8 +70,9 @@ impl HyprlandWorkspaceBackend {
                     None => Ok(true),
                 }
             }
+            HyprlandEvent::Connected => Ok(true),
             HyprlandEvent::ConfigReloaded => {
-                self.refresh_provider().await;
+                self.hypr.refresh_provider().await;
                 self.refresh_and_emit(events, before).await
             }
             HyprlandEvent::Submap { .. }
@@ -178,22 +131,7 @@ impl WorkspaceBackend for HyprlandWorkspaceBackend {
     }
 
     async fn probe(&self) -> Result<WorkspaceCapabilities, BackendError> {
-        let version: HyprVersion = self.client.query_json("j/version").await?;
-        let status: Option<HyprStatus> = match self.client.query_json("j/status").await {
-            Ok(status) => Some(status),
-            Err(error) => {
-                tracing::debug!(%error, "Hyprland status query failed during probe");
-                None
-            }
-        };
-
-        let provider = detect_provider(
-            status
-                .as_ref()
-                .and_then(|status| status.config_provider.as_deref()),
-            Some(version.tag.as_str()),
-        );
-        *self.provider.write().await = Some(provider);
+        self.hypr.refresh_provider().await;
 
         Ok(WorkspaceCapabilities::READ
             | WorkspaceCapabilities::WATCH
@@ -204,17 +142,16 @@ impl WorkspaceBackend for HyprlandWorkspaceBackend {
     }
 
     async fn read(&self) -> Result<WorkspaceState, BackendError> {
-        let monitors: Vec<HyprMonitor> = self.client.query_json("j/monitors").await?;
-        let workspaces: Vec<HyprWorkspace> = self.client.query_json("j/workspaces").await?;
-        let clients: Vec<HyprClient> = match self.client.query_json("j/clients").await {
+        let monitors: Vec<HyprMonitor> = self.hypr.query_json("j/monitors").await?;
+        let workspaces: Vec<HyprWorkspace> = self.hypr.query_json("j/workspaces").await?;
+        let clients: Vec<HyprClient> = match self.hypr.query_json("j/clients").await {
             Ok(clients) => clients,
             Err(error) => {
                 tracing::debug!(%error, "Hyprland client query failed; urgency is degraded");
                 Vec::new()
             }
         };
-        let active: Option<HyprWorkspace> = match self.client.query_json("j/activeworkspace").await
-        {
+        let active: Option<HyprWorkspace> = match self.hypr.query_json("j/activeworkspace").await {
             Ok(active) => Some(active),
             Err(error) => {
                 tracing::debug!(%error, "Hyprland active workspace query failed");
@@ -231,9 +168,9 @@ impl WorkspaceBackend for HyprlandWorkspaceBackend {
     }
 
     async fn activate(&self, workspace: &str) -> Result<(), BackendError> {
-        let provider = self.provider().await;
+        let provider = self.hypr.provider().await;
         let request = format_dispatch(provider, Dispatch::FocusWorkspace(workspace));
-        let response = self.client.query(&request).await?;
+        let response = self.hypr.request(&request).await?;
         self.note_dispatch_response(&request, &response);
         self.state
             .lock()
@@ -243,67 +180,57 @@ impl WorkspaceBackend for HyprlandWorkspaceBackend {
     }
 
     async fn move_to_monitor(&self, workspace: &str, monitor: &str) -> Result<(), BackendError> {
-        let provider = self.provider().await;
+        let provider = self.hypr.provider().await;
         let request = format_dispatch(
             provider,
             Dispatch::MoveWorkspaceToMonitor { workspace, monitor },
         );
-        let response = self.client.query(&request).await?;
+        let response = self.hypr.request(&request).await?;
         self.note_dispatch_response(&request, &response);
         Ok(())
     }
 
     async fn watch(&self, events: Sender<WorkspaceBackendEvent>) -> Result<(), BackendError> {
-        let stream = timeout(
-            EVENT_CONNECT_TIMEOUT,
-            UnixStream::connect(&self.paths.event_socket),
-        )
-        .await
-        .map_err(|_| {
-            BackendError::Unavailable(format!(
-                "timed out connecting to {}",
-                self.paths.event_socket.display()
-            ))
-        })?
-        .map_err(|error| {
-            BackendError::Unavailable(format!(
-                "cannot connect to {}: {error}",
-                self.paths.event_socket.display()
-            ))
-        })?;
-
-        let mut lines = BufReader::new(stream).lines();
+        let mut hypr_events = self.hypr.events();
+        let mut state = self.hypr.state();
         let mut unknown = HashSet::new();
 
         loop {
-            let line = match lines.next_line().await {
-                Ok(Some(line)) => line,
-                Ok(None) => {
-                    return Err(BackendError::Unavailable(
-                        "Hyprland event socket closed".to_string(),
-                    ));
-                }
-                Err(error) => {
-                    return Err(BackendError::Request(format!(
-                        "cannot read the Hyprland event socket: {error}"
-                    )));
-                }
-            };
-
-            if line.trim().is_empty() {
-                continue;
+            if *state.borrow_and_update() == HyprlandState::Lost {
+                return Err(BackendError::Unavailable(
+                    "Hyprland event socket lost".to_string(),
+                ));
             }
 
-            let event = match parse_event(&line) {
-                Ok(event) => event,
-                Err(error) => {
-                    tracing::debug!(%error, line, "ignoring malformed Hyprland event");
-                    continue;
+            tokio::select! {
+                changed = state.changed() => {
+                    if changed.is_err() {
+                        return Err(BackendError::Unavailable(
+                            "Hyprland event socket lost".to_string(),
+                        ));
+                    }
                 }
-            };
-
-            if !self.handle_event(event, &events, &mut unknown).await? {
-                return Ok(());
+                received = hypr_events.recv() => {
+                    match received {
+                        Ok(event) => {
+                            if !self.handle_event(event, &events, &mut unknown).await? {
+                                return Ok(());
+                            }
+                        }
+                        Err(RecvError::Lagged(_)) => {
+                            tracing::debug!("workspace event stream lagged; resyncing");
+                            let before = self.state.lock().await.focused_workspace.clone();
+                            if !self.refresh_and_emit(&events, before).await? {
+                                return Ok(());
+                            }
+                        }
+                        Err(RecvError::Closed) => {
+                            return Err(BackendError::Unavailable(
+                                "Hyprland event socket lost".to_string(),
+                            ));
+                        }
+                    }
+                }
             }
         }
     }

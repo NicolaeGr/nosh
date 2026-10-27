@@ -70,6 +70,28 @@ pub struct HyprClient {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
+pub struct HyprBind {
+    pub locked: bool,
+    pub mouse: bool,
+    pub release: bool,
+    pub repeat: bool,
+    pub long_press: bool,
+    #[serde(alias = "non_consuming")]
+    pub non_consuming: bool,
+    #[serde(alias = "has_description")]
+    pub has_description: bool,
+    pub modmask: u32,
+    pub submap: String,
+    pub key: String,
+    pub keycode: u32,
+    pub catch_all: bool,
+    pub description: String,
+    pub dispatcher: String,
+    pub arg: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct HyprStatus {
     pub config_provider: Option<String>,
 }
@@ -241,6 +263,19 @@ mod tests {
         assert_eq!(monitor.refresh_rate, 144.0);
         assert!(monitor.dpms_status);
         assert_eq!(monitor.active_workspace.unwrap().id, 2);
+    }
+
+    #[test]
+    fn a_bind_is_parsed_with_its_mixed_field_names() {
+        let json = r#"{"locked":false,"mouse":false,"release":false,"repeat":false,"longPress":false,"non_consuming":false,"has_description":false,"modmask":64,"submap":"","key":"SPACE","keycode":0,"catch_all":false,"description":"","dispatcher":"exec","arg":"kitty"}"#;
+        let bind: HyprBind = serde_json::from_str(json).unwrap();
+
+        assert_eq!(bind.modmask, 64);
+        assert_eq!(bind.key, "SPACE");
+        assert_eq!(bind.dispatcher, "exec");
+        assert_eq!(bind.arg, "kitty");
+        assert!(!bind.non_consuming);
+        assert!(!bind.has_description);
     }
 
     #[test]

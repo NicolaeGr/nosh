@@ -215,6 +215,28 @@ dispatch hl.dsp.exec_cmd("<command>")
 
 The Lua table syntax is sensitive. Keep the formatter in one module with tests. Do not build dispatch strings in the UI.
 
+## Runtime binds
+
+Read the current binds from `j/binds`. Register and remove binds over the command socket. The socket is synchronous, so no reload or sleep is needed.
+
+Hyprlang:
+
+```text
+keyword unbind "SUPER, Space"
+keyword bind "SUPER, Space, exec, nosh menu apps"
+```
+
+Lua:
+
+```text
+eval hl.unbind("SUPER + Space")
+eval hl.bind("SUPER + Space", hl.dsp.exec_cmd("nosh menu apps"))
+```
+
+A managed bind has dispatcher `exec` and an argument starting with `nosh menu `. Remove stale managed binds before binding the installed set. Re-apply binds after a reconnect and after `configreloaded`, because a restart clears runtime binds and a reload may duplicate them.
+
+Chord keys are normalized to uppercase for normal keys, so `hl.unbind` matches the bind it removes. Keys with a `code:` prefix and `XF86...` keys keep their original case.
+
 ## Monitor configuration
 
 Hyprlang runtime path:
@@ -236,11 +258,12 @@ hyprctl keyword monitor "DP-2,disable"
 Lua provider:
 
 ```text
-the runtime keyword path may be rejected when the config provider is Lua
-check the installed version and its runtime output API
-if no Lua runtime call exists, write the Lua config and reload
-do not pretend the write succeeded
+eval hl.monitor({ output = "DP-2", mode = "2560x1440@144", position = "0x0", scale = 1 })
+eval hl.monitor({ output = "DP-2", mode = "2560x1440@144", position = "0x0", scale = 1, mirror = "DP-1" })
+eval hl.monitor({ output = "DP-2", disabled = true })
 ```
+
+Runtime writes use `keyword monitor "..."` for hyprlang and `eval hl.monitor({ ... })` for Lua.
 
 Persist layout only when the user asks. Runtime changes are the default. Back up the compositor config before writing it.
 

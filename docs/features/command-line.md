@@ -79,6 +79,18 @@ match command {
 
 Return `0` in every case, matching the current behavior. Do not use a nonzero exit code for an unknown command. Keybinds and scripts may depend on it.
 
+### Implemented in the Rust build
+
+The Rust build wires these commands:
+
+- `volume-up` and `volume-down`
+- `brightness-up` and `brightness-down`
+- `brightness-dim` and `brightness-restore`
+- `menu <id>`
+- `monitor-cycle [target] [mode]`
+
+`power-profile` is not implemented yet. Unknown commands print the existing message and exit 0.
+
 `menu <id>` opens any configured menu. The app launcher is the `apps` menu, so `nosh menu apps` opens it. The UI sends `Command::MenuOpen(id)` and the core reports `MenuEvent::Opened` with the definition. The window is created from that event, so the menu definition stays in one place.
 
 ### Local startup

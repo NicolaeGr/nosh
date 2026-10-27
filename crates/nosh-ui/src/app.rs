@@ -9,8 +9,9 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::{
     volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel, Command, Core,
-    EndpointKind, Event, IdleInhibitEvent, IdleInhibitState, MenuEvent, SystemStats,
+    EndpointKind, Event, IdleInhibitEvent, IdleInhibitState, LayoutPreset, MenuEvent, SystemStats,
     SystemStatsEvent, TrayEvent, TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot,
+    BRIGHTNESS_STEP, DIM_PERCENT, VOLUME_STEP,
 };
 
 use crate::bar::BarWindow;
@@ -429,31 +430,40 @@ fn update_endpoint(
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum StartupAction {
+    Menu(String),
+    Command(Command),
+}
+
 pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
     let app = gtk::Application::builder()
         .application_id(APP_ID)
         .flags(gtk::gio::ApplicationFlags::HANDLES_COMMAND_LINE)
         .build();
 
-    let pending: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    let pending: Rc<RefCell<Vec<StartupAction>>> = Rc::new(RefCell::new(Vec::new()));
     let ui_slot: Rc<RefCell<Option<Rc<Ui>>>> = Rc::new(RefCell::new(None));
 
     app.connect_startup(|_| install_css());
 
-    // A secondary `nosh menu <id>` forwards its command line to the running
+    // A secondary `nosh <command>` forwards its command line to the running
     // instance, which owns the windows.
     {
         let ui_slot = Rc::clone(&ui_slot);
         let pending = Rc::clone(&pending);
         app.connect_command_line(move |app, command_line| {
-            if let Some(id) = menu_from_arguments(&command_line.arguments()) {
-                let handled = ui_slot
-                    .borrow()
-                    .as_ref()
-                    .map(|ui| ui.open_menu(&id))
-                    .is_some();
-                if !handled {
-                    *pending.borrow_mut() = Some(id);
+            if let Some(action) = startup_action(&command_line.arguments()) {
+                let ui = ui_slot.borrow().clone();
+                match action {
+                    StartupAction::Menu(id) => match &ui {
+                        Some(ui) => ui.open_menu(&id),
+                        None => pending.borrow_mut().push(StartupAction::Menu(id)),
+                    },
+                    StartupAction::Command(command) => match &ui {
+                        Some(ui) => ui.core.send(command),
+                        None => pending.borrow_mut().push(StartupAction::Command(command)),
+                    },
                 }
             }
             app.activate();
@@ -476,7 +486,7 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
             }
 
             // Start the core only in the primary instance. A secondary
-            // `nosh menu <id>` process forwards its command line and exits
+            // `nosh <command>` process forwards its command line and exits
             // without opening audio, battery, or tray connections.
             let core = match Core::start() {
                 Ok(core) => Rc::new(core),
@@ -498,10 +508,13 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
                     .connect_items_changed(move |_, _, _, _| ui.sync_bars());
             }
 
-            let pending = pending.borrow_mut().take();
+            let pending: Vec<StartupAction> = pending.borrow_mut().drain(..).collect();
             ui_slot.borrow_mut().replace(Rc::clone(&ui));
-            if let Some(id) = pending {
-                ui.open_menu(&id);
+            for action in pending {
+                match action {
+                    StartupAction::Menu(id) => ui.open_menu(&id),
+                    StartupAction::Command(command) => ui.core.send(command),
+                }
             }
 
             let events = events.clone();
@@ -516,11 +529,72 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
     Ok(app.run_with_args_os(&arguments).into())
 }
 
-fn menu_from_arguments(arguments: &[std::ffi::OsString]) -> Option<String> {
-    let mut words = arguments.iter().filter_map(|argument| argument.to_str());
-    while let Some(word) = words.next() {
-        if word == "menu" {
-            return words.next().map(ToString::to_string);
+fn startup_action(arguments: &[std::ffi::OsString]) -> Option<StartupAction> {
+    let words: Vec<&str> = arguments
+        .iter()
+        .filter_map(|argument| argument.to_str())
+        .collect();
+    let mut index = 1;
+    while index < words.len() {
+        let word = words[index];
+        index += 1;
+        if word.starts_with('-') {
+            continue;
+        }
+
+        match word {
+            "menu" => {
+                return words
+                    .get(index)
+                    .map(|id| StartupAction::Menu((*id).to_string()));
+            }
+            "volume-up" => {
+                return Some(StartupAction::Command(Command::AudioStepVolume(
+                    VOLUME_STEP,
+                )))
+            }
+            "volume-down" => {
+                return Some(StartupAction::Command(Command::AudioStepVolume(
+                    -VOLUME_STEP,
+                )))
+            }
+            "brightness-up" => {
+                return Some(StartupAction::Command(Command::BrightnessStep(
+                    BRIGHTNESS_STEP,
+                )))
+            }
+            "brightness-down" => {
+                return Some(StartupAction::Command(Command::BrightnessStep(
+                    -BRIGHTNESS_STEP,
+                )))
+            }
+            "brightness-dim" => {
+                return Some(StartupAction::Command(Command::BrightnessDim {
+                    value: DIM_PERCENT,
+                }))
+            }
+            "brightness-restore" => {
+                return Some(StartupAction::Command(Command::BrightnessRestore))
+            }
+            "monitor-cycle" => {
+                let target = words
+                    .get(index)
+                    .map(|word| (*word).to_string())
+                    .unwrap_or_default();
+                let mode = words
+                    .get(index + 1)
+                    .and_then(|word| LayoutPreset::parse(word));
+                return Some(StartupAction::Command(Command::MonitorCycle {
+                    target,
+                    mode,
+                }));
+            }
+            _ => {
+                eprintln!(
+                    "Unknown command or failed to handle command. \nIf you intended to start the main instance, it is already running.\n"
+                );
+                return None;
+            }
         }
     }
     None
@@ -617,15 +691,71 @@ mod tests {
     }
 
     #[test]
-    fn the_command_line_maps_menu_ids() {
-        let arguments = vec![
-            std::ffi::OsString::from("nosh"),
-            std::ffi::OsString::from("menu"),
-            std::ffi::OsString::from("wallpapers"),
-        ];
+    fn the_command_line_maps_a_menu_id() {
         assert_eq!(
-            menu_from_arguments(&arguments).as_deref(),
-            Some("wallpapers")
+            startup_action(&arguments(&["menu", "wallpapers"])),
+            Some(StartupAction::Menu("wallpapers".to_string()))
         );
+        assert_eq!(startup_action(&arguments(&["menu"])), None);
+    }
+
+    #[test]
+    fn the_command_line_maps_each_command() {
+        assert_eq!(
+            startup_action(&arguments(&["volume-up"])),
+            Some(StartupAction::Command(Command::AudioStepVolume(
+                VOLUME_STEP
+            )))
+        );
+        assert_eq!(
+            startup_action(&arguments(&["volume-down"])),
+            Some(StartupAction::Command(Command::AudioStepVolume(
+                -VOLUME_STEP
+            )))
+        );
+        assert_eq!(
+            startup_action(&arguments(&["brightness-up"])),
+            Some(StartupAction::Command(Command::BrightnessStep(
+                BRIGHTNESS_STEP
+            )))
+        );
+        assert_eq!(
+            startup_action(&arguments(&["brightness-down"])),
+            Some(StartupAction::Command(Command::BrightnessStep(
+                -BRIGHTNESS_STEP
+            )))
+        );
+        assert_eq!(
+            startup_action(&arguments(&["brightness-dim"])),
+            Some(StartupAction::Command(Command::BrightnessDim {
+                value: DIM_PERCENT
+            }))
+        );
+        assert_eq!(
+            startup_action(&arguments(&["brightness-restore"])),
+            Some(StartupAction::Command(Command::BrightnessRestore))
+        );
+    }
+
+    #[test]
+    fn the_command_line_maps_monitor_cycle_targets_and_modes() {
+        assert_eq!(
+            startup_action(&arguments(&["monitor-cycle", "DP-2", "mirror"])),
+            Some(StartupAction::Command(Command::MonitorCycle {
+                target: "DP-2".to_string(),
+                mode: Some(LayoutPreset::Mirror),
+            }))
+        );
+    }
+
+    #[test]
+    fn an_unknown_command_returns_none() {
+        assert_eq!(startup_action(&arguments(&["power-profile"])), None);
+    }
+
+    fn arguments(words: &[&str]) -> Vec<std::ffi::OsString> {
+        std::iter::once(std::ffi::OsString::from("nosh"))
+            .chain(words.iter().map(std::ffi::OsString::from))
+            .collect()
     }
 }

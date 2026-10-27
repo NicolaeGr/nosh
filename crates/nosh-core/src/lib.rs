@@ -18,6 +18,7 @@ pub mod menu;
 pub mod monitors;
 pub mod origin;
 pub mod paths;
+pub mod power_profiles;
 pub mod stats;
 pub mod tray;
 pub mod workspaces;
@@ -47,8 +48,8 @@ pub use error::{
     BackendError, BrightnessError, CoreError, EventParseError, MonitorError, PathError, StatsError,
 };
 pub use event::{
-    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, Service,
-    Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
+    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent,
+    PowerProfilesEvent, Service, Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
 };
 pub use idle_inhibit::{
     IdleInhibitBackend, IdleInhibitService, IdleInhibitServiceConfig, IdleInhibitState,
@@ -68,6 +69,12 @@ pub use monitors::{
 };
 pub use origin::ChangeOrigin;
 pub use paths::{HyprlandPaths, NoshPaths};
+pub use power_profiles::{
+    default_profiles, next_profile, DbusPowerProfilesBackend, PowerProfile, PowerProfilesBackend,
+    PowerProfilesBackendEvent, PowerProfilesBackendRef, PowerProfilesModel, PowerProfilesService,
+    PowerProfilesServiceConfig, POWER_PROFILES_INTERFACE, POWER_PROFILES_PATH,
+    POWER_PROFILES_SERVICE,
+};
 pub use stats::{
     cpu_percent, parse_cpu_stat, parse_meminfo, CpuTimes, MemoryInfo, ProcStatsSource, StatsSource,
     StatsSourceRef, SystemStats, SystemStatsService, SystemStatsServiceConfig, DEFAULT_INTERVAL,

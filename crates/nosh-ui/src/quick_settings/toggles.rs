@@ -1,29 +1,40 @@
 //! The two-column toggle grid.
 //!
 //! Controls whose core service does not exist yet stay visible and insensitive,
-//! following the VPN rule in `docs/features/quick-settings.md`.
+//! following the VPN rule in `docs/features/quick-settings.md`. Power profiles
+//! are a soft dependency, so that control hides when the daemon is missing.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
 
+use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
-use nosh_core::{Command, Core, IdleInhibitState};
+use nosh_core::{Command, Core, IdleInhibitState, PowerProfile, PowerProfilesModel};
 
 pub struct Toggles {
-    root: gtk::Grid,
+    root: gtk::Box,
+    core: Rc<Core>,
     caffeine: Toggle,
     caffeine_active: Rc<Cell<bool>>,
+    power: Toggle,
+    power_list: gtk::Box,
+    power_dropdown: PowerDropdown,
+    power_rows: RefCell<Vec<PowerRow>>,
+    power_model: RefCell<Option<PowerProfilesModel>>,
 }
 
 impl Toggles {
     pub fn new(core: Rc<Core>) -> Self {
-        let root = gtk::Grid::new();
-        root.add_css_class("QuickSettingsToggles");
-        root.set_column_spacing(6);
-        root.set_row_spacing(6);
-        root.set_column_homogeneous(true);
+        let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.set_margin_bottom(10);
+
+        let grid = gtk::Grid::new();
+        grid.add_css_class("QuickSettingsToggles");
+        grid.set_column_spacing(6);
+        grid.set_row_spacing(6);
+        grid.set_column_homogeneous(true);
 
         let wifi = Toggle::new("Wi-Fi", "network-wireless-symbolic", "Off", true);
         let bluetooth = Toggle::new("Bluetooth", "bluetooth-symbolic", "Off", true);
@@ -32,7 +43,7 @@ impl Toggles {
         let power = Toggle::new(
             "Power Profile",
             "power-profile-balanced-symbolic",
-            "Not available",
+            "Balanced",
             true,
         );
         let night = Toggle::new("Night Light", "night-light-symbolic", "Off", false);
@@ -53,9 +64,27 @@ impl Toggles {
         bluetooth.set_available(false, "Bluetooth support is not available yet");
         vpn.set_available(false, "VPN support is not available");
         kde.set_available(false, "KDE Connect support is not available yet");
-        power.set_available(false, "Power profiles are not available");
         night.set_available(false, "Night Light support is not available yet");
         dnd.set_available(false, "Notifications are not available yet");
+
+        let power_list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        power_list.add_css_class("SliderDropdown");
+        let power_revealer = gtk::Revealer::new();
+        power_revealer.set_transition_type(gtk::RevealerTransitionType::SlideDown);
+        power_revealer.set_transition_duration(300);
+        power_revealer.set_reveal_child(false);
+        power_revealer.set_child(Some(&power_list));
+        // Hidden until the daemon reports a state.
+        power_revealer.set_visible(false);
+        power.widget().set_visible(false);
+
+        let power_dropdown = PowerDropdown {
+            grid: grid.clone(),
+            revealer: power_revealer.clone(),
+            disclosure: power.disclosure().cloned(),
+            later: vec![dnd.widget().clone(), caffeine.widget().clone()],
+            open: Rc::new(Cell::new(false)),
+        };
 
         let caffeine_active = Rc::new(Cell::new(false));
         {
@@ -65,28 +94,52 @@ impl Toggles {
                 core.send(Command::IdleInhibitSet(!active.get()));
             });
         }
-
-        for (index, toggle) in [
-            &wifi, &bluetooth, &vpn, &kde, &power, &night, &dnd, &caffeine,
-        ]
-        .into_iter()
-        .enumerate()
         {
-            let column = (index % 2) as i32;
-            let row = (index / 2) as i32;
-            root.attach(toggle.widget(), column, row, 1, 1);
+            let core = Rc::clone(&core);
+            power.button().connect_clicked(move |_| {
+                core.send(Command::PowerProfileCycle);
+            });
         }
+        if let Some(disclosure) = &power_dropdown.disclosure {
+            let dropdown = power_dropdown.clone();
+            disclosure.connect_clicked(move |_| dropdown.toggle());
+        }
+
+        // The drop-down lives on the row under the power toggle. The toggles
+        // below it move down while it is open, so the list opens where the
+        // control sits instead of under the last row.
+        for (toggle, column, row) in [
+            (&wifi, 0, 0),
+            (&bluetooth, 1, 0),
+            (&vpn, 0, 1),
+            (&kde, 1, 1),
+            (&power, 0, 2),
+            (&night, 1, 2),
+            (&dnd, 0, 3),
+            (&caffeine, 1, 3),
+        ] {
+            grid.attach(toggle.widget(), column, row, 1, 1);
+        }
+        grid.attach(&power_revealer, 0, 3, 2, 1);
+
+        root.append(&grid);
 
         let toggles = Self {
             root,
+            core,
             caffeine,
             caffeine_active,
+            power,
+            power_list,
+            power_dropdown,
+            power_rows: RefCell::new(Vec::new()),
+            power_model: RefCell::new(None),
         };
         toggles.render_idle_inhibit(&IdleInhibitState::default());
         toggles
     }
 
-    pub fn widget(&self) -> &gtk::Grid {
+    pub fn widget(&self) -> &gtk::Box {
         &self.root
     }
 
@@ -108,6 +161,172 @@ impl Toggles {
             "Sleep allowed"
         });
     }
+
+    /// Hides the control when the daemon is missing, following the soft
+    /// dependency rule for power profiles.
+    pub fn render_power_profiles(&self, model: Option<&PowerProfilesModel>) {
+        let Some(model) = model else {
+            self.power.widget().set_visible(false);
+            self.power_dropdown.set_open(false);
+            self.power_dropdown.revealer.set_visible(false);
+            self.power.set_on(false);
+            *self.power_model.borrow_mut() = None;
+            return;
+        };
+
+        self.power.widget().set_visible(true);
+        self.power.set_available(true, "");
+        self.power.set_icon(&model.active.icon_name());
+        self.power.set_status(model.active.label());
+        // Balanced is the neutral state, so the toggle reads as off.
+        self.power.set_on(!model.active.is_balanced());
+        self.power.set_tooltip(Some(&match &model.degraded {
+            Some(reason) => format!("{} profile. {}", model.active.label(), reason),
+            None => format!("{} profile", model.active.label()),
+        }));
+
+        let profiles_changed = self
+            .power_model
+            .borrow()
+            .as_ref()
+            .map(|previous| previous.profiles != model.profiles)
+            .unwrap_or(true);
+        *self.power_model.borrow_mut() = Some(model.clone());
+        if profiles_changed {
+            self.rebuild_power_rows(&model.profiles);
+        }
+
+        for row in self.power_rows.borrow().iter() {
+            if row.profile == model.active {
+                row.button.add_css_class("is-active");
+                row.check.set_visible(true);
+            } else {
+                row.button.remove_css_class("is-active");
+                row.check.set_visible(false);
+            }
+        }
+    }
+
+    pub fn close_dropdowns(&self) {
+        self.power_dropdown.set_open(false);
+    }
+
+    fn rebuild_power_rows(&self, profiles: &[PowerProfile]) {
+        while let Some(child) = self.power_list.first_child() {
+            self.power_list.remove(&child);
+        }
+
+        let mut rows = Vec::new();
+        for profile in profiles {
+            let button = gtk::Button::new();
+            button.add_css_class("PowerProfileRow");
+
+            let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            let label = gtk::Label::new(Some(profile.label()));
+            label.add_css_class("PowerProfileName");
+            label.set_xalign(0.0);
+            label.set_hexpand(true);
+            let check = gtk::Image::from_icon_name("object-select-symbolic");
+            check.add_css_class("PowerProfileCheck");
+            check.set_visible(false);
+            content.append(&label);
+            content.append(&check);
+            button.set_child(Some(&content));
+
+            {
+                let core = Rc::clone(&self.core);
+                let dropdown = self.power_dropdown.clone();
+                let profile = profile.clone();
+                button.connect_clicked(move |_| {
+                    core.send(Command::PowerProfileSet(profile.clone()));
+                    dropdown.set_open(false);
+                });
+            }
+
+            self.power_list.append(&button);
+            rows.push(PowerRow {
+                profile: profile.clone(),
+                button,
+                check,
+            });
+        }
+
+        *self.power_rows.borrow_mut() = rows;
+    }
+}
+
+/// The power profile list and the grid positions it needs while open.
+#[derive(Clone)]
+struct PowerDropdown {
+    grid: gtk::Grid,
+    revealer: gtk::Revealer,
+    disclosure: Option<gtk::Button>,
+    later: Vec<gtk::Box>,
+    open: Rc<Cell<bool>>,
+}
+
+impl PowerDropdown {
+    fn toggle(&self) {
+        self.set_open(!self.open.get());
+    }
+
+    fn set_open(&self, open: bool) {
+        if self.open.get() == open {
+            return;
+        }
+        self.open.set(open);
+
+        if let Some(disclosure) = &self.disclosure {
+            if open {
+                disclosure.add_css_class("is-open");
+            } else {
+                disclosure.remove_css_class("is-open");
+            }
+        }
+
+        if open {
+            self.layout_later(true);
+            self.revealer.set_visible(true);
+            self.revealer.set_reveal_child(true);
+            return;
+        }
+
+        self.revealer.set_reveal_child(false);
+        // Move the rows back up once the list has finished collapsing, so the
+        // shrinking list does not overlap them.
+        let grid = self.grid.clone();
+        let later = self.later.clone();
+        let revealer = self.revealer.clone();
+        let still_open = Rc::clone(&self.open);
+        glib::timeout_add_local_once(Duration::from_millis(320), move || {
+            if still_open.get() {
+                return;
+            }
+            revealer.set_visible(false);
+            layout_later(&grid, &later, false);
+        });
+    }
+
+    fn layout_later(&self, open: bool) {
+        layout_later(&self.grid, &self.later, open);
+    }
+}
+
+fn layout_later(grid: &gtk::Grid, later: &[gtk::Box], open: bool) {
+    for widget in later {
+        grid.remove(widget);
+    }
+
+    let row = if open { 4 } else { 3 };
+    for (column, widget) in later.iter().enumerate() {
+        grid.attach(widget, column as i32, row, 1, 1);
+    }
+}
+
+struct PowerRow {
+    profile: PowerProfile,
+    button: gtk::Button,
+    check: gtk::Image,
 }
 
 struct Toggle {
@@ -196,6 +415,10 @@ impl Toggle {
         &self.button
     }
 
+    fn disclosure(&self) -> Option<&gtk::Button> {
+        self.disclosure.as_ref()
+    }
+
     fn set_on(&self, on: bool) {
         if on {
             self.root.add_css_class("on");
@@ -206,6 +429,10 @@ impl Toggle {
 
     fn set_status(&self, text: &str) {
         self.status.set_text(text);
+    }
+
+    fn set_tooltip(&self, text: Option<&str>) {
+        self.root.set_tooltip_text(text);
     }
 
     fn set_available(&self, available: bool, tooltip: &str) {

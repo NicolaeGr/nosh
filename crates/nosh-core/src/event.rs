@@ -5,6 +5,7 @@ use crate::idle_inhibit::model::IdleInhibitState;
 use crate::menu::MenuEvent;
 use crate::monitors::MonitorLayout;
 use crate::origin::ChangeOrigin;
+use crate::power_profiles::model::PowerProfilesModel;
 use crate::stats::model::SystemStats;
 use crate::tray::model::{TrayItemModel, TrayMenu};
 use crate::workspaces::model::WorkspaceSnapshot;
@@ -25,6 +26,7 @@ pub enum Event {
     Battery(BatteryEvent),
     SystemStats(SystemStatsEvent),
     IdleInhibit(IdleInhibitEvent),
+    PowerProfiles(PowerProfilesEvent),
     Tray(TrayEvent),
     Menu(MenuEvent),
     ServiceAvailability(Service, bool),
@@ -43,6 +45,7 @@ pub struct Snapshot {
     pub system_stats: Option<SystemStats>,
     pub idle_inhibit: Option<IdleInhibitState>,
     pub idle_inhibit_backend: Option<&'static str>,
+    pub power_profiles: Option<PowerProfilesModel>,
     pub tray: Option<Vec<TrayItemModel>>,
     pub tray_backend: Option<&'static str>,
 }
@@ -57,6 +60,7 @@ pub enum Service {
     Battery,
     SystemStats,
     IdleInhibit,
+    PowerProfiles,
     Tray,
 }
 
@@ -187,6 +191,17 @@ pub enum TrayEvent {
     BackendChanged {
         backend: &'static str,
     },
+    Unavailable,
+}
+
+/// The power profile state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PowerProfilesEvent {
+    /// Fresh state after startup or a daemon reconnect.
+    Snapshot(PowerProfilesModel),
+    /// The daemon accepted a new profile or reported a property change.
+    Changed(PowerProfilesModel),
+    /// The daemon is missing or the connection is down.
     Unavailable,
 }
 

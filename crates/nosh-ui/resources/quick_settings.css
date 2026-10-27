@@ -177,6 +177,40 @@ window.QuickSettings {
     -gtk-icon-size: 0.75em;
 }
 
+.QuickToggleDisclosure.is-open {
+    color: @bar_ink;
+    background-color: @bar_row_hover;
+}
+
+/* Power profile list */
+.PowerProfileRow {
+    min-height: 1.5em;
+    padding: 0.375em 0.5em;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0.375em 0 0.375em 0;
+    box-shadow: none;
+    color: @bar_ink;
+}
+
+.PowerProfileRow:hover {
+    background-color: @bar_row_hover;
+}
+
+.PowerProfileRow.is-active {
+    background-color: @bar_accent_soft;
+}
+
+.PowerProfileName {
+    font-size: 0.875em;
+}
+
+.PowerProfileCheck {
+    -gtk-icon-size: 0.75em;
+    color: @accent_bg_color;
+}
+
 /* Sliders */
 .SliderSimple {
     padding: 0 0.25em;

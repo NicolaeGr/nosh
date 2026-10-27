@@ -2,6 +2,7 @@ use crate::audio::model::EndpointKind;
 use crate::brightness::model::BrightnessDeviceId;
 use crate::monitors::LayoutPreset;
 use crate::monitors::MonitorLayout;
+use crate::power_profiles::model::PowerProfile;
 
 /// User intent. Sending a command does not block the caller.
 ///
@@ -58,6 +59,8 @@ pub enum Command {
     },
     IdleInhibitSet(bool),
     IdleInhibitToggle,
+    PowerProfileSet(PowerProfile),
+    PowerProfileCycle,
     TrayActivate {
         item_id: String,
         x: i32,
@@ -165,6 +168,11 @@ impl Command {
                 | Self::MenuReload(_)
                 | Self::MenuClose(_)
         )
+    }
+
+    /// Whether the power profiles service handles this command.
+    pub fn is_power_profiles(&self) -> bool {
+        matches!(self, Self::PowerProfileSet(_) | Self::PowerProfileCycle)
     }
 
     /// Whether the idle inhibitor service handles this command.
@@ -310,6 +318,15 @@ mod tests {
 
         assert!(!Command::IdleInhibitToggle.is_tray());
         assert!(!Command::AudioSetVolume(0.5).is_tray());
+    }
+
+    #[test]
+    fn power_profile_commands_are_classified_for_routing() {
+        assert!(Command::PowerProfileSet(PowerProfile::Performance).is_power_profiles());
+        assert!(Command::PowerProfileCycle.is_power_profiles());
+
+        assert!(!Command::IdleInhibitToggle.is_power_profiles());
+        assert!(!Command::AudioSetVolume(0.5).is_power_profiles());
     }
 
     #[test]

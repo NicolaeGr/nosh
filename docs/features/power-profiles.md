@@ -1,6 +1,8 @@
 # Power profiles
 
-Current state: not used. `src/meson.build` lists `astal-power-profiles-0.1`, but no source imports it. The rewrite adds it now because the user wants a power mode control in quick settings.
+Current state: implemented in `crates/nosh-core/src/power_profiles` and
+`crates/nosh-ui/src/quick_settings/toggles.rs`. The original Vala shell listed
+`astal-power-profiles-0.1` but never imported it.
 
 ## Astal library
 
@@ -37,9 +39,8 @@ If the service is absent, emit `Unavailable`. Retry with backoff. Do not fail st
 
 ```rust
 pub struct PowerProfilesModel {
-    pub available: bool,
     pub active: PowerProfile,
-    pub profiles: Vec<PowerProfileInfo>,
+    pub profiles: Vec<PowerProfile>,
     pub degraded: Option<String>,
 }
 
@@ -74,42 +75,35 @@ Holds are not needed for the quick settings control. Implement `hold_profile` on
 
 ## UI
 
-Place a fourth control in the quick settings toggle row. The row currently has DND, No Sleep, and VPN. A four-button row still fits the 260 px card if each button keeps the current `large-button` max width of 80 px. Use one of these designs:
+The control is one item in the quick settings toggle grid, after KDE Connect.
 
-### Recommended: cycling large button
+- The icon is `power-profile-{profile}-symbolic` and the status line shows the
+  active profile name.
+- Clicking the left side sends `PowerProfileCycle`. The daemon list order sets
+  the cycle order, and the last profile wraps to the first.
+- The disclosure arrow opens a list of the available profiles. Selecting one
+  sends `PowerProfileSet` and closes the list.
+- Balanced is the neutral state, so the toggle only gets the `on` class for
+  power-saver and performance.
+- The toggle hides entirely while the daemon is missing. It has no disabled
+  state, so a missing soft dependency does not leave a dead control in the
+  menu.
+- A non-empty `PerformanceDegraded` value appears in the toggle tooltip.
+- Opening the profile list closes the slider device lists, and closing quick
+  settings closes every dropdown.
 
-A `LargeButton` with:
-
-- Icon `power-profile-{profile}-symbolic`.
-- Status `Power Saver`, `Balanced`, or `Performance`.
-- Click cycles through the available profiles in the order `power-saver -> balanced -> performance -> power-saver`.
-- Tooltip shows the current profile and the `performance_degraded` reason when it is non-empty.
-- Disabled with a tooltip when the daemon is unavailable.
-- Active class only when the profile is not balanced? No. The control shows the current profile, not an on/off state. Do not use the `active` class.
-
-The status text is longer than 10 characters. The current `LargeButton` ticker scrolls. For the power control, prefer ellipsis plus a tooltip. Keep the ticker only if the design requires it.
-
-### Alternative: three-segment control
-
-A horizontal row of three small buttons inside one `LargeButton` area. This is clearer but takes more horizontal space. Do not use it in the 260 px card without a layout test.
-
-### Toggle row
-
-Keep the order:
-
-1. DND
-2. No Sleep
-3. Power profile
-4. VPN
-
-VPN stays disabled until a VPN service exists. If four buttons crowd the card, move the power control to its own row under the sliders. Do not shrink the touch targets.
+The list reuses the slider dropdown surface. One profile row shows a check mark
+for the active profile.
 
 ## Definition of done
 
-- The quick settings card shows the active power profile.
-- Clicking the control changes the profile through D-Bus.
+- The quick settings card shows the active power profile when the daemon is
+  present.
+- Clicking the control cycles the profile through D-Bus, and the disclosure
+  list sets a profile directly.
 - The icon and label update from `PropertiesChanged`.
-- A missing daemon disables the control without breaking the rest of quick settings.
+- A missing daemon hides the control without breaking the rest of quick
+  settings, and the service keeps retrying.
 - A `performance_degraded` value appears in the tooltip.
 - The control does not claim a profile change before the daemon confirms it.
 - The service is part of the default core startup, not an optional future module.

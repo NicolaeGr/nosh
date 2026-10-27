@@ -18,7 +18,9 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
-use nosh_core::{AudioModel, BatteryModel, BrightnessDevice, Core, IdleInhibitState};
+use nosh_core::{
+    AudioModel, BatteryModel, BrightnessDevice, Core, IdleInhibitState, PowerProfilesModel,
+};
 
 use header::Header;
 use sliders::Sliders;
@@ -162,10 +164,15 @@ impl QuickSettingsWindow {
     pub fn set_idle_inhibit(&self, state: &IdleInhibitState) {
         self.inner.toggles.render_idle_inhibit(state);
     }
+
+    pub fn set_power_profiles(&self, model: Option<&PowerProfilesModel>) {
+        self.inner.toggles.render_power_profiles(model);
+    }
 }
 
 fn close_window(window: &gtk::ApplicationWindow, inner: &Inner) {
     inner.sliders.close_dropdowns();
+    inner.toggles.close_dropdowns();
     inner.open.set(false);
     gtk::prelude::GtkWindowExt::set_focus(window, None::<&gtk::Widget>);
     window.set_visible(false);

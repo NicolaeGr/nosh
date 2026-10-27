@@ -63,16 +63,16 @@ The scrolling text is a custom ticker. It is not a `Gtk.ScrolledWindow`.
 
 The toggles:
 
-| Type | Icon | Label |
-| --- | --- | --- |
-| `dnd` | `notifications-disabled-symbolic` | `DND` |
-| `sleep` | `eye-slash-symbolic` | `No Sleep` |
+| Type    | Icon                               | Label                                       |
+| ------- | ---------------------------------- | ------------------------------------------- |
+| `dnd`   | `notifications-disabled-symbolic`  | `DND`                                       |
+| `sleep` | `eye-slash-symbolic`               | `No Sleep`                                  |
 | `power` | `power-profile-{profile}-symbolic` | `Power Saver`, `Balanced`, or `Performance` |
-| `vpn` | `security-high-symbolic` | `VPN` |
+| `vpn`   | `security-high-symbolic`           | `VPN`                                       |
 
-All four currently only flip local state. DND does not change notification behavior. Sleep does not toggle the idle inhibitor. VPN does nothing. The power control does not exist yet.
+All four currently only flip local state. DND does not change notification behavior. Sleep does not toggle the idle inhibitor. VPN does nothing. The power control follows `features/power-profiles.md`.
 
-Decision: DND and No Sleep are wired to the core. Power profiles are added now. VPN stays disabled until a VPN service exists.
+Decision: DND and No Sleep are wired to the core. Power profiles are wired when the daemon is present. VPN stays disabled until a VPN service exists.
 
 ### Sliders
 

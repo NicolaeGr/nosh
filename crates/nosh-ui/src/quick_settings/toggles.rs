@@ -6,39 +6,41 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::Duration;
 
-use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
-use nosh_core::{Command, Core, IdleInhibitState, PowerProfile, PowerProfilesModel};
+use nosh_core::{Command, Core, IdleInhibitState, NetworkModel, PowerProfile, PowerProfilesModel};
+
+use super::dropdown::Dropdown;
+use super::network::{NetworkPanel, VpnPanel};
 
 pub struct Toggles {
     root: gtk::Box,
     core: Rc<Core>,
+    airplane: Toggle,
+    wifi: Toggle,
+    vpn: Toggle,
+    network: Rc<NetworkPanel>,
+    vpn_page: Rc<VpnPanel>,
+    network_model: Rc<RefCell<NetworkModel>>,
     caffeine: Toggle,
     caffeine_active: Rc<Cell<bool>>,
     power: Toggle,
     power_list: gtk::Box,
-    power_dropdown: PowerDropdown,
+    power_dropdown: Dropdown,
     power_rows: RefCell<Vec<PowerRow>>,
     power_model: RefCell<Option<PowerProfilesModel>>,
 }
 
 impl Toggles {
     pub fn new(core: Rc<Core>) -> Self {
-        let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        root.add_css_class("QuickSettingsToggles");
         root.set_margin_bottom(10);
 
-        let grid = gtk::Grid::new();
-        grid.add_css_class("QuickSettingsToggles");
-        grid.set_column_spacing(6);
-        grid.set_row_spacing(6);
-        grid.set_column_homogeneous(true);
-
-        let wifi = Toggle::new("Wi-Fi", "network-wireless-symbolic", "Off", true);
+        let wifi = Toggle::new("Network", "network-wireless-symbolic", "Off", true);
         let bluetooth = Toggle::new("Bluetooth", "bluetooth-symbolic", "Off", true);
-        let vpn = Toggle::new("VPN", "security-high-symbolic", "Off", true);
+        let vpn = Toggle::new("VPN", "network-vpn-symbolic", "Off", true);
         let kde = Toggle::new("KDE Connect", "phone-symbolic", "Not available", true);
         let power = Toggle::new(
             "Power Profile",
@@ -46,7 +48,7 @@ impl Toggles {
             "Balanced",
             true,
         );
-        let night = Toggle::new("Night Light", "night-light-symbolic", "Off", false);
+        let airplane = Toggle::new("Airplane", "airplane-mode-disabled-symbolic", "Off", false);
         let dnd = Toggle::new(
             "Do Not Disturb",
             "notifications-disabled-symbolic",
@@ -60,31 +62,85 @@ impl Toggles {
             false,
         );
 
-        wifi.set_available(false, "Wi-Fi support is not available yet");
+        wifi.set_available(false, "No Wi-Fi hardware");
+        vpn.set_available(false, "No VPN profiles configured");
         bluetooth.set_available(false, "Bluetooth support is not available yet");
-        vpn.set_available(false, "VPN support is not available");
         kde.set_available(false, "KDE Connect support is not available yet");
-        night.set_available(false, "Night Light support is not available yet");
         dnd.set_available(false, "Notifications are not available yet");
+        airplane.set_available(false, "Airplane mode is not available");
+        airplane.set_tooltip(Some(
+            "Disables Wi-Fi, mobile, and Bluetooth radios. Wired connections stay on.",
+        ));
 
-        let power_list = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        power_list.add_css_class("SliderDropdown");
-        let power_revealer = gtk::Revealer::new();
-        power_revealer.set_transition_type(gtk::RevealerTransitionType::SlideDown);
-        power_revealer.set_transition_duration(300);
-        power_revealer.set_reveal_child(false);
-        power_revealer.set_child(Some(&power_list));
         // Hidden until the daemon reports a state.
-        power_revealer.set_visible(false);
         power.widget().set_visible(false);
 
-        let power_dropdown = PowerDropdown {
-            grid: grid.clone(),
-            revealer: power_revealer.clone(),
-            disclosure: power.disclosure().cloned(),
-            later: vec![dnd.widget().clone(), caffeine.widget().clone()],
-            open: Rc::new(Cell::new(false)),
+        let row0 = toggle_row(&wifi, &bluetooth);
+        let row1 = toggle_row(&vpn, &kde);
+        let row2 = toggle_row(&power, &airplane);
+        let row3 = toggle_row(&dnd, &caffeine);
+        for row in [&row0, &row1, &row2, &row3] {
+            root.append(row);
+        }
+
+        let power_list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        power_list.add_css_class("PowerProfileList");
+        power_list.add_css_class("SliderDropdown");
+        let power_dropdown = Dropdown::new(&root, &row2, power.disclosure());
+        power_dropdown.set_child(&power_list);
+
+        let network = NetworkPanel::new(Rc::clone(&core), &root, &row0, wifi.disclosure());
+        let vpn_page = VpnPanel::new(Rc::clone(&core), &root, &row1, vpn.disclosure());
+        let network_model = Rc::new(RefCell::new(NetworkModel::default()));
+
+        {
+            let core = Rc::clone(&core);
+            let airplane_model = Rc::clone(&network_model);
+            airplane.button().connect_clicked(move |_| {
+                let enabled = airplane_model.borrow().airplane.enabled;
+                core.send(Command::AirplaneModeSet(!enabled));
+            });
+        }
+
+        let open_network: Rc<dyn Fn()> = {
+            let network = Rc::clone(&network);
+            let vpn_page = Rc::clone(&vpn_page);
+            let power = power_dropdown.clone();
+            Rc::new(move || {
+                let open = !network.is_open();
+                vpn_page.set_open(false);
+                power.set_open(false);
+                network.set_open(open);
+            })
         };
+        {
+            let open = Rc::clone(&open_network);
+            wifi.button().connect_clicked(move |_| open());
+        }
+        if let Some(disclosure) = wifi.disclosure() {
+            let open = Rc::clone(&open_network);
+            disclosure.connect_clicked(move |_| open());
+        }
+
+        let open_vpn: Rc<dyn Fn()> = {
+            let network = Rc::clone(&network);
+            let vpn_page = Rc::clone(&vpn_page);
+            let power = power_dropdown.clone();
+            Rc::new(move || {
+                let open = !vpn_page.is_open();
+                network.set_open(false);
+                power.set_open(false);
+                vpn_page.set_open(open);
+            })
+        };
+        {
+            let open = Rc::clone(&open_vpn);
+            vpn.button().connect_clicked(move |_| open());
+        }
+        if let Some(disclosure) = vpn.disclosure() {
+            let open = Rc::clone(&open_vpn);
+            disclosure.connect_clicked(move |_| open());
+        }
 
         let caffeine_active = Rc::new(Cell::new(false));
         {
@@ -100,33 +156,27 @@ impl Toggles {
                 core.send(Command::PowerProfileCycle);
             });
         }
-        if let Some(disclosure) = &power_dropdown.disclosure {
+        if let Some(disclosure) = power.disclosure() {
+            let network = Rc::clone(&network);
+            let vpn_page = Rc::clone(&vpn_page);
             let dropdown = power_dropdown.clone();
-            disclosure.connect_clicked(move |_| dropdown.toggle());
+            disclosure.connect_clicked(move |_| {
+                let open = !dropdown.is_open();
+                network.set_open(false);
+                vpn_page.set_open(false);
+                dropdown.set_open(open);
+            });
         }
-
-        // The drop-down lives on the row under the power toggle. The toggles
-        // below it move down while it is open, so the list opens where the
-        // control sits instead of under the last row.
-        for (toggle, column, row) in [
-            (&wifi, 0, 0),
-            (&bluetooth, 1, 0),
-            (&vpn, 0, 1),
-            (&kde, 1, 1),
-            (&power, 0, 2),
-            (&night, 1, 2),
-            (&dnd, 0, 3),
-            (&caffeine, 1, 3),
-        ] {
-            grid.attach(toggle.widget(), column, row, 1, 1);
-        }
-        grid.attach(&power_revealer, 0, 3, 2, 1);
-
-        root.append(&grid);
 
         let toggles = Self {
             root,
             core,
+            airplane,
+            wifi,
+            vpn,
+            network,
+            vpn_page,
+            network_model,
             caffeine,
             caffeine_active,
             power,
@@ -168,7 +218,6 @@ impl Toggles {
         let Some(model) = model else {
             self.power.widget().set_visible(false);
             self.power_dropdown.set_open(false);
-            self.power_dropdown.revealer.set_visible(false);
             self.power.set_on(false);
             *self.power_model.borrow_mut() = None;
             return;
@@ -207,8 +256,109 @@ impl Toggles {
         }
     }
 
+    /// Renders the network toggles from the core state.
+    pub fn render_network(&self, model: &NetworkModel) {
+        *self.network_model.borrow_mut() = model.clone();
+
+        let airplane = &model.airplane;
+        self.airplane.set_available(
+            airplane.available,
+            "Airplane mode needs NetworkManager or an rfkill radio",
+        );
+        self.airplane.set_on(airplane.enabled);
+        self.airplane.set_icon(airplane.icon_name());
+        self.airplane.set_status(if airplane.transitioning {
+            "Switching"
+        } else if airplane.enabled {
+            "On"
+        } else {
+            "Off"
+        });
+        self.airplane.set_tooltip(Some(
+            "Disables Wi-Fi, mobile, and Bluetooth radios. Wired connections stay on.",
+        ));
+
+        let wifi = &model.wifi;
+        // The toggle opens the network page, which also controls wired devices.
+        // Keep it usable when NetworkManager is up but no Wi-Fi radio exists.
+        self.wifi
+            .set_available(model.available, "NetworkManager is not available");
+        self.wifi
+            .set_on(wifi.available && wifi.enabled && !airplane.enabled);
+        let wired = model.wired.iter().find(|device| device.connected);
+        let icon: &str = if airplane.enabled {
+            airplane.icon_name()
+        } else if let Some(device) = wired {
+            device.icon_name()
+        } else if wifi.available {
+            wifi.icon_name.as_str()
+        } else if let Some(device) = model.wired.first() {
+            device.icon_name()
+        } else {
+            "network-wireless-offline-symbolic"
+        };
+        self.wifi.set_icon(icon);
+        self.wifi.set_on(
+            !airplane.enabled
+                && (wired.is_some()
+                    || (wifi.available && wifi.enabled && wifi.active_ssid.is_some())),
+        );
+        self.wifi.set_status(if airplane.enabled {
+            "Airplane"
+        } else if let Some(device) = wired {
+            device.title()
+        } else if !wifi.available {
+            model
+                .wired
+                .first()
+                .map(|device| device.status())
+                .unwrap_or("No network")
+        } else if !wifi.enabled {
+            "Wi-Fi off"
+        } else {
+            wifi.active_ssid.as_deref().unwrap_or("Disconnected")
+        });
+
+        let vpn = &model.vpn;
+        let tooltip = match vpn.active_name() {
+            Some(vpn) => format!("{} · VPN: {vpn}", model.summary()),
+            None => model.summary().to_string(),
+        };
+        self.wifi.set_tooltip(Some(&tooltip));
+
+        let vpn = &model.vpn;
+        self.vpn.set_available(
+            !vpn.profiles.is_empty(),
+            "No VPN profiles configured in NetworkManager",
+        );
+        self.vpn.set_on(vpn.active_name().is_some());
+        self.vpn.set_icon("network-vpn-symbolic");
+        self.vpn.set_status(if let Some(name) = vpn.active_name() {
+            name
+        } else if vpn.profiles.is_empty() {
+            "Not configured"
+        } else {
+            "Off"
+        });
+        self.vpn.set_tooltip(Some(if vpn.profiles.is_empty() {
+            "No VPN profiles configured in NetworkManager"
+        } else {
+            "Open the VPN list to choose a connection"
+        }));
+
+        self.network.render(model);
+        self.vpn_page.render(model);
+    }
+
+    pub fn show_network_error(&self, message: &str) {
+        self.network.show_message(message);
+        self.vpn_page.show_message(message);
+    }
+
     pub fn close_dropdowns(&self) {
         self.power_dropdown.set_open(false);
+        self.network.set_open(false);
+        self.vpn_page.set_open(false);
     }
 
     fn rebuild_power_rows(&self, profiles: &[PowerProfile]) {
@@ -255,78 +405,18 @@ impl Toggles {
     }
 }
 
-/// The power profile list and the grid positions it needs while open.
-#[derive(Clone)]
-struct PowerDropdown {
-    grid: gtk::Grid,
-    revealer: gtk::Revealer,
-    disclosure: Option<gtk::Button>,
-    later: Vec<gtk::Box>,
-    open: Rc<Cell<bool>>,
-}
-
-impl PowerDropdown {
-    fn toggle(&self) {
-        self.set_open(!self.open.get());
-    }
-
-    fn set_open(&self, open: bool) {
-        if self.open.get() == open {
-            return;
-        }
-        self.open.set(open);
-
-        if let Some(disclosure) = &self.disclosure {
-            if open {
-                disclosure.add_css_class("is-open");
-            } else {
-                disclosure.remove_css_class("is-open");
-            }
-        }
-
-        if open {
-            self.layout_later(true);
-            self.revealer.set_visible(true);
-            self.revealer.set_reveal_child(true);
-            return;
-        }
-
-        self.revealer.set_reveal_child(false);
-        // Move the rows back up once the list has finished collapsing, so the
-        // shrinking list does not overlap them.
-        let grid = self.grid.clone();
-        let later = self.later.clone();
-        let revealer = self.revealer.clone();
-        let still_open = Rc::clone(&self.open);
-        glib::timeout_add_local_once(Duration::from_millis(320), move || {
-            if still_open.get() {
-                return;
-            }
-            revealer.set_visible(false);
-            layout_later(&grid, &later, false);
-        });
-    }
-
-    fn layout_later(&self, open: bool) {
-        layout_later(&self.grid, &self.later, open);
-    }
-}
-
-fn layout_later(grid: &gtk::Grid, later: &[gtk::Box], open: bool) {
-    for widget in later {
-        grid.remove(widget);
-    }
-
-    let row = if open { 4 } else { 3 };
-    for (column, widget) in later.iter().enumerate() {
-        grid.attach(widget, column as i32, row, 1, 1);
-    }
-}
-
 struct PowerRow {
     profile: PowerProfile,
     button: gtk::Button,
     check: gtk::Image,
+}
+
+fn toggle_row(left: &Toggle, right: &Toggle) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    row.set_homogeneous(true);
+    row.append(left.widget());
+    row.append(right.widget());
+    row
 }
 
 struct Toggle {

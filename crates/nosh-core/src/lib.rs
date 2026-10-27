@@ -16,6 +16,7 @@ pub mod hyprland;
 pub mod idle_inhibit;
 pub mod menu;
 pub mod monitors;
+pub mod network;
 pub mod origin;
 pub mod paths;
 pub mod power_profiles;
@@ -48,7 +49,7 @@ pub use error::{
     BackendError, BrightnessError, CoreError, EventParseError, MonitorError, PathError, StatsError,
 };
 pub use event::{
-    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent,
+    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, NetworkEvent,
     PowerProfilesEvent, Service, Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
 };
 pub use idle_inhibit::{
@@ -66,6 +67,13 @@ pub use monitors::{
     extend, mirror, panning, preset_layout, resolve_target, score, select_monitor, single, Corner,
     LayoutPreset, MonitorBackend, MonitorBackendEvent, MonitorCapabilities, MonitorId,
     MonitorLayout, MonitorModel, MonitorPolicy, MonitorService, MonitorServiceConfig, Transform,
+};
+pub use network::{
+    group_access_points, read_rfkill_devices, rfkill_available, security_from_flags, signal_icon,
+    sort_networks, ssid_to_utf8, wifi_icon, AccessPointModel, AirplaneModeModel, Connectivity,
+    DeviceState, NetworkBackend, NetworkBackendEvent, NetworkBackendRef, NetworkManagerBackend,
+    NetworkModel, NetworkService, NetworkServiceConfig, RfkillDevice, RfkillKind, SecurityType,
+    VpnKind, VpnModel, VpnProfileModel, WifiMode, WifiModel, WiredDeviceModel, RFKILL_ROOT,
 };
 pub use origin::ChangeOrigin;
 pub use paths::{HyprlandPaths, NoshPaths};

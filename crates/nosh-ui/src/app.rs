@@ -10,9 +10,10 @@ use gtk4 as gtk;
 use nosh_core::{
     volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel,
     BrightnessDevice, BrightnessEvent, ChangeOrigin, Command, Core, EndpointKind, Event,
-    IdleInhibitEvent, IdleInhibitState, LayoutPreset, MenuEvent, PowerProfilesEvent,
-    PowerProfilesModel, SystemStats, SystemStatsEvent, TrayEvent, TrayItemModel, TrayMenu,
-    WorkspaceEvent, WorkspaceSnapshot, BRIGHTNESS_STEP, DIM_PERCENT, VOLUME_STEP,
+    IdleInhibitEvent, IdleInhibitState, LayoutPreset, MenuEvent, NetworkEvent, NetworkModel,
+    PowerProfilesEvent, PowerProfilesModel, SystemStats, SystemStatsEvent, TrayEvent,
+    TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot, BRIGHTNESS_STEP, DIM_PERCENT,
+    VOLUME_STEP,
 };
 
 use crate::bar::BarWindow;
@@ -58,6 +59,7 @@ struct Ui {
     battery: RefCell<BatteryModel>,
     idle_inhibit: RefCell<IdleInhibitState>,
     power_profiles: RefCell<Option<PowerProfilesModel>>,
+    network: RefCell<NetworkModel>,
     brightness: RefCell<Vec<BrightnessDevice>>,
     tray: RefCell<Vec<TrayItemModel>>,
     tray_menus: RefCell<HashMap<String, TrayMenu>>,
@@ -80,6 +82,7 @@ impl Ui {
             battery: RefCell::new(BatteryModel::default()),
             idle_inhibit: RefCell::new(IdleInhibitState::default()),
             power_profiles: RefCell::new(None),
+            network: RefCell::new(NetworkModel::default()),
             brightness: RefCell::new(Vec::new()),
             tray: RefCell::new(Vec::new()),
             tray_menus: RefCell::new(HashMap::new()),
@@ -126,6 +129,7 @@ impl Ui {
             bar.set_audio(&self.audio.borrow());
             bar.set_battery(&self.battery.borrow());
             bar.set_idle_inhibit(&self.idle_inhibit.borrow());
+            bar.set_network(&self.network.borrow());
             bar.set_tray(&self.tray.borrow(), &self.tray_menus.borrow());
             bar.present();
             self.bars.borrow_mut().insert(connector, bar);
@@ -165,6 +169,14 @@ impl Ui {
     fn render_power_profiles(&self) {
         let model = self.power_profiles.borrow();
         self.quick_settings.set_power_profiles(model.as_ref());
+    }
+
+    fn render_network(&self) {
+        let model = self.network.borrow();
+        for bar in self.bars.borrow_mut().values_mut() {
+            bar.set_network(&model);
+        }
+        self.quick_settings.set_network(&model);
     }
 
     fn render_audio(&self) {
@@ -279,6 +291,10 @@ impl Ui {
                     *self.power_profiles.borrow_mut() = Some(power_profiles);
                     self.render_power_profiles();
                 }
+                if let Some(network) = snapshot.network {
+                    *self.network.borrow_mut() = network;
+                    self.render_network();
+                }
                 if let Some(brightness) = snapshot.brightness {
                     *self.brightness.borrow_mut() = brightness;
                     self.render_brightness();
@@ -297,6 +313,7 @@ impl Ui {
             Event::Battery(event) => self.apply_battery_event(event),
             Event::IdleInhibit(event) => self.apply_idle_inhibit_event(event),
             Event::PowerProfiles(event) => self.apply_power_profiles_event(event),
+            Event::Network(event) => self.apply_network_event(event),
             Event::Tray(event) => self.apply_tray_event(event),
             Event::Menu(event) => self.apply_menu_event(event),
             _ => {}
@@ -531,6 +548,24 @@ impl Ui {
         }
 
         self.render_power_profiles();
+    }
+
+    fn apply_network_event(&self, event: NetworkEvent) {
+        match event {
+            NetworkEvent::Snapshot(model) | NetworkEvent::Changed(model) => {
+                *self.network.borrow_mut() = model;
+            }
+            NetworkEvent::Unavailable => {
+                *self.network.borrow_mut() = NetworkModel::default();
+            }
+            NetworkEvent::OperationFailed(message) => {
+                self.quick_settings.set_network_error(&message);
+                return;
+            }
+            NetworkEvent::ScanStarted | NetworkEvent::ScanFinished => return,
+        }
+
+        self.render_network();
     }
 
     fn apply_menu_event(&self, event: MenuEvent) {

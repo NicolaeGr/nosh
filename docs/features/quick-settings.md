@@ -72,7 +72,13 @@ The toggles:
 
 All four currently only flip local state. DND does not change notification behavior. Sleep does not toggle the idle inhibitor. VPN does nothing. The power control follows `features/power-profiles.md`.
 
-Decision: DND and No Sleep are wired to the core. Power profiles are wired when the daemon is present. VPN stays disabled until a VPN service exists.
+Decision: DND and No Sleep are wired to the core. Power profiles are wired when the daemon is present. VPN uses the `NetworkService` profile list and opens its own dropdown. Airplane mode is a separate toggle that disables Wi-Fi, mobile, and rfkill radios without touching wired interfaces.
+
+The grid order is Network, Bluetooth, VPN, KDE Connect, Power Profile, Airplane, DND, and Caffeine. Night Light is not part of the panel. The Network tile shows a connected wired interface first, then the Wi-Fi SSID, and opens the network page.
+
+Each dropdown is a `gtk::Revealer` inserted inline after the row that owns the
+toggle, so it appears under that row and pushes the following rows down. Only
+one dropdown is open at a time.
 
 ### Sliders
 
@@ -120,7 +126,8 @@ Wire DND and No Sleep:
 - DND reads `NotificationModel.dont_disturb` and sends `NotificationSetDnd(!dnd)`.
 - No Sleep reads `IdleInhibitModel.active` and sends `IdleInhibitSet(!active)`.
 - Power cycles through the available profiles from `PowerProfilesService` and sends `PowerProfileSet(next)`.
-- VPN stays disabled until a `VpnService` exists. Show a tooltip explaining that VPN support is not available. Do not flip a local boolean.
+- VPN reads the NetworkManager profile list from `NetworkService` and opens its own dropdown.
+- Airplane mode sends `AirplaneModeSet(bool)`; the core disables NetworkManager Wi-Fi and WWAN and soft-blocks rfkill radios. Wired devices are never touched.
 
 The toggle button should show its `active` class from the core state, not from a local click. Clicking sends a command and waits for the event. This prevents the button from lying when the service fails.
 
@@ -230,7 +237,8 @@ Do not keep the max-height animation CSS. Keep the visual result of a 300 ms sli
 - DND controls notification popups.
 - No Sleep controls the idle inhibitor.
 - The power control changes the active UPower power profile and shows the current one.
-- VPN is visibly disabled until a VPN service exists.
+- VPN lists NetworkManager profiles in its own dropdown and toggles activation.
+- Airplane mode disables Wi-Fi, mobile, and every rfkill radio, and leaves wired interfaces alone.
 - Opening one dropdown closes the other two.
 - Closing quick settings closes all dropdowns.
 - Dropdowns animate with a `Revealer`, not a shared CSS max-height hack.

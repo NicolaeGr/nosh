@@ -45,12 +45,12 @@ window.QuickSettings {
 }
 
 .QuickSettingsBattery .Percent {
-    font-size: 0.875em;
+    font-size: 0.9375em;
 }
 
 .QuickSettingsBattery .Remaining {
     color: @bar_muted;
-    font-size: 0.75em;
+    font-size: 0.8125em;
 }
 
 .QuickSettingsSession {
@@ -79,7 +79,7 @@ window.QuickSettings {
 }
 
 .QuickSettingsSession .Name {
-    font-size: 0.875em;
+    font-size: 0.9375em;
 }
 
 /* Toggle grid */
@@ -142,12 +142,12 @@ window.QuickSettings {
 
 .QuickToggleName {
     color: @bar_ink;
-    font-size: 0.875em;
+    font-size: 0.9375em;
 }
 
 .QuickToggleStatus {
     color: @bar_muted;
-    font-size: 0.75em;
+    font-size: 0.8125em;
 }
 
 .QuickToggleDivider {
@@ -203,12 +203,12 @@ window.QuickSettings {
 }
 
 .PowerProfileName {
-    font-size: 0.875em;
+    font-size: 0.9375em;
 }
 
 .PowerProfileCheck {
     -gtk-icon-size: 0.75em;
-    color: @accent_bg_color;
+    color: @bar_accent;
 }
 
 /* Sliders */
@@ -222,8 +222,9 @@ window.QuickSettings {
 
 .SliderBlockName {
     color: @bar_muted;
-    font-size: 0.75em;
+    font-size: 0.8125em;
     letter-spacing: 0.08em;
+    line-height: 1.4;
 }
 
 .SliderBlockExpand {
@@ -280,7 +281,7 @@ window.QuickSettings {
 .SliderValue {
     min-width: 1.875em;
     color: @bar_muted;
-    font-size: 0.8125em;
+    font-size: 0.875em;
 }
 
 .QuickSlider {
@@ -349,7 +350,7 @@ window.QuickSettings {
 
 .EndpointName {
     color: @bar_muted;
-    font-size: 0.8125em;
+    font-size: 0.875em;
 }
 
 .EndpointRow.is-default .EndpointName {
@@ -388,4 +389,212 @@ window.QuickSettings {
     background-color: @bar_accent_strong;
     border-left-color: alpha(@accent_bg_color, 0.72);
     border-bottom-color: alpha(@accent_bg_color, 0.72);
+}
+
+/* Network and VPN dropdowns share the .SliderDropdown surface. */
+
+.NetworkHeader {
+    padding: 0.375em 0.5em 0.5em 0.5em;
+}
+
+.NetworkTitle {
+    color: @bar_muted;
+    font-size: 0.8125em;
+    letter-spacing: 0.1em;
+    line-height: 1.4;
+    min-height: 1.3em;
+    text-transform: uppercase;
+}
+
+.NetworkSwitchLabel {
+    color: @bar_muted;
+    font-size: 0.8125em;
+}
+
+.NetworkSwitch {
+    min-width: 1.75em;
+    min-height: 1em;
+    padding: 0;
+    background-color: @bar_row_hover;
+    background-image: none;
+    border: none;
+    border-radius: 9999px;
+    box-shadow: none;
+    color: @bar_ink;
+}
+
+.NetworkSwitch:checked {
+    background-color: @bar_accent_strong;
+}
+
+.NetworkSwitch > slider {
+    min-width: 0.875em;
+    min-height: 0.875em;
+    margin: 0.0625em;
+    padding: 0;
+    background-color: @bar_ink;
+    background-image: none;
+    border: none;
+    border-radius: 9999px;
+    box-shadow: none;
+}
+
+.NetworkSwitch > image {
+    -gtk-icon-size: 0.625em;
+    color: transparent;
+}
+
+.NetworkIconButton {
+    min-width: 1.5em;
+    min-height: 1.5em;
+    padding: 0;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0.375em 0 0.375em 0;
+    box-shadow: none;
+    color: @bar_muted;
+}
+
+.NetworkIconButton:hover {
+    color: @bar_ink;
+    background-color: @bar_row_hover;
+}
+
+.NetworkIconButton image {
+    -gtk-icon-size: 0.8125em;
+}
+
+.NetworkList {
+    padding: 0;
+}
+
+.NetworkSection {
+    color: @bar_muted;
+    font-size: 0.75em;
+    letter-spacing: 0.1em;
+    line-height: 1.4;
+    min-height: 1.4em;
+    text-transform: uppercase;
+    padding: 0.5em 0.5em 0.25em 0.5em;
+}
+
+.NetworkItem {
+    min-height: 1.75em;
+    padding: 0.4375em 0.5em;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0.375em 0 0.375em 0;
+    box-shadow: none;
+    color: @bar_ink;
+}
+
+.NetworkItem:hover {
+    background-color: @bar_row_hover;
+}
+
+.NetworkName {
+    color: @bar_ink;
+    font-size: 0.875em;
+}
+
+.NetworkStatus {
+    color: @bar_muted;
+    font-size: 0.75em;
+}
+
+.NetworkStatus.Connected {
+    color: @bar_accent;
+}
+
+.NetworkStatus.Failed {
+    color: @error_color;
+}
+
+.NetworkCheck {
+    -gtk-icon-size: 0.75em;
+    color: @bar_accent;
+}
+
+.NetworkLock {
+    -gtk-icon-size: 0.75em;
+    color: @bar_muted;
+}
+
+.NetworkEmpty {
+    color: @bar_muted;
+    font-size: 0.8125em;
+    line-height: 1.35;
+    padding: 0.375em 0.5em;
+}
+
+.NetworkMessage {
+    color: @error_color;
+    font-size: 0.8125em;
+    line-height: 1.35;
+    padding: 0.375em 0.5em 0 0.5em;
+}
+
+.NetworkPassword {
+    padding: 0.25em 0.5em 0.5em 0.5em;
+}
+
+.NetworkPassword entry {
+    min-height: 1.5em;
+    padding: 0.1875em 0.5em;
+    background-color: @theme_bg_color;
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 0.375em 0 0.375em 0;
+    outline-style: none;
+    outline-width: 0;
+    box-shadow: none;
+    color: @bar_ink;
+}
+
+.NetworkPassword entry:focus,
+.NetworkPassword entry:focus-within,
+.NetworkPassword entry:focus-visible {
+    border-width: 0.125em;
+    border-color: @bar_accent;
+    outline-style: none;
+    outline-width: 0;
+    box-shadow: none;
+}
+
+.NetworkPassword .NetworkPasswordButton {
+    min-height: 1.25em;
+    padding: 0.1875em 0.625em;
+    font-size: 0.8125em;
+    border: 0.0625em solid transparent;
+    border-radius: 0.375em 0 0.375em 0;
+    box-shadow: none;
+}
+
+.NetworkPassword .NetworkPasswordButton.suggested-action {
+    background-color: @bar_accent_strong;
+    color: @bar_ink;
+}
+
+.NetworkPassword .NetworkPasswordButton:hover {
+    background-color: @bar_row_hover;
+}
+
+.NetworkPassword .NetworkPasswordButton.suggested-action:hover {
+    background-color: @bar_accent_soft;
+}
+
+.NetworkConfirmDetail {
+    color: @bar_muted;
+    font-size: 0.75em;
+    line-height: 1.35;
+}
+
+.NetworkPassword .NetworkPasswordButton.destructive-action {
+    background-color: alpha(@error_color, 0.24);
+    color: @bar_ink;
+}
+
+.NetworkPassword .NetworkPasswordButton.destructive-action:hover {
+    background-color: alpha(@error_color, 0.36);
 }

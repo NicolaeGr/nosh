@@ -6,7 +6,9 @@
 //! The UI owns the open state. Services own the toggle states, so a control
 //! only changes after the core reports the new value.
 
+mod dropdown;
 mod header;
+mod network;
 mod sliders;
 mod toggles;
 
@@ -19,7 +21,8 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use nosh_core::{
-    AudioModel, BatteryModel, BrightnessDevice, Core, IdleInhibitState, PowerProfilesModel,
+    AudioModel, BatteryModel, BrightnessDevice, Core, IdleInhibitState, NetworkModel,
+    PowerProfilesModel,
 };
 
 use header::Header;
@@ -167,6 +170,14 @@ impl QuickSettingsWindow {
 
     pub fn set_power_profiles(&self, model: Option<&PowerProfilesModel>) {
         self.inner.toggles.render_power_profiles(model);
+    }
+
+    pub fn set_network(&self, model: &NetworkModel) {
+        self.inner.toggles.render_network(model);
+    }
+
+    pub fn set_network_error(&self, message: &str) {
+        self.inner.toggles.show_network_error(message);
     }
 }
 

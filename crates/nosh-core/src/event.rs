@@ -4,6 +4,7 @@ use crate::brightness::model::{BrightnessDevice, BrightnessDeviceId};
 use crate::idle_inhibit::model::IdleInhibitState;
 use crate::menu::MenuEvent;
 use crate::monitors::MonitorLayout;
+use crate::network::model::NetworkModel;
 use crate::origin::ChangeOrigin;
 use crate::power_profiles::model::PowerProfilesModel;
 use crate::stats::model::SystemStats;
@@ -27,6 +28,7 @@ pub enum Event {
     SystemStats(SystemStatsEvent),
     IdleInhibit(IdleInhibitEvent),
     PowerProfiles(PowerProfilesEvent),
+    Network(NetworkEvent),
     Tray(TrayEvent),
     Menu(MenuEvent),
     ServiceAvailability(Service, bool),
@@ -46,6 +48,8 @@ pub struct Snapshot {
     pub idle_inhibit: Option<IdleInhibitState>,
     pub idle_inhibit_backend: Option<&'static str>,
     pub power_profiles: Option<PowerProfilesModel>,
+    pub network: Option<NetworkModel>,
+    pub network_backend: Option<&'static str>,
     pub tray: Option<Vec<TrayItemModel>>,
     pub tray_backend: Option<&'static str>,
 }
@@ -61,6 +65,7 @@ pub enum Service {
     SystemStats,
     IdleInhibit,
     PowerProfiles,
+    Network,
     Tray,
 }
 
@@ -202,6 +207,23 @@ pub enum PowerProfilesEvent {
     /// The daemon accepted a new profile or reported a property change.
     Changed(PowerProfilesModel),
     /// The daemon is missing or the connection is down.
+    Unavailable,
+}
+
+/// The network state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NetworkEvent {
+    /// Fresh state after startup or a NetworkManager reconnect.
+    Snapshot(NetworkModel),
+    /// The state changed. The model is complete for the requested detail level.
+    Changed(NetworkModel),
+    /// A scan started. The next changed event carries the new access points.
+    ScanStarted,
+    /// A scan finished or timed out.
+    ScanFinished,
+    /// A user action failed, for example a wrong password.
+    OperationFailed(String),
+    /// NetworkManager is missing or the connection is down.
     Unavailable,
 }
 

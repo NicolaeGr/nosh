@@ -269,7 +269,10 @@ Content:
 - Click an enterprise network with no profile: show an error message, do not attempt activation.
 - Empty state `No WiFi networks available` with class `empty-state`.
 
-Add a `gtk::PasswordEntry` dialog or a small `gtk::Window` with a password entry, a Cancel button, and a Connect button. Do not put the password in a tooltip or a log.
+Add a `gtk::PasswordEntry` inside the dropdown, inserted under the selected
+network row, with a Cancel button and a Connect button. The quick settings window
+takes an exclusive keyboard grab, so a separate dialog cannot receive typing. Do
+not put the password in a tooltip or a log.
 
 ## CSS
 
@@ -288,3 +291,57 @@ Keep the `.QuickSettings-wifi`, `.network-item`, `.network-button`, `.network-na
 - The switch enables and disables Wi-Fi.
 - A null BSSID never crashes or loses the active access point.
 - No NetworkManager, libnm, or blocking D-Bus call runs on the GTK thread.
+
+## Wired, VPN, and airplane mode
+
+These extend the model above in the Rust rewrite.
+
+### Wired
+
+`WiredDeviceModel` carries the interface name, `DeviceState`, carrier, connection
+name, IPv4 address, and speed. `enabled` is user intent, not the device state, so
+an unplugged cable does not read as "off". Turning an interface off calls
+`Device.Disconnect`; turning it on activates the first available connection.
+Wired interfaces have no rfkill entry and airplane mode never touches them.
+
+### VPN
+
+VPN becomes part of `NetworkService`, following PR #478. `VpnModel` lists the
+NetworkManager profiles whose type is `vpn` or `wireguard`, keyed by UUID, with
+`active` and `activation_failed`. Activation calls `ActivateConnection` with a
+null device; deactivation finds the active connection by UUID. The quick
+settings VPN toggle opens its own dropdown; the network dropdown only lists
+wired and Wi-Fi devices. Each dropdown opens inline after its own toggle row, so
+the rows below move down while it is open.
+
+A tunnel can be active without NetworkManager having started it, for example a
+WireGuard interface created by `wg-quick`. NetworkManager marks those active
+connections with `NM_ACTIVATION_STATE_FLAG_EXTERNAL`. The shell shows them as
+`External`. Stopping one asks for confirmation first: NM did not create it, so it
+cannot start it again, and the owner's systemd unit may need a restart. After the
+user confirms, the shell sends the normal deactivation.
+
+### Airplane mode
+
+`AirplaneModeSet(bool)` does two things:
+
+1. Saves `WirelessEnabled`, `WwanEnabled`, and every rfkill soft state, then sets
+   the NetworkManager properties false and soft-blocks every wireless rfkill radio.
+   The block goes through `/dev/rfkill`, which the session owner can usually
+   write, and falls back to the sysfs `soft` attribute.
+2. On disable, restores the saved NetworkManager flags and rfkill states.
+
+Bluetooth is covered by its rfkill radio now, before a Bluetooth service exists.
+Wired devices are excluded by construction.
+
+### Power saving
+
+The service never polls and never scans on a timer.
+
+- State arrives from D-Bus signals, and a burst of signals collapses into one
+  read after 300 ms.
+- The access point list is loaded only after `WifiScan` or `WifiSetDetails(true)`.
+  The quick settings dropdown sends both when it opens and
+  `WifiSetDetails(false)` when it closes.
+- `RequestScan` runs only on `WifiScan`, sent by the dropdown open handler and
+  the refresh button.

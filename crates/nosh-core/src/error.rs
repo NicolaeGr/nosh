@@ -38,6 +38,9 @@ pub enum BackendError {
     Json(String),
     #[error("no backend satisfies the required capabilities")]
     NoBackend,
+    /// A user-facing message that needs no backend prefix.
+    #[error("{0}")]
+    Message(String),
 }
 
 /// A monitor layout operation failed. The messages are short and safe to show

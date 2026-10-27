@@ -9,7 +9,7 @@ use crate::brightness::service::{BrightnessService, BrightnessServiceConfig};
 use crate::command::Command;
 use crate::error::CoreError;
 use crate::event::{
-    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent,
+    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, NetworkEvent,
     PowerProfilesEvent, Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
 };
 use crate::hyprland::{binds, Hyprland};
@@ -17,6 +17,7 @@ use crate::idle_inhibit::model::IdleInhibitState;
 use crate::idle_inhibit::service::{IdleInhibitService, IdleInhibitServiceConfig};
 use crate::menu::service::{MenuService, MenuServiceConfig};
 use crate::monitors::service::{MonitorService, MonitorServiceConfig};
+use crate::network::service::{NetworkService, NetworkServiceConfig};
 use crate::power_profiles::service::{PowerProfilesService, PowerProfilesServiceConfig};
 use crate::stats::service::{SystemStatsService, SystemStatsServiceConfig};
 use crate::tray::service::{TrayService, TrayServiceConfig};
@@ -32,6 +33,7 @@ pub struct CoreSettings {
     pub stats: SystemStatsServiceConfig,
     pub idle_inhibit: IdleInhibitServiceConfig,
     pub power_profiles: PowerProfilesServiceConfig,
+    pub network: NetworkServiceConfig,
     pub tray: TrayServiceConfig,
     pub menu: MenuServiceConfig,
 }
@@ -83,6 +85,7 @@ impl Core {
         let (stats_commands, stats_receiver) = async_channel::unbounded();
         let (idle_inhibit_commands, idle_inhibit_receiver) = async_channel::unbounded();
         let (power_profiles_commands, power_profiles_receiver) = async_channel::unbounded();
+        let (network_commands, network_receiver) = async_channel::unbounded();
         let (tray_commands, tray_receiver) = async_channel::unbounded();
         let (menu_commands, menu_receiver) = async_channel::unbounded();
 
@@ -101,6 +104,7 @@ impl Core {
                             _stats: stats_commands,
                             idle_inhibit: idle_inhibit_commands,
                             power_profiles: power_profiles_commands,
+                            network: network_commands,
                             tray: tray_commands,
                             menu: menu_commands,
                         },
@@ -129,6 +133,8 @@ impl Core {
                     let power_profiles =
                         PowerProfilesService::from_env_with(settings.power_profiles)
                             .run(power_profiles_receiver, service_events.clone());
+                    let network = NetworkService::from_env_with(settings.network)
+                        .run(network_receiver, service_events.clone());
                     let tray = TrayService::from_env_with(settings.tray)
                         .run(tray_receiver, service_events.clone());
                     let menu =
@@ -146,6 +152,7 @@ impl Core {
                         stats,
                         idle_inhibit,
                         power_profiles,
+                        network,
                         tray,
                         menu
                     );
@@ -205,6 +212,7 @@ struct ServiceSenders {
     _stats: Sender<Command>,
     idle_inhibit: Sender<Command>,
     power_profiles: Sender<Command>,
+    network: Sender<Command>,
     tray: Sender<Command>,
     menu: Sender<Command>,
 }
@@ -221,6 +229,8 @@ async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
             &senders.idle_inhibit
         } else if command.is_power_profiles() {
             &senders.power_profiles
+        } else if command.is_network() {
+            &senders.network
         } else if command.is_tray() {
             &senders.tray
         } else if command.is_menu() {
@@ -299,6 +309,12 @@ fn merge_snapshot(accumulator: &mut Snapshot, incoming: Snapshot) {
     if incoming.power_profiles.is_some() {
         accumulator.power_profiles = incoming.power_profiles;
     }
+    if incoming.network.is_some() {
+        accumulator.network = incoming.network;
+    }
+    if incoming.network_backend.is_some() {
+        accumulator.network_backend = incoming.network_backend;
+    }
     if incoming.tray.is_some() {
         accumulator.tray = incoming.tray;
     }
@@ -326,6 +342,7 @@ fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
         Event::SystemStats(event) => absorb_system_stats(accumulator, event),
         Event::IdleInhibit(event) => absorb_idle_inhibit(accumulator, event),
         Event::PowerProfiles(event) => absorb_power_profiles(accumulator, event),
+        Event::Network(event) => absorb_network(accumulator, event),
         Event::Tray(event) => absorb_tray(accumulator, event),
         _ => {}
     }
@@ -366,6 +383,22 @@ fn absorb_power_profiles(accumulator: &mut Snapshot, event: &PowerProfilesEvent)
             accumulator.power_profiles = Some(model.clone());
         }
         PowerProfilesEvent::Unavailable => accumulator.power_profiles = None,
+    }
+}
+
+fn absorb_network(accumulator: &mut Snapshot, event: &NetworkEvent) {
+    match event {
+        NetworkEvent::Snapshot(model) | NetworkEvent::Changed(model) => {
+            accumulator.network = Some(model.clone());
+            accumulator.network_backend = Some("networkmanager");
+        }
+        NetworkEvent::Unavailable => {
+            accumulator.network = None;
+            accumulator.network_backend = None;
+        }
+        NetworkEvent::ScanStarted
+        | NetworkEvent::ScanFinished
+        | NetworkEvent::OperationFailed(_) => {}
     }
 }
 
@@ -527,6 +560,7 @@ mod tests {
         let (stats_tx, _stats_rx) = async_channel::unbounded();
         let (idle_inhibit_tx, idle_inhibit_rx) = async_channel::unbounded();
         let (power_profiles_tx, power_profiles_rx) = async_channel::unbounded();
+        let (network_tx, network_rx) = async_channel::unbounded();
         let (tray_tx, tray_rx) = async_channel::unbounded();
         let (menu_tx, _menu_rx) = async_channel::unbounded();
 
@@ -541,6 +575,7 @@ mod tests {
                 _stats: stats_tx,
                 idle_inhibit: idle_inhibit_tx,
                 power_profiles: power_profiles_tx,
+                network: network_tx,
                 tray: tray_tx,
                 menu: menu_tx,
             },
@@ -565,6 +600,10 @@ mod tests {
         public_tx.send(Command::BrightnessSet(40.0)).await.unwrap();
         public_tx.send(Command::IdleInhibitToggle).await.unwrap();
         public_tx.send(Command::PowerProfileCycle).await.unwrap();
+        public_tx
+            .send(Command::AirplaneModeSet(true))
+            .await
+            .unwrap();
         public_tx
             .send(Command::TrayMenuAboutToShow {
                 item_id: "item".to_string(),
@@ -626,6 +665,13 @@ mod tests {
                 .unwrap()
                 .unwrap(),
             Command::PowerProfileCycle
+        );
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), network_rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            Command::AirplaneModeSet(true)
         );
         assert_eq!(
             tokio::time::timeout(Duration::from_secs(1), tray_rx.recv())

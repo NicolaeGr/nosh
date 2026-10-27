@@ -61,6 +61,24 @@ pub enum Command {
     IdleInhibitToggle,
     PowerProfileSet(PowerProfile),
     PowerProfileCycle,
+    WifiSetEnabled(bool),
+    /// Ask NetworkManager for a scan. Sent when the network dropdown opens.
+    WifiScan,
+    /// Whether the model carries the access point list. False while the
+    /// dropdown is closed, so the bus and the radio stay quiet.
+    WifiSetDetails(bool),
+    WifiActivate {
+        ssid: String,
+        password: Option<String>,
+    },
+    WifiDeactivate,
+    WiredSetEnabled {
+        interface: String,
+        enabled: bool,
+    },
+    VpnActivate(String),
+    VpnDeactivate(String),
+    AirplaneModeSet(bool),
     TrayActivate {
         item_id: String,
         x: i32,
@@ -173,6 +191,22 @@ impl Command {
     /// Whether the power profiles service handles this command.
     pub fn is_power_profiles(&self) -> bool {
         matches!(self, Self::PowerProfileSet(_) | Self::PowerProfileCycle)
+    }
+
+    /// Whether the network service handles this command.
+    pub fn is_network(&self) -> bool {
+        matches!(
+            self,
+            Self::WifiSetEnabled(_)
+                | Self::WifiScan
+                | Self::WifiSetDetails(_)
+                | Self::WifiActivate { .. }
+                | Self::WifiDeactivate
+                | Self::WiredSetEnabled { .. }
+                | Self::VpnActivate(_)
+                | Self::VpnDeactivate(_)
+                | Self::AirplaneModeSet(_)
+        )
     }
 
     /// Whether the idle inhibitor service handles this command.
@@ -327,6 +361,30 @@ mod tests {
 
         assert!(!Command::IdleInhibitToggle.is_power_profiles());
         assert!(!Command::AudioSetVolume(0.5).is_power_profiles());
+    }
+
+    #[test]
+    fn network_commands_are_classified_for_routing() {
+        assert!(Command::WifiSetEnabled(true).is_network());
+        assert!(Command::WifiScan.is_network());
+        assert!(Command::WifiSetDetails(false).is_network());
+        assert!(Command::WifiActivate {
+            ssid: "home".to_string(),
+            password: None,
+        }
+        .is_network());
+        assert!(Command::WifiDeactivate.is_network());
+        assert!(Command::WiredSetEnabled {
+            interface: "eth0".to_string(),
+            enabled: false,
+        }
+        .is_network());
+        assert!(Command::VpnActivate("uuid".to_string()).is_network());
+        assert!(Command::VpnDeactivate("uuid".to_string()).is_network());
+        assert!(Command::AirplaneModeSet(true).is_network());
+
+        assert!(!Command::AudioSetVolume(0.5).is_network());
+        assert!(!Command::AirplaneModeSet(true).is_power_profiles());
     }
 
     #[test]

@@ -1,5 +1,6 @@
 mod battery;
 mod idle_inhibitor;
+mod network;
 mod stats;
 mod time;
 mod tray;
@@ -8,6 +9,7 @@ mod workspaces;
 
 pub use battery::Battery;
 pub use idle_inhibitor::IdleInhibitor;
+pub use network::Network;
 pub use stats::SystemStats;
 pub use tray::Tray;
 pub use volume::Volume;
@@ -21,8 +23,8 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use nosh_core::{
-    AudioModel, BatteryModel, Core, IdleInhibitState, SystemStats as StatsSnapshot, TrayItemModel,
-    TrayMenu, WorkspaceSnapshot,
+    AudioModel, BatteryModel, Core, IdleInhibitState, NetworkModel, SystemStats as StatsSnapshot,
+    TrayItemModel, TrayMenu, WorkspaceSnapshot,
 };
 
 use crate::quick_settings::QuickSettingsWindow;
@@ -33,6 +35,7 @@ pub struct BarWindow {
     workspaces: Workspaces,
     stats: SystemStats,
     tray: Tray,
+    network: Network,
     idle_inhibitor: IdleInhibitor,
     battery: Battery,
     volume: Volume,
@@ -79,6 +82,7 @@ impl BarWindow {
         let workspaces = Workspaces::new(Rc::clone(&core));
         let stats = SystemStats::new();
         let tray = Tray::new(Rc::clone(&core));
+        let network = Network::new();
         let idle_inhibitor = IdleInhibitor::new(Rc::clone(&core));
         let battery = Battery::new();
         let volume = Volume::new(core);
@@ -127,6 +131,7 @@ impl BarWindow {
         let right_island = island("IslandEnd");
         right_island.append(stats.widget());
         right_island.append(tray.widget());
+        right_island.append(network.widget());
         right_island.append(idle_inhibitor.widget());
         right_island.append(battery.widget());
         right_island.append(volume.widget());
@@ -142,6 +147,7 @@ impl BarWindow {
             workspaces,
             stats,
             tray,
+            network,
             idle_inhibitor,
             battery,
             volume,
@@ -176,8 +182,12 @@ impl BarWindow {
         self.battery.render(model);
     }
 
-    pub fn set_audio(&mut self, model: &AudioModel) {
+    pub fn set_audio(&self, model: &AudioModel) {
         self.volume.render(model);
+    }
+
+    pub fn set_network(&self, model: &NetworkModel) {
+        self.network.render(model);
     }
 }
 

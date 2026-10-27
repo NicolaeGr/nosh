@@ -9,15 +9,16 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::{
     volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel,
-    BrightnessEvent, ChangeOrigin, Command, Core, EndpointKind, Event, IdleInhibitEvent,
-    IdleInhibitState, LayoutPreset, MenuEvent, SystemStats, SystemStatsEvent, TrayEvent,
-    TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot, BRIGHTNESS_STEP, DIM_PERCENT,
-    VOLUME_STEP,
+    BrightnessDevice, BrightnessEvent, ChangeOrigin, Command, Core, EndpointKind, Event,
+    IdleInhibitEvent, IdleInhibitState, LayoutPreset, MenuEvent, SystemStats, SystemStatsEvent,
+    TrayEvent, TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot, BRIGHTNESS_STEP,
+    DIM_PERCENT, VOLUME_STEP,
 };
 
 use crate::bar::BarWindow;
 use crate::indicator::ChangeIndicator;
 use crate::menu::MenuManager;
+use crate::quick_settings::QuickSettingsWindow;
 
 #[cfg(all(feature = "dev", feature = "stable"))]
 compile_error!("features `dev` and `stable` are mutually exclusive");
@@ -30,6 +31,7 @@ pub const APP_ID: &str = if cfg!(feature = "dev") {
 
 const STYLE: &str = include_str!("../resources/style.css");
 const MENU_STYLE: &str = include_str!("../resources/menu.css");
+const QUICK_SETTINGS_STYLE: &str = include_str!("../resources/quick_settings.css");
 
 /// When this marker is present in the user stylesheet it is replaced with the
 /// complete built-in stylesheet at load time.
@@ -55,16 +57,19 @@ struct Ui {
     audio: RefCell<AudioModel>,
     battery: RefCell<BatteryModel>,
     idle_inhibit: RefCell<IdleInhibitState>,
+    brightness: RefCell<Vec<BrightnessDevice>>,
     tray: RefCell<Vec<TrayItemModel>>,
     tray_menus: RefCell<HashMap<String, TrayMenu>>,
     bars: RefCell<BTreeMap<String, BarWindow>>,
     menus: RefCell<MenuManager>,
+    quick_settings: Rc<QuickSettingsWindow>,
     indicator: ChangeIndicator,
 }
 
 impl Ui {
     fn new(app: gtk::Application, core: Rc<Core>) -> Self {
         let indicator = ChangeIndicator::new(&app);
+        let quick_settings = Rc::new(QuickSettingsWindow::new(&app, Rc::clone(&core)));
         Self {
             app,
             core,
@@ -73,10 +78,12 @@ impl Ui {
             audio: RefCell::new(AudioModel::default()),
             battery: RefCell::new(BatteryModel::default()),
             idle_inhibit: RefCell::new(IdleInhibitState::default()),
+            brightness: RefCell::new(Vec::new()),
             tray: RefCell::new(Vec::new()),
             tray_menus: RefCell::new(HashMap::new()),
             bars: RefCell::new(BTreeMap::new()),
             menus: RefCell::new(MenuManager::new()),
+            quick_settings,
             indicator,
         }
     }
@@ -110,6 +117,7 @@ impl Ui {
                 &monitor,
                 connector.clone(),
                 Rc::clone(&self.core),
+                Rc::clone(&self.quick_settings),
             );
             bar.set_workspaces(&self.workspaces.borrow());
             bar.set_stats(&self.stats.borrow());
@@ -149,6 +157,7 @@ impl Ui {
         for bar in self.bars.borrow_mut().values_mut() {
             bar.set_idle_inhibit(&state);
         }
+        self.quick_settings.set_idle_inhibit(&state);
     }
 
     fn render_audio(&self) {
@@ -156,6 +165,7 @@ impl Ui {
         for bar in self.bars.borrow_mut().values_mut() {
             bar.set_audio(&model);
         }
+        self.quick_settings.set_audio(&model);
     }
 
     fn render_battery(&self) {
@@ -163,6 +173,12 @@ impl Ui {
         for bar in self.bars.borrow_mut().values_mut() {
             bar.set_battery(&model);
         }
+        self.quick_settings.set_battery(&model);
+    }
+
+    fn render_brightness(&self) {
+        let devices = self.brightness.borrow();
+        self.quick_settings.set_brightness(devices.as_slice());
     }
 
     fn render_tray(&self) {
@@ -174,6 +190,11 @@ impl Ui {
     }
 
     fn show_indicator(&self, change: IndicatorChange) {
+        // The quick settings panel already shows the value it changed, so the
+        // floating indicator would be redundant over the open overlay.
+        if self.quick_settings.is_open() {
+            return;
+        }
         let monitor = self.active_monitor();
         match change {
             IndicatorChange::Audio {
@@ -246,6 +267,10 @@ impl Ui {
                 if let Some(state) = snapshot.idle_inhibit {
                     *self.idle_inhibit.borrow_mut() = state;
                     self.render_idle_inhibit();
+                }
+                if let Some(brightness) = snapshot.brightness {
+                    *self.brightness.borrow_mut() = brightness;
+                    self.render_brightness();
                 }
                 if let Some(tray) = snapshot.tray {
                     self.replace_tray(tray);
@@ -412,14 +437,46 @@ impl Ui {
     }
 
     fn apply_brightness_event(&self, event: BrightnessEvent) {
-        if let BrightnessEvent::DeviceChanged {
-            percent,
-            origin: ChangeOrigin::User,
-            ..
-        } = event
-        {
-            self.show_indicator(IndicatorChange::Brightness(percent));
+        match event {
+            BrightnessEvent::Snapshot(devices) => {
+                *self.brightness.borrow_mut() = devices;
+            }
+            BrightnessEvent::DeviceChanged {
+                device,
+                percent,
+                old: _,
+                origin,
+            } => {
+                if let Some(entry) = self
+                    .brightness
+                    .borrow_mut()
+                    .iter_mut()
+                    .find(|entry| entry.id == device)
+                {
+                    entry.percent = percent;
+                    entry.pending_percent = None;
+                }
+                if origin == ChangeOrigin::User {
+                    self.show_indicator(IndicatorChange::Brightness(percent));
+                }
+            }
+            BrightnessEvent::Pending { device, target } => {
+                if let Some(entry) = self
+                    .brightness
+                    .borrow_mut()
+                    .iter_mut()
+                    .find(|entry| entry.id == device)
+                {
+                    entry.pending_percent = Some(target);
+                }
+            }
+            BrightnessEvent::Restored => {}
+            BrightnessEvent::Unavailable => {
+                self.brightness.borrow_mut().clear();
+            }
         }
+
+        self.render_brightness();
     }
 
     fn apply_battery_event(&self, event: BatteryEvent) {
@@ -729,7 +786,7 @@ fn install_css() {
         return;
     };
 
-    let builtin = format!("{STYLE}\n{MENU_STYLE}");
+    let builtin = format!("{STYLE}\n{MENU_STYLE}\n{QUICK_SETTINGS_STYLE}");
     add_css(&display, &builtin, gtk::STYLE_PROVIDER_PRIORITY_USER);
 
     let Ok(paths) = nosh_core::NoshPaths::from_env() else {

@@ -99,15 +99,29 @@ impl AudioModel {
 
 /// The icon for a volume level.
 pub fn volume_icon(kind: EndpointKind, volume: f64, muted: bool) -> &'static str {
-    let _ = kind;
-    if muted || volume <= 0.0 {
-        "audio-volume-muted-symbolic"
+    let step = if muted || volume <= 0.0 {
+        0
     } else if volume < 0.33 {
-        "audio-volume-low-symbolic"
+        1
     } else if volume < 0.66 {
-        "audio-volume-medium-symbolic"
+        2
     } else {
-        "audio-volume-high-symbolic"
+        3
+    };
+
+    match kind {
+        EndpointKind::Sink => [
+            "audio-volume-muted-symbolic",
+            "audio-volume-low-symbolic",
+            "audio-volume-medium-symbolic",
+            "audio-volume-high-symbolic",
+        ][step],
+        EndpointKind::Source => [
+            "microphone-sensitivity-muted-symbolic",
+            "microphone-sensitivity-low-symbolic",
+            "microphone-sensitivity-medium-symbolic",
+            "microphone-sensitivity-high-symbolic",
+        ][step],
     }
 }
 
@@ -182,6 +196,18 @@ mod tests {
         assert_eq!(
             volume_icon(EndpointKind::Sink, 0.8, true),
             "audio-volume-muted-symbolic"
+        );
+        assert_eq!(
+            volume_icon(EndpointKind::Source, 0.8, false),
+            "microphone-sensitivity-high-symbolic"
+        );
+        assert_eq!(
+            volume_icon(EndpointKind::Source, 0.2, false),
+            "microphone-sensitivity-low-symbolic"
+        );
+        assert_eq!(
+            volume_icon(EndpointKind::Source, 0.0, false),
+            "microphone-sensitivity-muted-symbolic"
         );
     }
 

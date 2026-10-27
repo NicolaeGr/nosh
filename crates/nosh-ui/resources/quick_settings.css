@@ -1,0 +1,357 @@
+/*
+ * Quick settings styles. Layout and spacing come from
+ * docs/reference/design_proto.html, scaled by the same 0.75 factor as the bar.
+ *
+ * The root font is 12px, so one prototype pixel is 1/16 em. Every surface is
+ * opaque, like menu.css. Controls use translucent fills only over the opaque
+ * card, never over the desktop.
+ */
+
+window.QuickSettings {
+    font-size: 12px;
+    background-color: transparent;
+    color: @bar_ink;
+    border: none;
+    box-shadow: none;
+    letter-spacing: 0.015em;
+}
+
+.QuickSettingsBackground {
+    background-color: transparent;
+}
+
+.QuickSettingsCard {
+    min-width: 16.25em;
+    padding: 0.875em;
+    background-color: @theme_bg_color;
+    color: @bar_ink;
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 1.125em 0 1.125em 0;
+    box-shadow:
+        0 1.125em 3.75em rgba(0, 0, 0, 0.42),
+        inset 0 0.0625em 0 @bar_highlight;
+}
+
+/* Header */
+.QuickSettingsBattery {
+    padding: 0.375em 0.6875em;
+    background-color: @bar_row;
+    border-radius: 0.625em 0 0.625em 0;
+    color: @bar_ink;
+}
+
+.QuickSettingsBattery image {
+    -gtk-icon-size: 1.125em;
+}
+
+.QuickSettingsBattery .Percent {
+    font-size: 0.875em;
+}
+
+.QuickSettingsBattery .Remaining {
+    color: @bar_muted;
+    font-size: 0.75em;
+}
+
+.QuickSettingsSession {
+    padding: 0.375em 0.75em 0.375em 0.6875em;
+    background-color: @bar_row;
+    border: 0.0625em solid transparent;
+    border-radius: 0.625em 0 0.625em 0;
+    box-shadow: none;
+    color: @bar_ink;
+}
+
+.QuickSettingsSession:hover {
+    background-color: @bar_accent_soft;
+    border-right-color: alpha(@accent_bg_color, 0.7);
+    border-bottom-color: alpha(@accent_bg_color, 0.7);
+}
+
+.QuickSettingsSession:disabled {
+    color: @bar_muted;
+    background-color: @bar_row;
+    border-color: transparent;
+}
+
+.QuickSettingsSession image {
+    -gtk-icon-size: 1em;
+}
+
+.QuickSettingsSession .Name {
+    font-size: 0.875em;
+}
+
+/* Toggle grid */
+.QuickToggle {
+    background-color: @bar_row;
+    border: 0.0625em solid transparent;
+    border-radius: 0.75em 0 0.75em 0;
+    color: @bar_muted;
+}
+
+.QuickToggle:hover {
+    background-color: @bar_row_hover;
+}
+
+.QuickToggle.on {
+    color: @bar_ink;
+    background-color: @bar_accent_soft;
+    border-right-color: alpha(@accent_bg_color, 0.6);
+    border-bottom-color: alpha(@accent_bg_color, 0.6);
+}
+
+.QuickToggle.unavailable {
+    opacity: 0.55;
+}
+
+.QuickToggleButton {
+    min-height: 0;
+    padding: 0.625em 0.6875em;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    color: inherit;
+}
+
+.QuickToggleButton:hover,
+.QuickToggleButton:disabled {
+    background-color: transparent;
+    color: inherit;
+}
+
+.QuickToggleIcon {
+    min-width: 1.625em;
+    min-height: 1.625em;
+    padding: 0;
+    background-color: alpha(@theme_fg_color, 0.12);
+    border-radius: 0.5em;
+    color: @bar_muted;
+}
+
+.QuickToggle.on .QuickToggleIcon {
+    background-color: @bar_accent_strong;
+    color: @bar_ink;
+}
+
+.QuickToggleIcon image {
+    -gtk-icon-size: 0.9375em;
+}
+
+.QuickToggleName {
+    color: @bar_ink;
+    font-size: 0.875em;
+}
+
+.QuickToggleStatus {
+    color: @bar_muted;
+    font-size: 0.75em;
+}
+
+.QuickToggleDivider {
+    background-color: @bar_surface_edge;
+    min-width: 1px;
+    margin: 0.375em 0;
+}
+
+.QuickToggleDisclosure {
+    min-width: 1.6875em;
+    min-height: 0;
+    padding: 0;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    color: @bar_muted;
+}
+
+.QuickToggleDisclosure:hover {
+    color: @bar_ink;
+    background-color: @bar_row_hover;
+}
+
+.QuickToggleDisclosure image {
+    -gtk-icon-size: 0.75em;
+}
+
+/* Sliders */
+.SliderSimple {
+    padding: 0 0.25em;
+}
+
+.SliderBlock {
+    padding: 0 0.25em;
+}
+
+.SliderBlockName {
+    color: @bar_muted;
+    font-size: 0.75em;
+    letter-spacing: 0.08em;
+}
+
+.SliderBlockExpand {
+    padding: 0.125em 0.25em;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0.375em 0 0.375em 0;
+    box-shadow: none;
+    color: @bar_muted;
+}
+
+.SliderBlockExpand:hover {
+    color: @bar_ink;
+    background-color: @bar_row_hover;
+}
+
+.SliderBlockExpand image {
+    -gtk-icon-size: 0.75em;
+}
+
+.SliderIcon {
+    -gtk-icon-size: 1em;
+    color: @bar_muted;
+}
+
+/* A slider icon that toggles mute. */
+.SliderMute {
+    min-width: 1.375em;
+    min-height: 1.375em;
+    padding: 0;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0.375em 0 0.375em 0;
+    box-shadow: none;
+    color: @bar_muted;
+}
+
+.SliderMute:hover {
+    color: @bar_ink;
+    background-color: @bar_row_hover;
+}
+
+.SliderMute:disabled {
+    color: @bar_muted;
+    background-color: transparent;
+}
+
+.SliderMute image {
+    -gtk-icon-size: 1em;
+}
+
+.SliderValue {
+    min-width: 1.875em;
+    color: @bar_muted;
+    font-size: 0.8125em;
+}
+
+.QuickSlider {
+    min-height: 1.25em;
+}
+
+/* Thin pill-shaped track; the thumb is larger and overlaps it. */
+.QuickSlider trough {
+    min-height: 0.25em;
+    padding: 0;
+    background-color: @bar_row_hover;
+    border: none;
+    border-radius: 9999px;
+    box-shadow: none;
+}
+
+.QuickSlider highlight {
+    min-height: 0.25em;
+    padding: 0;
+    background-color: @accent_bg_color;
+    border: none;
+    border-radius: 9999px;
+    box-shadow: none;
+}
+
+.QuickSlider slider {
+    min-width: 1em;
+    min-height: 1em;
+    margin: -0.375em 0;
+    padding: 0;
+    background-color: @theme_fg_color;
+    background-image: none;
+    border: 0.0625em solid @accent_bg_color;
+    border-radius: 9999px;
+    box-shadow: none;
+}
+
+.QuickSlider:hover slider,
+.QuickSlider:active slider {
+    background-color: @accent_bg_color;
+    border-color: @theme_fg_color;
+}
+
+.QuickSlider.overamp highlight {
+    background-color: @error_color;
+}
+
+.QuickSlider.overamp slider {
+    background-color: @error_color;
+    border-color: @theme_fg_color;
+}
+
+.QuickSlider.overamp:hover slider,
+.QuickSlider.overamp:active slider {
+    background-color: @error_color;
+    border-color: @theme_fg_color;
+}
+
+/* Per-device lists */
+.SliderDropdown {
+    padding: 0.625em;
+    background-color: mix(@theme_bg_color, @theme_fg_color, 0.04);
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 0.75em 0 0.75em 0;
+}
+
+.EndpointName {
+    color: @bar_muted;
+    font-size: 0.8125em;
+}
+
+.EndpointRow.is-default .EndpointName {
+    color: @bar_ink;
+}
+
+.EndpointDefault {
+    min-width: 1em;
+    min-height: 1em;
+    padding: 0;
+    background-color: transparent;
+    background-image: none;
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 0.375em 0 0.375em 0;
+    box-shadow: none;
+    color: transparent;
+}
+
+.EndpointDefault:hover {
+    border-color: @accent_bg_color;
+}
+
+.EndpointDefault.is-default {
+    background-color: @accent_bg_color;
+    border-color: transparent;
+    color: #ffffff;
+}
+
+.EndpointDefault image {
+    -gtk-icon-size: 0.625em;
+}
+
+/* The bar trigger while the panel is open. */
+.square-icon.is-open {
+    color: @bar_ink;
+    background-color: @bar_accent_strong;
+    border-left-color: alpha(@accent_bg_color, 0.72);
+    border-bottom-color: alpha(@accent_bg_color, 0.72);
+}

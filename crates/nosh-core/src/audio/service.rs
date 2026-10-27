@@ -451,6 +451,11 @@ fn plan_volume(command: &Command, state: &AudioState) -> Option<PendingWrite> {
                 volume: AudioModel::clamped_volume(EndpointKind::Source, *volume),
             })
         }
+        Command::AudioSetEndpointVolume { kind, id, volume } => Some(PendingWrite {
+            kind: *kind,
+            id: *id,
+            volume: AudioModel::clamped_volume(*kind, *volume),
+        }),
         _ => None,
     }
 }
@@ -498,6 +503,20 @@ async fn handle_command(
             )
             .await
         }
+        Command::AudioSetEndpointMuted { kind, id, muted } => {
+            if state.model.endpoint(kind, id).is_none() {
+                return fail(events, &format!("audio endpoint {id} does not exist")).await;
+            }
+            let target = UserTarget::Mute { kind, id };
+            write_and_refresh(
+                backend,
+                backend.set_muted(kind, id, muted),
+                state,
+                events,
+                target,
+            )
+            .await
+        }
         Command::AudioSetDefault(id) => {
             let kind = if state.model.endpoint(EndpointKind::Sink, id).is_some() {
                 EndpointKind::Sink
@@ -518,7 +537,8 @@ async fn handle_command(
         }
         Command::AudioSetVolume(_)
         | Command::AudioStepVolume(_)
-        | Command::AudioSetSourceVolume(_) => {
+        | Command::AudioSetSourceVolume(_)
+        | Command::AudioSetEndpointVolume { .. } => {
             // These commands go through `plan_volume`. Report the missing
             // default endpoint instead of failing silently.
             fail(events, "no default audio endpoint is available").await
@@ -1099,6 +1119,80 @@ mod tests {
                 kind: EndpointKind::Sink,
                 id: 1,
                 volume: 0.45,
+            }]
+        );
+
+        drop(command_tx);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_endpoint_volume_command_writes_that_endpoint() {
+        let backend = FakeAudioBackend::new("fake", model(0.3)).arc();
+        let (command_tx, command_rx) = async_channel::unbounded();
+        let (event_tx, event_rx) = async_channel::unbounded();
+        let mut config = config();
+        config.debounce = Duration::from_millis(10);
+        let service = AudioService::with_candidates(vec![candidate(backend.clone())], config);
+        let task = tokio::spawn(service.run(command_rx, event_tx));
+
+        backend.wait_until_watching().await;
+        command_tx
+            .send(Command::AudioSetEndpointVolume {
+                kind: EndpointKind::Sink,
+                id: 3,
+                volume: 0.7,
+            })
+            .await
+            .unwrap();
+
+        wait_for_audio(&event_rx, |event| {
+            matches!(event, Event::Audio(AudioEvent::VolumeChanged { .. }))
+        })
+        .await;
+
+        assert_eq!(
+            backend.writes().await,
+            vec![FakeWrite::Volume {
+                kind: EndpointKind::Sink,
+                id: 3,
+                volume: 0.7,
+            }]
+        );
+
+        drop(command_tx);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_endpoint_mute_command_writes_that_endpoint() {
+        let backend = FakeAudioBackend::new("fake", model(0.3)).arc();
+        let (command_tx, command_rx) = async_channel::unbounded();
+        let (event_tx, event_rx) = async_channel::unbounded();
+        let service = AudioService::with_candidates(vec![candidate(backend.clone())], config());
+        let task = tokio::spawn(service.run(command_rx, event_tx));
+
+        backend.wait_until_watching().await;
+        command_tx
+            .send(Command::AudioSetEndpointMuted {
+                kind: EndpointKind::Sink,
+                id: 3,
+                muted: true,
+            })
+            .await
+            .unwrap();
+
+        wait_for_audio(&event_rx, |event| {
+            matches!(event, Event::Audio(AudioEvent::MuteChanged { .. }))
+        })
+        .await;
+
+        assert_eq!(
+            backend.writes().await,
+            vec![FakeWrite::Muted {
+                kind: EndpointKind::Sink,
+                id: 3,
+                muted: true,
             }]
         );
 

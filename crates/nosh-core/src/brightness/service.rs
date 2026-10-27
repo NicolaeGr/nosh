@@ -38,6 +38,8 @@ pub struct BrightnessServiceConfig {
     pub ddc_timeout: Duration,
     /// How often internal brightness files are checked for external changes.
     pub poll_interval: Duration,
+    /// How often an unavailable DDC display is looked for again.
+    pub ddc_retry_interval: Duration,
     pub keep_snapshot: bool,
     pub snapshot_path: Option<PathBuf>,
     pub command_devices: Vec<CommandDeviceConfig>,
@@ -50,6 +52,7 @@ impl Default for BrightnessServiceConfig {
             command_timeout: Duration::from_secs(3),
             ddc_timeout: DEFAULT_DDC_TIMEOUT,
             poll_interval: Duration::from_secs(2),
+            ddc_retry_interval: Duration::from_secs(30),
             keep_snapshot: false,
             snapshot_path: None,
             command_devices: Vec::new(),
@@ -142,6 +145,9 @@ impl BrightnessService {
         let mut deadline: Option<tokio::time::Instant> = None;
         let mut ticker = tokio::time::interval(self.config.poll_interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut retry_ticker = tokio::time::interval(self.config.ddc_retry_interval);
+        retry_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        retry_ticker.tick().await;
 
         loop {
             let debounce = async {
@@ -192,6 +198,15 @@ impl BrightnessService {
                 _ = ticker.tick() => {
                     if self.poll(&mut state, &events).await.is_err() {
                         return;
+                    }
+                }
+                _ = retry_ticker.tick() => {
+                    let retry = state.devices.iter().any(|device| {
+                        device.device.kind == BrightnessKind::ExternalDdc
+                            && !device.device.available
+                    });
+                    if retry {
+                        self.spawn_external_discovery(&discovery_tx);
                     }
                 }
             }
@@ -641,6 +656,29 @@ async fn apply_target(
         }
         Err(error) => {
             tracing::warn!(device = %id, %error, "brightness write failed");
+
+            // `DDCRC_VERIFY` means ddcutil sent the write but the monitor did not
+            // confirm it. If the display still answers a read, keep it available
+            // instead of hiding the slider until the next scan.
+            if state.devices[index].device.kind == BrightnessKind::ExternalDdc {
+                let read = state.devices[index].backend.read(id).await;
+                if let Ok(reading) = read {
+                    let device = &mut state.devices[index];
+                    device.device.pending_percent = None;
+                    device.device.available = true;
+                    device.device.percent = reading.percent;
+                    device.device.raw = reading.raw;
+                    device.device.max_raw = reading.max_raw;
+                    tracing::info!(
+                        device = %id,
+                        percent = reading.percent,
+                        "brightness write did not verify; the display still responds"
+                    );
+                    emit_snapshot(events, state).await?;
+                    return Ok(false);
+                }
+            }
+
             let device = &mut state.devices[index];
             device.device.pending_percent = None;
             device.device.available = false;
@@ -1147,6 +1185,55 @@ mod tests {
         assert!(writes
             .iter()
             .any(|(id, _)| id == &BrightnessDeviceId::Named("Desk lamp".into())));
+
+        drop(commands);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_ddc_write_failure_keeps_the_device_when_the_read_succeeds() {
+        let id = BrightnessDeviceId::Ddc {
+            bus: 7,
+            display: "display-7".into(),
+        };
+        let info = BrightnessDeviceInfo {
+            id: id.clone(),
+            kind: BrightnessKind::ExternalDdc,
+            name: "display-7".into(),
+            connector: None,
+            ddc_bus: Some(7),
+        };
+        let backend = FakeBrightnessBackend::new("ddcutil", vec![info]).arc();
+        backend.set_value(&id, 42.0).await;
+        backend.failing.lock().await.insert(id.clone());
+
+        let (commands, command_rx) = async_channel::unbounded();
+        let (event_tx, event_rx) = async_channel::unbounded();
+        let service = BrightnessService::with_candidates(
+            Vec::new(),
+            vec![fake_candidate(backend)],
+            Vec::new(),
+            config(),
+        );
+        let task = tokio::spawn(service.run(command_rx, event_tx));
+
+        wait_for(&event_rx, |event| match event {
+            Event::Brightness(BrightnessEvent::Snapshot(devices)) => {
+                devices.iter().any(|device| device.id == id)
+            }
+            _ => false,
+        })
+        .await;
+
+        commands.send(Command::BrightnessSet(20.0)).await.unwrap();
+
+        wait_for(&event_rx, |event| match event {
+            Event::Brightness(BrightnessEvent::Snapshot(devices)) => devices
+                .iter()
+                .any(|device| device.id == id && device.available && device.percent == 42.0),
+            _ => false,
+        })
+        .await;
 
         drop(commands);
         task.await.unwrap();

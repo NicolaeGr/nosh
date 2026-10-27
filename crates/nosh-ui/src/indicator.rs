@@ -143,7 +143,7 @@ impl ChangeIndicator {
         } else {
             (volume / kind.max_volume()).clamp(0.0, 1.0)
         };
-        let overamp = kind == EndpointKind::Sink && !muted && volume > 1.0;
+        let overamp = kind == EndpointKind::Sink && !muted && (volume * 100.0).round() >= 101.0;
         let marker = (kind == EndpointKind::Sink).then(|| 1.0 / kind.max_volume());
 
         self.show(monitor, icon, &label, fraction, overamp, marker);

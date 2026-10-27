@@ -12,6 +12,16 @@ pub enum Command {
     AudioSetVolume(f64),
     AudioStepVolume(f64),
     AudioSetSourceVolume(f64),
+    AudioSetEndpointVolume {
+        kind: EndpointKind,
+        id: u32,
+        volume: f64,
+    },
+    AudioSetEndpointMuted {
+        kind: EndpointKind,
+        id: u32,
+        muted: bool,
+    },
     AudioSetMuted(bool),
     AudioToggleMute(EndpointKind),
     AudioSetDefault(u32),
@@ -99,6 +109,8 @@ impl Command {
             Self::AudioSetVolume(_)
                 | Self::AudioStepVolume(_)
                 | Self::AudioSetSourceVolume(_)
+                | Self::AudioSetEndpointVolume { .. }
+                | Self::AudioSetEndpointMuted { .. }
                 | Self::AudioSetMuted(_)
                 | Self::AudioToggleMute(_)
                 | Self::AudioSetDefault(_)
@@ -245,6 +257,18 @@ mod tests {
         assert!(Command::AudioSetVolume(0.5).is_audio());
         assert!(Command::AudioStepVolume(-0.05).is_audio());
         assert!(Command::AudioSetSourceVolume(0.5).is_audio());
+        assert!(Command::AudioSetEndpointVolume {
+            kind: EndpointKind::Sink,
+            id: 3,
+            volume: 0.5,
+        }
+        .is_audio());
+        assert!(Command::AudioSetEndpointMuted {
+            kind: EndpointKind::Source,
+            id: 4,
+            muted: true,
+        }
+        .is_audio());
         assert!(Command::AudioSetMuted(true).is_audio());
         assert!(Command::AudioToggleMute(EndpointKind::Sink).is_audio());
         assert!(Command::AudioSetDefault(3).is_audio());

@@ -25,6 +25,8 @@ use nosh_core::{
     TrayMenu, WorkspaceSnapshot,
 };
 
+use crate::quick_settings::QuickSettingsWindow;
+
 pub struct BarWindow {
     connector: String,
     window: gtk::ApplicationWindow,
@@ -42,6 +44,7 @@ impl BarWindow {
         monitor: &gdk::Monitor,
         connector: String,
         core: Rc<Core>,
+        quick_settings: Rc<QuickSettingsWindow>,
     ) -> Self {
         let window = gtk::ApplicationWindow::new(app);
         window.set_decorated(false);
@@ -80,6 +83,33 @@ impl BarWindow {
         let battery = Battery::new();
         let volume = Volume::new(core);
 
+        let quick_settings_button = gtk::Button::new();
+        quick_settings_button.add_css_class("square-icon");
+        quick_settings_button.set_focus_on_click(false);
+        quick_settings_button.set_child(Some(&gtk::Image::from_icon_name(
+            "preferences-other-symbolic",
+        )));
+        quick_settings_button.set_tooltip_text(Some("Quick settings"));
+        {
+            let quick_settings = Rc::clone(&quick_settings);
+            let monitor = monitor.clone();
+            quick_settings_button.connect_clicked(move |_| {
+                quick_settings.toggle(Some(&monitor));
+            });
+        }
+        {
+            let button = quick_settings_button.clone();
+            quick_settings
+                .window()
+                .connect_visible_notify(move |window| {
+                    if window.is_visible() {
+                        button.add_css_class("is-open");
+                    } else {
+                        button.remove_css_class("is-open");
+                    }
+                });
+        }
+
         let left = section(gtk::Align::Start);
         let left_island = island("IslandStart");
         left_island.append(workspaces.widget());
@@ -100,6 +130,7 @@ impl BarWindow {
         right_island.append(idle_inhibitor.widget());
         right_island.append(battery.widget());
         right_island.append(volume.widget());
+        right_island.append(&quick_settings_button);
         right.append(&right_island);
         bar.set_end_widget(Some(&right));
 

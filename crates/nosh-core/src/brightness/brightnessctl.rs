@@ -121,14 +121,17 @@ impl BrightnessBackend for BrightnessctlBackend {
     }
 }
 
-/// Parses `brightnessctl -l -m`. Each line is comma separated and the device
-/// name is the first field.
+/// Parses `brightnessctl -l -m`. Each line is comma separated as
+/// `device,class,current,percent%,max`. Only `backlight` class devices are
+/// returned; `brightnessctl` also lists keyboard LEDs, which are not displays.
 pub fn parse_device_list(output: &str) -> Vec<String> {
     output
         .lines()
         .filter_map(|line| {
-            let name = line.split(',').next()?.trim();
-            if name.is_empty() {
+            let mut fields = line.split(',');
+            let name = fields.next()?.trim();
+            let class = fields.next()?.trim();
+            if name.is_empty() || class != "backlight" {
                 None
             } else {
                 Some(name.to_string())
@@ -161,12 +164,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn device_list_reads_the_first_field() {
+    fn device_list_reads_only_backlights() {
         let devices = parse_device_list(
             "intel_backlight,backlight,400,40%\n\
-             acpi_video0,backlight,20,2%\n",
+             acpi_video0,backlight,20,2%\n\
+             input2::kana,leds,0,0%,1\n",
         );
         assert_eq!(devices, ["intel_backlight", "acpi_video0"]);
+    }
+
+    #[test]
+    fn device_list_ignores_leds_when_no_backlight_exists() {
+        let devices = parse_device_list("input2::kana,leds,0,0%,1\n");
+        assert!(devices.is_empty());
     }
 
     #[test]

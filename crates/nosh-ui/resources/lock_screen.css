@@ -1,0 +1,125 @@
+/*
+ * Session lock styles. The lock window covers an entire output, so the
+ * background is opaque. The clock and the card are centered as one group.
+ * See docs/features/lock-screen.md.
+ */
+
+window.LockScreen {
+    font-size: 12px;
+    background-color: @theme_bg_color;
+    color: @bar_ink;
+    border: none;
+    box-shadow: none;
+    letter-spacing: 0.015em;
+}
+
+.LockBackground {
+    background-color: @theme_bg_color;
+    background-image:
+        linear-gradient(160deg, alpha(@accent_bg_color, 0.12), transparent 42%),
+        linear-gradient(200deg, transparent 55%, alpha(@theme_fg_color, 0.05));
+}
+
+.LockClock {
+    font-size: 4.5em;
+    font-weight: 250;
+    letter-spacing: -0.02em;
+}
+
+.LockDate {
+    margin-bottom: 2.25em;
+    color: @bar_muted;
+    font-size: 1.0625em;
+}
+
+.LockCard {
+    min-width: 19em;
+    padding: 1.5em 1.75em;
+    background-color: alpha(@theme_bg_color, 0.86);
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 0 1.5em 0 1.5em;
+    box-shadow:
+        0 2em 6em rgba(0, 0, 0, 0.45),
+        inset 0 0.0625em 0 @bar_highlight;
+}
+
+.LockIdentity {
+    margin-bottom: 1.25em;
+}
+
+.LockAvatarFrame {
+    padding: 0.5em;
+    background-color: @bar_row;
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 999px;
+}
+
+.LockAvatar {
+    color: @bar_muted;
+}
+
+.LockName {
+    font-size: 1.0625em;
+    font-weight: 600;
+}
+
+.LockHost {
+    color: @bar_muted;
+    font-size: 0.8125em;
+}
+
+.LockPassword {
+    min-height: 2.25em;
+    padding: 0.25em 0.75em;
+    background-color: @bar_row;
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 0 0.75em 0 0.75em;
+    outline-style: none;
+    outline-width: 0;
+    box-shadow: none;
+    color: @bar_ink;
+}
+
+.LockPassword:focus,
+.LockPassword:focus-within,
+.LockPassword:focus-visible {
+    background-color: @bar_row_hover;
+    border-width: 0.125em;
+    border-color: @accent_bg_color;
+    outline-style: none;
+    outline-width: 0;
+    box-shadow: none;
+}
+
+.LockError {
+    min-height: 1.1em;
+    margin-top: 0.5em;
+    color: @error_color;
+    font-size: 0.8125em;
+    line-height: 1.35;
+}
+
+.LockPrimary {
+    min-height: 2.25em;
+    margin-top: 0.75em;
+    background-color: @bar_accent_strong;
+    background-image: none;
+    border: 0.0625em solid transparent;
+    border-radius: 0 0.75em 0 0.75em;
+    box-shadow: none;
+    color: @bar_ink;
+    transition-property: background-color, border-color;
+    transition-duration: 160ms;
+    transition-timing-function: ease;
+}
+
+.LockPrimary:hover,
+.LockPrimary:focus-visible {
+    background-color: @bar_accent_soft;
+    border-color: alpha(@accent_bg_color, 0.7);
+    outline: none;
+}
+
+.LockPrimary:disabled {
+    opacity: 0.55;
+}

@@ -20,17 +20,17 @@ Problem: the library API is wrong for a Lua-configured Hyprland, and the UI carr
 
 Recommended: in `nosh-core`, read the provider from `hyprctl -j status` (`configProvider` is `"lua"` or `"hyprlang"`). Build dispatch strings through one formatter with two branches. Use the Lua forms from PR #446:
 
-| Action | Lua | hyprlang fallback |
-| --- | --- | --- |
-| Focus workspace | `hl.dsp.focus({ workspace = "<id>" })` | `dispatch workspace <id>` |
-| Focus client | `hl.dsp.focus({ window = "address:0x<addr>" })` | `dispatch focuswindow address:0x<addr>` |
-| Focus monitor | `hl.dsp.focus({ monitor = <id> })` | `dispatch focusmonitor <id>` |
-| Close client | `hl.dsp.window.close({ window = "address:0x<addr>" })` | `dispatch closewindow address:0x<addr>` |
-| Move client to workspace | `hl.dsp.window.move({ window = "address:0x<addr>", workspace = <id>, follow = false })` | `dispatch movetoworkspacesilent <id>,address:0x<addr>` |
-| Toggle floating | `hl.dsp.window.float({ window = "address:0x<addr>" })` | `dispatch togglefloating address:0x<addr>` |
-| Move workspace to monitor | `hl.dsp.workspace.move({ workspace = <id>, monitor = <monitor> })` | `dispatch moveworkspacetomonitor <id> <monitor>` |
-| Move cursor | `hl.dsp.cursor.move({ x = <x>, y = <y> })` | `dispatch movecursor <x> <y>` |
-| Execute command | `hl.dsp.exec_cmd("<command>")` | `dispatch exec <command>` |
+| Action                    | Lua                                                                                     | hyprlang fallback                                      |
+| ------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Focus workspace           | `hl.dsp.focus({ workspace = "<id>" })`                                                  | `dispatch workspace <id>`                              |
+| Focus client              | `hl.dsp.focus({ window = "address:0x<addr>" })`                                         | `dispatch focuswindow address:0x<addr>`                |
+| Focus monitor             | `hl.dsp.focus({ monitor = <id> })`                                                      | `dispatch focusmonitor <id>`                           |
+| Close client              | `hl.dsp.window.close({ window = "address:0x<addr>" })`                                  | `dispatch closewindow address:0x<addr>`                |
+| Move client to workspace  | `hl.dsp.window.move({ window = "address:0x<addr>", workspace = <id>, follow = false })` | `dispatch movetoworkspacesilent <id>,address:0x<addr>` |
+| Toggle floating           | `hl.dsp.window.float({ window = "address:0x<addr>" })`                                  | `dispatch togglefloating address:0x<addr>`             |
+| Move workspace to monitor | `hl.dsp.workspace.move({ workspace = <id>, monitor = <monitor> })`                      | `dispatch moveworkspacetomonitor <id> <monitor>`       |
+| Move cursor               | `hl.dsp.cursor.move({ x = <x>, y = <y> })`                                              | `dispatch movecursor <x> <y>`                          |
+| Execute command           | `hl.dsp.exec_cmd("<command>")`                                                          | `dispatch exec <command>`                              |
 
 Send dispatch over the Hyprland command socket, not through a `hyprctl` subprocess. Serialize requests through one task so replies cannot interleave.
 
@@ -331,7 +331,7 @@ Decision: add a `PowerProfilesService` now and a control in quick settings. Use 
 
 ## Auth
 
-Decision: add PAM authentication now for the power menu, user switch, and a future lock screen. Use a Rust PAM binding or a small `libpam` FFI layer. Keep the password in-process, zeroize it, and never log it. Run PAM in a blocking thread. Ship and document a `nosh-auth` PAM service file. A full lock screen is a separate feature. See `features/auth.md`.
+Decision: add PAM authentication for the power menu, lock screen, and user switch. Use a Rust PAM binding or a small `libpam` FFI layer. Keep the password in-process, zeroize every copy the shell owns, and never log it. Answer the first prompt of each kind only, so a second module cannot read the password; refuse a stack that asks twice. Run PAM in a blocking thread. Ship and document a `nosh-auth` PAM service file. The lock screen uses `ext-session-lock-v1` directly, not a layer-shell overlay, so the compositor blocks input while it is active. See `features/auth.md` and `features/lock-screen.md`.
 
 ## Command line and build
 
@@ -349,24 +349,24 @@ The Meson dependencies include `astal-io-0.1`, but nothing uses it. Do not port 
 
 These are open on `Aylur/astal` as of this writing. The ones marked relevant should shape the Rust services even though the rewrite does not link Astal.
 
-| PR | Title | Relevance |
-| --- | --- | --- |
-| #446 | fix(hyprland): use new lua dispatchers | High. Base the dispatch formatter on it. |
-| #488 | fix(hyprland): return null when event socket is missing | High. Copy the null handling. |
-| #481 | fix(AstalHyprland): stop reading after socket EOF | High. Copy the EOF handling. |
-| #434 | feat(hyprland)!: nullable getters | Medium. `get_monitor`, `get_workspace`, and `get_client` return `Option` in Rust. |
-| #435 | feat(hyprland): add `inhibiting_idle` property | Low. Parse it now, no UI. |
-| #428 | feature(hyprland): full group support | Low. Parse group addresses later. |
-| #477 | fix(network)!: group access points and fix security detection | High. Implement grouping and security. |
-| #478 | feat(network): add VPN support | Medium. Use its design when the VPN toggle becomes real. |
-| #479 | fix(bluetooth): async D-Bus calls and adapter state | High. Implement the adapter state machine. |
-| #449 | fix(network): network device hot-plugging | High. Watch device add and remove. |
-| #454 | fix(network): guard against null BSSID | High. Do not key solely on BSSID. |
-| #457 | fix(network): clear obsolete wifi properties on disconnect | Medium. Clear SSID, strength, and AP on disconnect. |
-| #487 | tray: guard against zero-sized IconPixmap | High. Ignore zero-sized pixmaps. |
-| #305 | feat(hyprland): add `mirrorOf` member of `Monitor` | Medium. Parse mirror state for the monitor layout model. |
-| #462 | prevent error state when turning a monitor on and off | Medium. Handle disabled monitors without treating them as failures. |
-| #62 | new lib: clipboard | Low, future. KDE Connect clipboard actions and a clipboard history would use it. |
+| PR   | Title                                                         | Relevance                                                                         |
+| ---- | ------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| #446 | fix(hyprland): use new lua dispatchers                        | High. Base the dispatch formatter on it.                                          |
+| #488 | fix(hyprland): return null when event socket is missing       | High. Copy the null handling.                                                     |
+| #481 | fix(AstalHyprland): stop reading after socket EOF             | High. Copy the EOF handling.                                                      |
+| #434 | feat(hyprland)!: nullable getters                             | Medium. `get_monitor`, `get_workspace`, and `get_client` return `Option` in Rust. |
+| #435 | feat(hyprland): add `inhibiting_idle` property                | Low. Parse it now, no UI.                                                         |
+| #428 | feature(hyprland): full group support                         | Low. Parse group addresses later.                                                 |
+| #477 | fix(network)!: group access points and fix security detection | High. Implement grouping and security.                                            |
+| #478 | feat(network): add VPN support                                | Medium. Use its design when the VPN toggle becomes real.                          |
+| #479 | fix(bluetooth): async D-Bus calls and adapter state           | High. Implement the adapter state machine.                                        |
+| #449 | fix(network): network device hot-plugging                     | High. Watch device add and remove.                                                |
+| #454 | fix(network): guard against null BSSID                        | High. Do not key solely on BSSID.                                                 |
+| #457 | fix(network): clear obsolete wifi properties on disconnect    | Medium. Clear SSID, strength, and AP on disconnect.                               |
+| #487 | tray: guard against zero-sized IconPixmap                     | High. Ignore zero-sized pixmaps.                                                  |
+| #305 | feat(hyprland): add `mirrorOf` member of `Monitor`            | Medium. Parse mirror state for the monitor layout model.                          |
+| #462 | prevent error state when turning a monitor on and off         | Medium. Handle disabled monitors without treating them as failures.               |
+| #62  | new lib: clipboard                                            | Low, future. KDE Connect clipboard actions and a clipboard history would use it.  |
 
 | #291, #282, #441, #483 | GTK widget additions | None. The rewrite uses plain GTK. |
 | #445 | add .deps files | None for Rust. |
@@ -376,31 +376,37 @@ These are open on `Aylur/astal` as of this writing. The ones marked relevant sho
 
 Fill in the status column before implementation. The default is the recommendation in this file.
 
-| Decision | Recommendation | Status |
-| --- | --- | --- |
-| Backend resolution | Specific-first try tree with per-capability fallback | Accepted |
-| Hyprland dispatchers | Detect config provider and version, Lua first, hyprlang fallback | Accepted |
-| Special workspaces | Never show them in the bar | Accepted |
-| Workspaces backend | Hyprland first, then another compositor adapter, then `ext-workspace-v1` | Accepted |
-| Audio backend | Pulse API, `wpctl` fallback | Accepted |
-| Audio maximum | 1.5 in the core and slider, bar scroll stops at 1.0 | Accepted |
-| Brightness backend | sysfs plus logind, `brightnessctl` fallback, DDC/CI for external monitors | Accepted |
-| Brightness gamma | 2.0 for internal only | Accepted |
-| Brightness dim/restore | Built-in snapshot, dim, and restore commands | Accepted |
-| App launch | Detached double-fork, not Hyprland `exec_cmd` | Accepted |
-| Tray menu | Rust DBusMenu client, no vala-panel-appmenu | Accepted |
-| Notification settings | Own GSettings schema, JSON payload store | Accepted |
-| Notification placement | Farthest monitor for the configured corner | Accepted |
-| Notification display timeout | 5 s, pause on hover, DND suppresses cards | Accepted |
-| Bluetooth discovery | Add a discovery section, scan on dropdown open | Accepted |
-| VPN toggle | Disabled until the VPN service exists | Accepted |
-| Multi-monitor bar | One bar per enabled monitor | Accepted |
-| Active windows | Open on the current monitor | Accepted |
-| Monitor configuration | Generic read, compositor-specific write | Accepted |
-| Power profiles | Add to quick settings now | Accepted |
-| Auth | PAM for power menu, user switch, future lock screen | Accepted |
-| Custom applets | TOML entries, script providers, bar applets | Accepted |
-| Generic workspaces | Implement both, specific-first try tree | Accepted |
+| Decision                     | Recommendation                                                            | Status   |
+| ---------------------------- | ------------------------------------------------------------------------- | -------- |
+| Backend resolution           | Specific-first try tree with per-capability fallback                      | Accepted |
+| Hyprland dispatchers         | Detect config provider and version, Lua first, hyprlang fallback          | Accepted |
+| Special workspaces           | Never show them in the bar                                                | Accepted |
+| Workspaces backend           | Hyprland first, then another compositor adapter, then `ext-workspace-v1`  | Accepted |
+| Audio backend                | Pulse API, `wpctl` fallback                                               | Accepted |
+| Audio maximum                | 1.5 in the core and slider, bar scroll stops at 1.0                       | Accepted |
+| Brightness backend           | sysfs plus logind, `brightnessctl` fallback, DDC/CI for external monitors | Accepted |
+| Brightness gamma             | 2.0 for internal only                                                     | Accepted |
+| Brightness dim/restore       | Built-in snapshot, dim, and restore commands                              | Accepted |
+| App launch                   | Detached double-fork, not Hyprland `exec_cmd`                             | Accepted |
+| Tray menu                    | Rust DBusMenu client, no vala-panel-appmenu                               | Accepted |
+| Notification settings        | Own GSettings schema, JSON payload store                                  | Accepted |
+| Notification placement       | Farthest monitor for the configured corner                                | Accepted |
+| Notification display timeout | 5 s, pause on hover, DND suppresses cards                                 | Accepted |
+| Bluetooth discovery          | Add a discovery section, scan on dropdown open                            | Accepted |
+| VPN toggle                   | Disabled until the VPN service exists                                     | Accepted |
+| Multi-monitor bar            | One bar per enabled monitor                                               | Accepted |
+| Active windows               | Open on the current monitor                                               | Accepted |
+| Monitor configuration        | Generic read, compositor-specific write                                   | Accepted |
+| Power profiles               | Add to quick settings now                                                 | Accepted |
+| Auth                         | PAM for power menu, lock screen, user switch                              | Accepted |
+| Session lock                 | `ext-session-lock-v1`, PAM unlock, logind `Lock` requests                 | Accepted |
+| Lock crash recovery          | Runtime marker, re-lock at startup, `misc:allow_session_lock_restore`     | Accepted |
+| Polkit prompts               | Shell registers its own authentication agent, PAM through `polkit-1`      | Accepted |
+| Polkit caller                | `BeginAuthentication` requires uid 0                                      | Accepted |
+| Polkit prompts at once       | One card, a new request cancels the older session                         | Accepted |
+| Polkit user name             | Resolved through NSS by uid, never from `$USER`                           | Accepted |
+| Custom applets               | TOML entries, script providers, bar applets                               | Accepted |
+| Generic workspaces           | Implement both, specific-first try tree                                   | Accepted |
 
 ## Definition of done
 

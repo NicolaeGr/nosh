@@ -3,7 +3,8 @@
  * scaled to the 12px root font. See docs/features/power-menu.md.
  */
 
-window.PowerMenu {
+window.PowerMenu,
+window.PolkitPrompt {
     font-size: 12px;
     background-color: rgba(0, 0, 0, 0.42);
     color: @bar_ink;
@@ -12,7 +13,8 @@ window.PowerMenu {
     letter-spacing: 0.015em;
 }
 
-.PowerMenuBackground {
+.PowerMenuBackground,
+.PolkitBackground {
     background-color: transparent;
 }
 
@@ -26,6 +28,10 @@ window.PowerMenu {
     box-shadow:
         0 1.5em 5em rgba(0, 0, 0, 0.55),
         inset 0 0.0625em 0 @bar_highlight;
+}
+
+.PolkitCard {
+    min-width: 32em;
 }
 
 .PowerTitle {
@@ -149,6 +155,27 @@ window.PowerMenu {
 
 .PowerPasswordRow {
     margin-top: 0.125em;
+}
+
+.PolkitHeader {
+    margin-bottom: 0.5em;
+}
+
+.PolkitIcon {
+    -gtk-icon-size: 1.375em;
+    color: @bar_muted;
+}
+
+.PolkitMessage {
+    color: @bar_ink;
+    font-size: 0.9375em;
+    line-height: 1.35;
+}
+
+.PolkitAction {
+    margin-top: 0.5em;
+    color: @bar_muted;
+    font-size: 0.75em;
 }
 
 .PowerPrimary,

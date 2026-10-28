@@ -22,8 +22,10 @@ pub mod network;
 pub mod notifications;
 pub mod origin;
 pub mod paths;
+pub mod polkit;
 pub mod power;
 pub mod power_profiles;
+pub mod session_lock;
 pub mod stats;
 pub mod tray;
 pub mod workspaces;
@@ -60,7 +62,7 @@ pub use error::{
 pub use event::{
     AudioEvent, AuthEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MediaEvent,
     MonitorEvent, NetworkEvent, NotificationEvent, PowerEvent, PowerProfilesEvent, Service,
-    Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
+    SessionLockEvent, Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
 };
 pub use idle_inhibit::{
     IdleInhibitBackend, IdleInhibitService, IdleInhibitServiceConfig, IdleInhibitState,
@@ -97,6 +99,12 @@ pub use notifications::{
 };
 pub use origin::ChangeOrigin;
 pub use paths::{HyprlandPaths, NoshPaths};
+pub use polkit::{
+    AgentRequest, HelperMessage, HelperSession, Identity, PolkitAgentBackend, PolkitBackend,
+    PolkitBackendRef, PolkitEvent, PolkitPrompt, PolkitService, HELPER_SOCKET,
+    POLKIT_AGENT_INTERFACE, POLKIT_AGENT_PATH, POLKIT_AUTHORITY_INTERFACE, POLKIT_AUTHORITY_PATH,
+    POLKIT_SERVICE,
+};
 pub use power::{
     LogindBackend, PowerAction, PowerBackend, PowerBackendRef, PowerModel, PowerService,
     PowerServiceConfig, LOGIND_MANAGER, LOGIND_PATH, LOGIND_SERVICE, LOGIND_SESSION_INTERFACE,
@@ -107,6 +115,10 @@ pub use power_profiles::{
     PowerProfilesBackendEvent, PowerProfilesBackendRef, PowerProfilesModel, PowerProfilesService,
     PowerProfilesServiceConfig, POWER_PROFILES_INTERFACE, POWER_PROFILES_PATH,
     POWER_PROFILES_SERVICE,
+};
+pub use session_lock::{
+    LockMarker, LogindSessionLockBackend, SessionLockBackend, SessionLockBackendRef,
+    SessionLockService, LOCK_MARKER_FILE,
 };
 pub use stats::{
     cpu_percent, parse_cpu_stat, parse_meminfo, CpuTimes, MemoryInfo, ProcStatsSource, StatsSource,

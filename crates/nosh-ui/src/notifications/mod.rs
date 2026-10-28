@@ -53,6 +53,7 @@ struct Inner {
     queued: RefCell<VecDeque<Notification>>,
     monitor: RefCell<Option<String>>,
     dnd: Cell<bool>,
+    locked: Cell<bool>,
     self_weak: RefCell<Weak<Inner>>,
 }
 
@@ -88,6 +89,7 @@ impl NotificationsWindow {
             queued: RefCell::new(VecDeque::new()),
             monitor: RefCell::new(None),
             dnd: Cell::new(false),
+            locked: Cell::new(false),
             self_weak: RefCell::new(Weak::new()),
         });
         *inner.self_weak.borrow_mut() = Rc::downgrade(&inner);
@@ -149,6 +151,19 @@ impl NotificationsWindow {
             self.inner.sync_visibility();
         }
     }
+
+    /// A session lock forbids mapping a new surface. Cards on screen are
+    /// dismissed and new popups are dropped, so nothing reappears after the
+    /// unlock. The history and the core model keep the notification.
+    pub fn set_locked(&self, locked: bool) {
+        if self.inner.locked.replace(locked) == locked {
+            return;
+        }
+        if locked {
+            self.inner.dismiss_all();
+        }
+        self.inner.sync_visibility();
+    }
 }
 
 impl Inner {
@@ -182,6 +197,9 @@ impl Inner {
     }
 
     fn enqueue(&self, notification: Notification) {
+        if self.locked.get() {
+            return;
+        }
         let id = notification.id;
 
         if self.cards.borrow().contains_key(&id) {
@@ -295,8 +313,16 @@ impl Inner {
         }
     }
 
+    fn dismiss_all(&self) {
+        self.queued.borrow_mut().clear();
+        let cards: Vec<Rc<NotificationCard>> = self.cards.borrow().values().cloned().collect();
+        for card in cards {
+            card.dismiss();
+        }
+    }
+
     fn sync_visibility(&self) {
-        if self.visible.borrow().is_empty() {
+        if self.locked.get() || self.visible.borrow().is_empty() {
             self.stack.add_css_class("pointer-events-none");
             self.window.set_visible(false);
             return;
@@ -324,7 +350,7 @@ impl Inner {
         self.window.set_visible(false);
         self.window.set_monitor(Some(&monitor));
         *self.monitor.borrow_mut() = Some(connector);
-        if was_visible {
+        if was_visible && !self.locked.get() {
             self.window.present();
         }
     }

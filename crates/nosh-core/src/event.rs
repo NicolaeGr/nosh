@@ -9,6 +9,7 @@ use crate::monitors::MonitorLayout;
 use crate::network::model::NetworkModel;
 use crate::notifications::model::{ClosedReason, Notification, NotificationModel};
 use crate::origin::ChangeOrigin;
+use crate::polkit::model::PolkitEvent;
 use crate::power::model::{PowerAction, PowerModel};
 use crate::power_profiles::model::PowerProfilesModel;
 use crate::stats::model::SystemStats;
@@ -37,7 +38,9 @@ pub enum Event {
     Media(MediaEvent),
     Notifications(NotificationEvent),
     Auth(AuthEvent),
+    Polkit(PolkitEvent),
     Power(PowerEvent),
+    SessionLock(SessionLockEvent),
     Menu(MenuEvent),
     ServiceAvailability(Service, bool),
 }
@@ -83,7 +86,9 @@ pub enum Service {
     Media,
     Notifications,
     Auth,
+    Polkit,
     Power,
+    SessionLock,
 }
 
 #[derive(Debug, Clone)]
@@ -308,6 +313,20 @@ pub enum PowerEvent {
         message: String,
     },
     /// logind is missing or the system bus is down.
+    Unavailable,
+}
+
+/// A session lock request from logind.
+///
+/// The signal is a request, not a report about the shell's own lock state.
+/// The UI decides whether a lock is already active.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionLockEvent {
+    /// logind passed on a lock request, for example `loginctl lock-session`.
+    Lock,
+    /// logind passed on an unlock request.
+    Unlock,
+    /// logind is missing or the session object cannot be watched.
     Unavailable,
 }
 

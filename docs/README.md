@@ -54,6 +54,7 @@ Feature files:
 - [Menus](features/menus.md)
 - [Custom entries, applets, and scripts](features/custom-applets.md)
 - [Authentication](features/auth.md)
+- [Lock screen](features/lock-screen.md)
 - [Power menu](features/power-menu.md)
 - [Idle inhibitor](features/idle-inhibitor.md)
 - [Change indicator](features/change-indicator.md)
@@ -156,7 +157,8 @@ These are accepted and reflected in the feature files. Change one only with a no
 | Menus                 | One view plus one source, configured in `menus.toml`; the app launcher is the `apps` builtin | [features/menus.md](features/menus.md)                   |
 | Custom applets        | TOML entries, script providers, bar applets                                                  | [features/custom-applets.md](features/custom-applets.md) |
 | Power profiles        | Add to quick settings now                                                                    | [features/power-profiles.md](features/power-profiles.md) |
-| Auth                  | PAM for power menu, user switch, future lock screen                                          | [features/auth.md](features/auth.md)                     |
+| Auth                  | PAM for power menu, lock screen, user switch                                                 | [features/auth.md](features/auth.md)                     |
+| Session lock          | `ext-session-lock-v1` through `gtk4-session-lock`, PAM unlock                                | [features/lock-screen.md](features/lock-screen.md)       |
 | App search ranking    | Decayed launch history, recent use outweighs old totals                                      | [features/menus.md](features/menus.md)                   |
 
 ## Validation

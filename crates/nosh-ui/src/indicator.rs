@@ -22,6 +22,7 @@ pub struct ChangeIndicator {
     marker_area: gtk::DrawingArea,
     timer: Rc<RefCell<Option<glib::SourceId>>>,
     generation: Rc<Cell<u64>>,
+    locked: Cell<bool>,
 }
 
 impl ChangeIndicator {
@@ -113,7 +114,22 @@ impl ChangeIndicator {
             marker_area,
             timer: Rc::new(RefCell::new(None)),
             generation: Rc::new(Cell::new(0)),
+            locked: Cell::new(false),
         }
+    }
+
+    /// Hides the indicator and keeps it hidden until the session unlocks. A
+    /// session lock forbids mapping a new surface.
+    pub fn set_locked(&self, locked: bool) {
+        self.locked.set(locked);
+        if !locked {
+            return;
+        }
+        self.generation.set(self.generation.get().wrapping_add(1));
+        if let Some(timer) = self.timer.borrow_mut().take() {
+            timer.remove();
+        }
+        self.window.set_visible(false);
     }
 
     pub fn show_audio(
@@ -170,6 +186,9 @@ impl ChangeIndicator {
         overamp: bool,
         marker: Option<f64>,
     ) {
+        if self.locked.get() {
+            return;
+        }
         self.icon.set_icon_name(Some(icon));
         self.value.set_text(label);
         self.bar.set_fraction(fraction);

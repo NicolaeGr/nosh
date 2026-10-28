@@ -11,17 +11,19 @@ use nosh_core::{
     volume_icon, AudioEndpoint, AudioEvent, AudioModel, AuthEvent, BatteryEvent, BatteryModel,
     BrightnessDevice, BrightnessEvent, ChangeOrigin, Command, Core, EndpointKind, Event,
     IdleInhibitEvent, IdleInhibitState, LayoutPreset, MediaEvent, MediaModel, MenuEvent,
-    MonitorEvent, NetworkEvent, NetworkModel, NotificationEvent, PowerEvent, PowerModel,
-    PowerProfilesEvent, PowerProfilesModel, SystemStats, SystemStatsEvent, TrayEvent,
-    TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot, BRIGHTNESS_STEP, DIM_PERCENT,
-    VOLUME_STEP,
+    MonitorEvent, NetworkEvent, NetworkModel, NotificationEvent, PolkitEvent, PowerEvent,
+    PowerModel, PowerProfilesEvent, PowerProfilesModel, SessionLockEvent, SystemStats,
+    SystemStatsEvent, TrayEvent, TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot,
+    BRIGHTNESS_STEP, DIM_PERCENT, VOLUME_STEP,
 };
 
 use crate::bar::BarWindow;
 use crate::center_panel::CenterPanelWindow;
 use crate::indicator::ChangeIndicator;
+use crate::lock_screen::LockScreen;
 use crate::menu::MenuManager;
 use crate::notifications::{NotificationHistory, NotificationsWindow};
+use crate::polkit_prompt::PolkitPromptWindow;
 use crate::power_menu::PowerMenuWindow;
 use crate::quick_settings::QuickSettingsWindow;
 
@@ -40,6 +42,7 @@ const QUICK_SETTINGS_STYLE: &str = include_str!("../resources/quick_settings.css
 const NOTIFICATIONS_STYLE: &str = include_str!("../resources/notifications.css");
 const CENTER_PANEL_STYLE: &str = include_str!("../resources/center_panel.css");
 const POWER_MENU_STYLE: &str = include_str!("../resources/power_menu.css");
+const LOCK_SCREEN_STYLE: &str = include_str!("../resources/lock_screen.css");
 
 /// When this marker is present in the user stylesheet it is replaced with the
 /// complete built-in stylesheet at load time.
@@ -75,16 +78,45 @@ struct Ui {
     menus: RefCell<MenuManager>,
     quick_settings: Rc<QuickSettingsWindow>,
     power_menu: Rc<PowerMenuWindow>,
+    lock_screen: Rc<LockScreen>,
+    polkit_prompt: Rc<PolkitPromptWindow>,
     center_panel: Rc<CenterPanelWindow>,
     notification_history: Rc<NotificationHistory>,
     notifications: Rc<NotificationsWindow>,
-    indicator: ChangeIndicator,
+    indicator: Rc<ChangeIndicator>,
+}
+
+/// A session lock forbids mapping a new surface, so the passive overlays stay
+/// hidden from the lock request until the compositor reports the unlock.
+fn set_passive_overlays_locked(
+    notifications: &NotificationsWindow,
+    indicator: &ChangeIndicator,
+    locked: bool,
+) {
+    notifications.set_locked(locked);
+    indicator.set_locked(locked);
 }
 
 impl Ui {
     fn new(app: gtk::Application, core: Rc<Core>) -> Self {
-        let indicator = ChangeIndicator::new(&app);
+        let indicator = Rc::new(ChangeIndicator::new(&app));
+        let lock_screen = Rc::new(LockScreen::new(&app, Rc::clone(&core)));
+        let notifications = Rc::new(NotificationsWindow::new(&app, Rc::clone(&core)));
         let power_menu = Rc::new(PowerMenuWindow::new(&app, Rc::clone(&core)));
+        {
+            let screen = Rc::clone(&lock_screen);
+            let weak_menu = Rc::downgrade(&power_menu);
+            let notifications = Rc::clone(&notifications);
+            let indicator = Rc::clone(&indicator);
+            power_menu.set_lock_handler(Rc::new(move || {
+                if let Some(menu) = weak_menu.upgrade() {
+                    menu.close();
+                }
+                screen.lock();
+                set_passive_overlays_locked(&notifications, &indicator, screen.is_locked());
+            }));
+        }
+        let polkit_prompt = Rc::new(PolkitPromptWindow::new(&app, Rc::clone(&core)));
         let quick_settings = Rc::new(QuickSettingsWindow::new(&app, Rc::clone(&core)));
         {
             let weak_settings = Rc::downgrade(&quick_settings);
@@ -104,7 +136,6 @@ impl Ui {
             Rc::clone(&core),
             Rc::clone(&notification_history),
         ));
-        let notifications = Rc::new(NotificationsWindow::new(&app, Rc::clone(&core)));
         Self {
             app,
             core,
@@ -123,6 +154,8 @@ impl Ui {
             menus: RefCell::new(MenuManager::new()),
             quick_settings,
             power_menu,
+            lock_screen,
+            polkit_prompt,
             center_panel,
             notification_history,
             notifications,
@@ -131,6 +164,12 @@ impl Ui {
     }
 
     fn sync_bars(&self) {
+        // A session lock does not allow new toplevels. Bars that appear on a
+        // monitor plugged in while locked are created after the unlock.
+        if self.lock_screen.is_locked() {
+            return;
+        }
+
         let Some(display) = gdk::Display::default() else {
             return;
         };
@@ -378,8 +417,13 @@ impl Ui {
             Event::Network(event) => self.apply_network_event(event),
             Event::Tray(event) => self.apply_tray_event(event),
             Event::Media(event) => self.apply_media_event(event),
-            Event::Auth(AuthEvent::Finished(result)) => self.power_menu.handle_auth(&result),
+            Event::Auth(AuthEvent::Finished(result)) => {
+                self.power_menu.handle_auth(&result);
+                self.lock_screen.handle_auth(&result);
+            }
+            Event::Polkit(event) => self.apply_polkit_event(event),
             Event::Power(event) => self.apply_power_event(event),
+            Event::SessionLock(event) => self.apply_session_lock(event),
             Event::Menu(event) => self.apply_menu_event(event),
             Event::Monitors(MonitorEvent::Snapshot { layout, .. })
             | Event::Monitors(MonitorEvent::LayoutChanged(layout)) => {
@@ -717,12 +761,68 @@ impl Ui {
 
     /// Sends a request to the core. The window appears when `Opened` arrives.
     fn open_menu(&self, id: &str) {
+        if self.lock_screen.is_locked() {
+            return;
+        }
         self.core.send(Command::MenuOpen(id.to_string()));
     }
 
     fn open_power_menu(&self) {
+        if self.lock_screen.is_locked() {
+            return;
+        }
         let monitor = self.active_monitor();
         self.power_menu.open(monitor.as_ref());
+    }
+
+    /// Closes the transient panels and locks the session.
+    fn lock(&self) {
+        self.quick_settings.close();
+        self.power_menu.close();
+        // A prompt opened before the lock must not wait behind the lock screen.
+        self.polkit_prompt.cancel();
+        self.lock_screen.lock();
+        self.apply_lock_to_popups();
+    }
+
+    /// Tells the passive overlays whether a session lock is held. A lock
+    /// forbids mapping a new surface, so both must stay hidden while it lasts.
+    fn apply_lock_to_popups(&self) {
+        set_passive_overlays_locked(
+            &self.notifications,
+            &self.indicator,
+            self.lock_screen.is_locked(),
+        );
+    }
+
+    fn apply_session_lock(&self, event: SessionLockEvent) {
+        match event {
+            SessionLockEvent::Lock => self.lock(),
+            SessionLockEvent::Unlock => {
+                tracing::debug!("logind asked to unlock, the lock screen unlocks through PAM");
+            }
+            SessionLockEvent::Unavailable => {}
+        }
+    }
+
+    fn apply_polkit_event(&self, event: PolkitEvent) {
+        if self.lock_screen.is_locked() {
+            // A lock surface cannot host the prompt, and showing it after the
+            // unlock would surprise the user. The cookie is dropped so polkitd
+            // sees the request end.
+            if let PolkitEvent::Prompt(prompt) = &event {
+                tracing::debug!(
+                    cookie = %prompt.cookie,
+                    "cancelling a polkit prompt while the session is locked"
+                );
+                self.core.send(Command::PolkitCancel {
+                    cookie: prompt.cookie.clone(),
+                });
+            }
+            return;
+        }
+        let monitor = self.active_monitor();
+        self.polkit_prompt.handle_event(&event, monitor.as_ref());
     }
 
     fn apply_power_event(&self, event: PowerEvent) {
@@ -812,6 +912,7 @@ fn update_endpoint(
 enum StartupAction {
     Menu(String),
     Session,
+    Lock,
     Command(Command),
 }
 
@@ -842,6 +943,10 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
                     StartupAction::Session => match &ui {
                         Some(ui) => ui.open_power_menu(),
                         None => pending.borrow_mut().push(StartupAction::Session),
+                    },
+                    StartupAction::Lock => match &ui {
+                        Some(ui) => ui.lock(),
+                        None => pending.borrow_mut().push(StartupAction::Lock),
                     },
                     StartupAction::Command(command) => match &ui {
                         Some(ui) => ui.core.send(command),
@@ -882,6 +987,19 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
             let events = core.subscribe();
 
             let ui = Rc::new(Ui::new(app.clone(), Rc::clone(&core)));
+            {
+                let weak = Rc::downgrade(&ui);
+                ui.lock_screen.set_unlocked_handler(Rc::new(move || {
+                    if let Some(ui) = weak.upgrade() {
+                        ui.apply_lock_to_popups();
+                        ui.sync_bars();
+                    }
+                }));
+            }
+            if ui.lock_screen.lock_if_pending() {
+                tracing::info!("re-acquiring the session lock from the previous run");
+                ui.apply_lock_to_popups();
+            }
             ui.sync_bars();
 
             if let Some(display) = gdk::Display::default() {
@@ -897,6 +1015,7 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
                 match action {
                     StartupAction::Menu(id) => ui.open_menu(&id),
                     StartupAction::Session => ui.open_power_menu(),
+                    StartupAction::Lock => ui.lock(),
                     StartupAction::Command(command) => ui.core.send(command),
                 }
             }
@@ -933,6 +1052,7 @@ fn startup_action(arguments: &[std::ffi::OsString]) -> Option<StartupAction> {
                     .map(|id| StartupAction::Menu((*id).to_string()));
             }
             "session" => return Some(StartupAction::Session),
+            "lock" => return Some(StartupAction::Lock),
             "volume-up" => {
                 return Some(StartupAction::Command(Command::AudioStepVolume(
                     VOLUME_STEP,
@@ -1001,7 +1121,7 @@ fn install_css() {
     };
 
     let builtin = format!(
-        "{STYLE}\n{MENU_STYLE}\n{QUICK_SETTINGS_STYLE}\n{NOTIFICATIONS_STYLE}\n{CENTER_PANEL_STYLE}\n{POWER_MENU_STYLE}"
+        "{STYLE}\n{MENU_STYLE}\n{QUICK_SETTINGS_STYLE}\n{NOTIFICATIONS_STYLE}\n{CENTER_PANEL_STYLE}\n{POWER_MENU_STYLE}\n{LOCK_SCREEN_STYLE}"
     );
     add_css(&display, &builtin, gtk::STYLE_PROVIDER_PRIORITY_USER);
 
@@ -1101,6 +1221,14 @@ mod tests {
         assert_eq!(
             startup_action(&arguments(&["session"])),
             Some(StartupAction::Session)
+        );
+    }
+
+    #[test]
+    fn the_command_line_locks_the_session() {
+        assert_eq!(
+            startup_action(&arguments(&["lock"])),
+            Some(StartupAction::Lock)
         );
     }
 

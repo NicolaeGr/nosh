@@ -1,9 +1,12 @@
 mod app;
+mod auth_request;
 mod bar;
 mod center_panel;
 mod indicator;
+mod lock_screen;
 mod menu;
 mod notifications;
+mod polkit_prompt;
 mod power_menu;
 mod quick_settings;
 

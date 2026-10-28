@@ -5,7 +5,9 @@ Current state: implemented. The quick settings header's session button opens `no
 ## Requirements
 
 - A power menu overlay on the current monitor.
-- Actions: Shutdown, Reboot, Logout, Suspend, Hibernate, Cancel.
+- Actions: Lock screen, Shutdown, Reboot, Logout, Suspend, Hibernate, Cancel.
+- The lock entry locks the session without a logind call. See `features/lock-screen.md`.
+- A lock request while the menu is open closes the menu first.
 - A confirmation step for destructive actions.
 - A password prompt through `AuthService` before the action.
 - Logout terminates the current session. Shutdown, reboot, suspend, and hibernate use logind.
@@ -69,11 +71,13 @@ Do not retry a failed power action in a loop. `AccessDenied` and `InteractiveAut
 
 ### Availability
 
-`LogindBackend::read` asks `CanPowerOff`, `CanReboot`, `CanSuspend`, and `CanHibernate`. Logout is always listed. An action whose answer is `no` or `na` is insensitive in the card. Do not hide all actions because one is unavailable.
+`LogindBackend::read` asks `CanPowerOff`, `CanReboot`, `CanSuspend`, and `CanHibernate`. Logout is always listed. An action whose answer is `no` or `na` is insensitive in the card. A capability call that fails drops that one action and keeps the rest, so one unanswered method does not hide the menu. Do not hide all actions because one is unavailable. Only when logind answers none of the four calls is the menu marked unavailable.
 
 ### Auth
 
 The UI asks `AuthService` for the password. The core does not store the password. After success, the UI sends `PowerAction`. The auth doc is in `features/auth.md`.
+
+Logout asks for confirmation only. logind lets a session terminate itself, and the session may hold no PAM stack that works. A lockout on Logout would trap the user in a session they cannot leave. Every other action asks for a password whenever logind answers `challenge`.
 
 Do not let the core accept a raw password in a `PowerAction` command. Keep auth and the action separate.
 
@@ -103,6 +107,7 @@ PowerMenuWindow
       Label user and host
       Stack
         Box PowerActions
+          Button lock
           Button log out
           Button suspend
           Button hibernate
@@ -121,6 +126,7 @@ Use the existing icon and surface styles where they fit. The `power_menu.css` ru
 ### Interaction
 
 - Click an action: switch the card to the confirmation step, titled with the action. The card shrinks to the confirmation height instead of keeping the action list height.
+- The lock entry closes the menu and opens the lock screen immediately. It has no confirmation step and never depends on the logind capabilities.
 - The confirmation asks for a password only when logind answers `challenge` for that action. On a normal local session `CanPowerOff`, `CanReboot`, `CanSuspend`, and `CanHibernate` answer `yes`, so a confirmation is enough.
 - Correct password or no password required: send `PowerAction`. The window closes when logind accepts.
 - Wrong password: stay in the same card, show the error, clear the entry.

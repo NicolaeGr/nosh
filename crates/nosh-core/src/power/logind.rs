@@ -105,13 +105,23 @@ impl PowerBackend for LogindBackend {
     }
 
     async fn probe(&self) -> Result<(), BackendError> {
-        self.can("CanPowerOff").await?;
-        Ok(())
+        // One denied capability does not mean the menu is unusable. Only a
+        // logind that answers nothing disables the actions, including Logout.
+        let mut last = None;
+        for method in ["CanPowerOff", "CanReboot", "CanSuspend", "CanHibernate"] {
+            match self.can(method).await {
+                Ok(_) => return Ok(()),
+                Err(error) => last = Some(error),
+            }
+        }
+        Err(last.unwrap_or_else(|| BackendError::Unavailable("logind did not answer".to_string())))
     }
 
     async fn read(&self) -> Result<PowerModel, BackendError> {
         let mut supported = Vec::new();
         let mut requires_auth = Vec::new();
+        let mut answered = false;
+        let mut last_error = None;
 
         for (action, method) in [
             (PowerAction::Shutdown, "CanPowerOff"),
@@ -119,13 +129,31 @@ impl PowerBackend for LogindBackend {
             (PowerAction::Suspend, "CanSuspend"),
             (PowerAction::Hibernate, "CanHibernate"),
         ] {
-            match self.capability(method).await? {
+            let capability = match self.capability(method).await {
+                Ok(capability) => {
+                    answered = true;
+                    capability
+                }
+                Err(error) => {
+                    // One unanswered capability drops one action, not the menu.
+                    tracing::warn!(%error, method, "logind did not answer, dropping the action");
+                    last_error = Some(error);
+                    continue;
+                }
+            };
+            match capability {
                 Capability::No => {}
                 Capability::Challenge => {
                     supported.push(action);
                     requires_auth.push(action);
                 }
                 Capability::Yes => supported.push(action),
+            }
+        }
+
+        if !answered {
+            if let Some(error) = last_error {
+                return Err(error);
             }
         }
 

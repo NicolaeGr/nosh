@@ -96,6 +96,15 @@ pub enum Command {
         username: String,
         password: Secret,
     },
+    /// Answer a polkit prompt with the user's password.
+    PolkitRespond {
+        cookie: String,
+        password: Secret,
+    },
+    /// Dismiss a polkit prompt without answering it.
+    PolkitCancel {
+        cookie: String,
+    },
     /// Run a session action after the UI has authenticated the user.
     PowerAction(PowerAction),
     MediaPlayPause,
@@ -215,6 +224,11 @@ impl Command {
     /// Whether the auth service handles this command.
     pub fn is_auth(&self) -> bool {
         matches!(self, Self::AuthAuthenticate { .. })
+    }
+
+    /// Whether the polkit agent handles this command.
+    pub fn is_polkit(&self) -> bool {
+        matches!(self, Self::PolkitRespond { .. } | Self::PolkitCancel { .. })
     }
 
     /// Whether the power service handles this command.
@@ -413,6 +427,22 @@ mod tests {
         }
         .is_auth());
         assert!(Command::PowerAction(PowerAction::Shutdown).is_power());
+
+        assert!(Command::PolkitRespond {
+            cookie: "cookie".to_string(),
+            password: Secret::new("x"),
+        }
+        .is_polkit());
+        assert!(Command::PolkitCancel {
+            cookie: "cookie".to_string(),
+        }
+        .is_polkit());
+
+        assert!(!Command::PolkitCancel {
+            cookie: "cookie".to_string(),
+        }
+        .is_auth());
+        assert!(!Command::PowerAction(PowerAction::Shutdown).is_polkit());
 
         assert!(!Command::PowerAction(PowerAction::Shutdown).is_auth());
         assert!(!Command::AuthAuthenticate {

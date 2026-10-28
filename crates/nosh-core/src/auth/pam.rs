@@ -4,6 +4,7 @@
 //! starts the shell. PAM blocks during the conversation, so the service calls
 //! this from a blocking thread.
 
+use std::cell::Cell;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::path::{Path, PathBuf};
@@ -63,7 +64,19 @@ unsafe impl Sync for PamApi {}
 /// one authentication.
 struct ConversationData {
     username: CString,
-    password: CString,
+    /// NUL terminated, so PAM can be handed a C string, and zeroed on drop.
+    password: Vec<u8>,
+    /// A stack can ask more than once. The first prompt of each kind gets the
+    /// credential, so a second module cannot read the password by asking for it
+    /// again as an OTP or as a second password.
+    password_answered: Cell<bool>,
+    username_answered: Cell<bool>,
+}
+
+impl Drop for ConversationData {
+    fn drop(&mut self) {
+        self.password.fill(0);
+    }
 }
 
 /// Loads the library once. A `None` value means PAM is not installed.
@@ -168,12 +181,20 @@ pub fn authenticate(service: &str, username: &str, password: &[u8]) -> Result<()
 
     let service = CString::new(service).map_err(|_| "invalid PAM service name".to_string())?;
     let user = CString::new(username).map_err(|_| "invalid user name".to_string())?;
-    let password =
-        CString::new(password).map_err(|_| "the password contains an invalid character")?;
+
+    // Build the C string by hand, so the buffer can be zeroed after use. PAM
+    // keeps its own copy and the shell never sees that one again.
+    if password.contains(&0) {
+        return Err("the password contains an invalid character".to_string());
+    }
+    let mut password = password.to_vec();
+    password.push(0);
 
     let data = Box::into_raw(Box::new(ConversationData {
         username: user.clone(),
         password,
+        password_answered: Cell::new(false),
+        username_answered: Cell::new(false),
     }));
     let conv = PamConv {
         conv: Some(conversation),
@@ -243,8 +264,22 @@ unsafe extern "C" fn conversation(
         }
 
         let source = match (*message).msg_style {
-            PAM_PROMPT_ECHO_OFF => data.password.as_ptr(),
-            PAM_PROMPT_ECHO_ON => data.username.as_ptr(),
+            PAM_PROMPT_ECHO_OFF => {
+                if data.password_answered.replace(true) {
+                    tracing::warn!("a PAM stack asked for a second password, refusing the check");
+                    free_answers(&mut answers);
+                    return PAM_CONV_ERR;
+                }
+                data.password.as_ptr().cast()
+            }
+            PAM_PROMPT_ECHO_ON => {
+                if data.username_answered.replace(true) {
+                    tracing::warn!("a PAM stack asked for a second user name, refusing the check");
+                    free_answers(&mut answers);
+                    return PAM_CONV_ERR;
+                }
+                data.username.as_ptr()
+            }
             PAM_ERROR_MSG | PAM_TEXT_INFO => std::ptr::null(),
             _ => {
                 free_answers(&mut answers);
@@ -297,6 +332,90 @@ mod tests {
         let mut responses: *mut PamResponse = std::ptr::null_mut();
         let code = unsafe { conversation(1, &mut messages, &mut responses, std::ptr::null_mut()) };
         assert_eq!(code, PAM_CONV_ERR);
+    }
+
+    fn test_data(password: &[u8]) -> *mut ConversationData {
+        let mut password = password.to_vec();
+        password.push(0);
+        Box::into_raw(Box::new(ConversationData {
+            username: CString::new("user").unwrap(),
+            password,
+            password_answered: Cell::new(false),
+            username_answered: Cell::new(false),
+        }))
+    }
+
+    #[test]
+    fn the_first_password_prompt_is_answered() {
+        let data = test_data(b"hunter2");
+        let mut messages = [PamMessage {
+            msg_style: PAM_PROMPT_ECHO_OFF,
+            msg: std::ptr::null(),
+        }];
+        let mut pointers: Vec<*mut PamMessage> =
+            messages.iter_mut().map(|entry| entry as *mut _).collect();
+        let mut responses: *mut PamResponse = std::ptr::null_mut();
+
+        let code = unsafe { conversation(1, pointers.as_mut_ptr(), &mut responses, data.cast()) };
+        assert_eq!(code, PAM_SUCCESS);
+
+        let answers = unsafe { std::slice::from_raw_parts(responses, 1) };
+        let answer = unsafe { CStr::from_ptr(answers[0].resp) };
+        assert_eq!(answer.to_bytes(), b"hunter2");
+
+        // PAM frees the response array with `free` too, so the test does the same.
+        unsafe { libc::free(answers[0].resp.cast()) };
+        unsafe { libc::free(responses.cast()) };
+        unsafe { drop(Box::from_raw(data)) };
+    }
+
+    #[test]
+    fn a_second_password_prompt_is_refused() {
+        let data = test_data(b"hunter2");
+        let mut messages = [
+            PamMessage {
+                msg_style: PAM_PROMPT_ECHO_OFF,
+                msg: std::ptr::null(),
+            },
+            PamMessage {
+                msg_style: PAM_PROMPT_ECHO_OFF,
+                msg: std::ptr::null(),
+            },
+        ];
+        let mut pointers: Vec<*mut PamMessage> =
+            messages.iter_mut().map(|entry| entry as *mut _).collect();
+        let mut responses: *mut PamResponse = std::ptr::null_mut();
+
+        let code = unsafe { conversation(2, pointers.as_mut_ptr(), &mut responses, data.cast()) };
+        assert_eq!(code, PAM_CONV_ERR);
+        unsafe { drop(Box::from_raw(data)) };
+    }
+
+    #[test]
+    fn informational_messages_do_not_use_the_password_prompt() {
+        let data = test_data(b"hunter2");
+        let mut messages = [
+            PamMessage {
+                msg_style: PAM_TEXT_INFO,
+                msg: std::ptr::null(),
+            },
+            PamMessage {
+                msg_style: PAM_PROMPT_ECHO_OFF,
+                msg: std::ptr::null(),
+            },
+        ];
+        let mut pointers: Vec<*mut PamMessage> =
+            messages.iter_mut().map(|entry| entry as *mut _).collect();
+        let mut responses: *mut PamResponse = std::ptr::null_mut();
+
+        let code = unsafe { conversation(2, pointers.as_mut_ptr(), &mut responses, data.cast()) };
+        assert_eq!(code, PAM_SUCCESS);
+
+        let answers = unsafe { std::slice::from_raw_parts(responses, 2) };
+        assert!(answers[0].resp.is_null());
+        unsafe { libc::free(answers[1].resp.cast()) };
+        unsafe { libc::free(responses.cast()) };
+        unsafe { drop(Box::from_raw(data)) };
     }
 
     #[test]

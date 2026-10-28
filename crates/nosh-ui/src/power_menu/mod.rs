@@ -13,7 +13,9 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
-use nosh_core::{Command, Core, PowerAction, PowerModel, Secret};
+use nosh_core::{Command, Core, PowerAction, PowerModel};
+
+use crate::auth_request::{next_request_id, secret_from_text};
 
 const ACTIONS_PAGE: &str = "actions";
 const CONFIRM_PAGE: &str = "confirm";
@@ -45,6 +47,7 @@ struct Inner {
     pending: RefCell<Option<Pending>>,
     request: Cell<u64>,
     model: RefCell<PowerModel>,
+    lock_handler: RefCell<Option<Rc<dyn Fn()>>>,
     open: Cell<bool>,
 }
 
@@ -84,7 +87,7 @@ impl PowerMenuWindow {
         subtitle.set_xalign(0.0);
         card.append(&subtitle);
 
-        let (actions_page, actions) = build_actions();
+        let (actions_page, actions, lock_button) = build_actions();
         let confirm = build_confirm();
         let stack = gtk::Stack::new();
         stack.set_transition_type(gtk::StackTransitionType::Crossfade);
@@ -126,8 +129,19 @@ impl PowerMenuWindow {
             pending: RefCell::new(None),
             request: Cell::new(0),
             model: RefCell::new(PowerModel::default()),
+            lock_handler: RefCell::new(None),
             open: Cell::new(false),
         });
+
+        {
+            let inner = Rc::clone(&inner);
+            lock_button.connect_clicked(move |_| {
+                let handler = inner.lock_handler.borrow().clone();
+                if let Some(handler) = handler {
+                    handler();
+                }
+            });
+        }
 
         for (action, button) in &inner.actions {
             let action = *action;
@@ -219,6 +233,11 @@ impl PowerMenuWindow {
         self.render_actions();
     }
 
+    /// Runs when the lock entry is pressed.
+    pub fn set_lock_handler(&self, handler: Rc<dyn Fn()>) {
+        *self.inner.lock_handler.borrow_mut() = Some(handler);
+    }
+
     pub fn handle_auth(&self, result: &nosh_core::AuthResult) {
         let inner = &self.inner;
         if !inner.open.get() || result.request_id != inner.request.get() {
@@ -285,9 +304,29 @@ impl PowerMenuWindow {
     }
 }
 
-fn build_actions() -> (gtk::Box, Vec<(PowerAction, gtk::Button)>) {
+fn build_actions() -> (gtk::Box, Vec<(PowerAction, gtk::Button)>, gtk::Button) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 4);
     root.add_css_class("PowerActions");
+
+    // Locking is a shell action, not a logind session action, so it never
+    // depends on the power model.
+    let lock = gtk::Button::new();
+    lock.add_css_class("PowerAction");
+    let lock_row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let lock_icon = gtk::Image::from_icon_name("system-lock-screen-symbolic");
+    lock_icon.add_css_class("PowerActionIcon");
+    lock_row.append(&lock_icon);
+    let lock_label = gtk::Label::new(Some("Lock screen"));
+    lock_label.add_css_class("PowerActionLabel");
+    lock_label.set_xalign(0.0);
+    lock_label.set_hexpand(true);
+    lock_row.append(&lock_label);
+    let lock_hint = gtk::Label::new(Some("Lock"));
+    lock_hint.add_css_class("PowerActionHint");
+    lock_hint.set_xalign(1.0);
+    lock_row.append(&lock_hint);
+    lock.set_child(Some(&lock_row));
+    root.append(&lock);
 
     let mut buttons = Vec::new();
     for action in PowerAction::ALL {
@@ -318,7 +357,7 @@ fn build_actions() -> (gtk::Box, Vec<(PowerAction, gtk::Button)>) {
         buttons.push((action, button));
     }
 
-    (root, buttons)
+    (root, buttons, lock)
 }
 
 struct ConfirmWidgets {
@@ -435,7 +474,7 @@ fn submit(inner: &Rc<Inner>) {
         return;
     }
 
-    let request_id = inner.request.get() + 1;
+    let request_id = next_request_id();
     inner.request.set(request_id);
     inner.password.set_text("");
     inner
@@ -445,7 +484,7 @@ fn submit(inner: &Rc<Inner>) {
     inner.core.send(Command::AuthAuthenticate {
         request_id,
         username: glib::user_name().to_string_lossy().into_owned(),
-        password: Secret::new(password),
+        password: secret_from_text(&password),
     });
 }
 

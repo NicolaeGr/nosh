@@ -22,8 +22,10 @@ use crate::menu::service::{MenuService, MenuServiceConfig};
 use crate::monitors::service::{MonitorService, MonitorServiceConfig};
 use crate::network::service::{NetworkService, NetworkServiceConfig};
 use crate::notifications::service::{NotificationService, NotificationServiceConfig};
+use crate::polkit::service::PolkitService;
 use crate::power::service::{PowerService, PowerServiceConfig};
 use crate::power_profiles::service::{PowerProfilesService, PowerProfilesServiceConfig};
+use crate::session_lock::service::SessionLockService;
 use crate::stats::service::{SystemStatsService, SystemStatsServiceConfig};
 use crate::tray::service::{TrayService, TrayServiceConfig};
 use crate::workspaces::service::{WorkspaceService, WorkspaceServiceConfig};
@@ -101,6 +103,7 @@ impl Core {
         let (menu_commands, menu_receiver) = async_channel::unbounded();
         let (notification_commands, notification_receiver) = async_channel::unbounded();
         let (auth_commands, auth_receiver) = async_channel::unbounded();
+        let (polkit_commands, polkit_receiver) = async_channel::unbounded();
         let (power_commands, power_receiver) = async_channel::unbounded();
 
         let thread = thread::Builder::new()
@@ -124,6 +127,7 @@ impl Core {
                             menu: menu_commands,
                             notifications: notification_commands,
                             auth: auth_commands,
+                            polkit: polkit_commands,
                             power: power_commands,
                         },
                     ));
@@ -163,8 +167,11 @@ impl Core {
                         .run(notification_receiver, service_events.clone());
                     let auth = AuthService::from_env_with(settings.auth)
                         .run(auth_receiver, service_events.clone());
+                    let polkit =
+                        PolkitService::from_env().run(polkit_receiver, service_events.clone());
                     let power = PowerService::from_env_with(settings.power)
                         .run(power_receiver, service_events.clone());
+                    let session_lock = SessionLockService::from_env().run(service_events.clone());
                     // The services own a clone. Dropping the original lets the
                     // merger finish once every service returns.
                     drop(service_events);
@@ -184,7 +191,9 @@ impl Core {
                         menu,
                         notifications,
                         auth,
-                        power
+                        polkit,
+                        power,
+                        session_lock
                     );
                     router.abort();
                     if let Some(bind_sync) = bind_sync {
@@ -248,6 +257,7 @@ struct ServiceSenders {
     menu: Sender<Command>,
     notifications: Sender<Command>,
     auth: Sender<Command>,
+    polkit: Sender<Command>,
     power: Sender<Command>,
 }
 
@@ -275,6 +285,8 @@ async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
             &senders.notifications
         } else if command.is_auth() {
             &senders.auth
+        } else if command.is_polkit() {
+            &senders.polkit
         } else if command.is_power() {
             &senders.power
         } else {
@@ -677,6 +689,7 @@ mod tests {
         let (menu_tx, _menu_rx) = async_channel::unbounded();
         let (notification_tx, _notification_rx) = async_channel::unbounded();
         let (auth_tx, _auth_rx) = async_channel::unbounded();
+        let (polkit_tx, _polkit_rx) = async_channel::unbounded();
         let (power_tx, _power_rx) = async_channel::unbounded();
 
         let task = tokio::spawn(route_commands(
@@ -696,6 +709,7 @@ mod tests {
                 menu: menu_tx,
                 notifications: notification_tx,
                 auth: auth_tx,
+                polkit: polkit_tx,
                 power: power_tx,
             },
         ));

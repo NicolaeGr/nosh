@@ -1,6 +1,6 @@
 # Authentication
 
-Current state: implemented. `nosh-core/src/auth` loads libpam at runtime, runs the conversation on a blocking thread, and answers one request at a time. The power menu is the only caller.
+Current state: implemented. `nosh-core/src/auth` loads libpam at runtime, runs the conversation on a blocking thread, and answers one request at a time. The power menu and the lock screen are the callers.
 
 ## What AstalAuth is
 
@@ -26,10 +26,10 @@ Authentication is useful for:
 It is not:
 
 - A greeter. That is `AstalGreet` and greetd, covered separately.
-- A replacement for polkit in system services.
+- A substitute for a polkit agent. polkit checks need a registered D-Bus agent even though the password is checked through PAM. See `features/polkit.md`.
 - A session manager.
 
-Start with the power menu or a lock screen. Do not add both in the first pass.
+Start with the power menu and the lock screen. The lock screen reuses this service without storing the password. See `features/lock-screen.md`.
 
 ## Core
 
@@ -39,7 +39,11 @@ Add an `AuthService` to `nosh-core`.
 
 The implementation is `auth::pam` plus `auth::backend::PamBackend`. The PAM library is opened with `dlopen` on first use, so the shell still builds and starts on a system without PAM. The lookup tries `libpam.so.0`, the directories in `LD_LIBRARY_PATH`, `/run/current-system/sw/lib/libpam.so.0`, and then `*-linux-pam-*` entries in `/nix/store`.
 
-PAM blocks during the conversation, so the service runs each check through `tokio::task::spawn_blocking`. The password is a `Secret`, a byte buffer that is zeroed when the last copy is dropped. It is never logged or sent over D-Bus.
+PAM blocks during the conversation, so the service runs each check through `tokio::task::spawn_blocking`. The password is a `Secret`, a byte buffer that is zeroed when the last copy is dropped. The shell also zeroes the NUL terminated copy it hands to the conversation. PAM frees the response it receives on its own, so that copy leaves the shell's control. The password is never logged or sent over D-Bus.
+
+### Conversation
+
+The conversation answers the first `PAM_PROMPT_ECHO_OFF` with the password and the first `PAM_PROMPT_ECHO_ON` with the user name. Informational and error messages get an empty response. A stack that asks for a second password or a second user name is refused with `PAM_CONV_ERR`, so a second authentication module cannot read the password by presenting itself as an OTP or a second password prompt. Multi-factor stacks need a per-prompt policy before they can be supported.
 
 PAM service try tree:
 
@@ -85,7 +89,7 @@ With the file in place set `allow_fallback = false`. Do not reuse the `astal-aut
 ### Security
 
 - Never log the password or the PAM response.
-- Zeroize the password buffer after use. Use `zeroize` and `secrecy`.
+- Zeroize the password buffer after use. The shell zeroes its `Secret` and the C copy it passes to PAM. PAM's own response buffer is freed by PAM, not by the shell.
 - Do not send the password over D-Bus or a socket. Keep the authentication in-process.
 - Rate limit failed attempts in the UI and the service, for example one attempt per second and a short lockout after repeated failures.
 - Do not echo the password. Use a `gtk::PasswordEntry`.
@@ -103,7 +107,7 @@ Command::AuthAuthenticate { request_id, username, password }
 
 ## UI
 
-The power menu is the only entry point.
+The power menu and the lock screen are the PAM callers. polkit prompts have their own card, described in `features/polkit.md`.
 
 ### Host UI
 
@@ -121,17 +125,9 @@ The power menu overlay opens on the monitor where quick settings was or on the a
 
 ### Lock screen
 
-A lock screen needs more than PAM:
-
-- Cover every monitor with an input-blocking layer surface.
-- Render a lock UI.
-- Inhibit idle and prevent suspend if configured.
-- Optionally blank the screen after a timeout.
-- Unlock on PAM success.
-- Handle monitor hot-plug while locked.
-- Do not allow the shell's other windows to take focus.
-
-This is a larger project. Do not build it in the first auth pass unless the user asks for it.
+The lock screen uses this service. It covers every monitor, blocks input through
+`ext-session-lock-v1`, and unlocks on PAM success. The design is in
+`features/lock-screen.md`.
 
 ### Power menu and user switcher
 
@@ -143,7 +139,7 @@ The README lists a power menu and user switcher as planned. Auth fits there. The
 
 ## Definition of done
 
-- A password entry verifies a user through PAM.
+- The power menu and the lock screen verify a user through PAM.
 - A correct password returns success and the action proceeds.
 - A wrong password shows an error, clears the entry, and allows another attempt.
 - Repeated failures are rate limited.
@@ -151,4 +147,4 @@ The README lists a power menu and user switcher as planned. Auth fits there. The
 - PAM runs off the GTK thread and off the Tokio runtime thread.
 - The PAM service file and its installation are documented.
 - The shell still starts and works when PAM or the service file is missing.
-- A lock screen is explicitly out of scope until it gets its own spec.
+- The lock screen has its own specification in `features/lock-screen.md`.

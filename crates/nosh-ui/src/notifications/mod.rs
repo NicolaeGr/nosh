@@ -10,6 +10,10 @@
 //! also anchored below the bar, which leaves the bar itself uncovered.
 
 mod card;
+mod history;
+
+pub(crate) use card::{format_time, set_body_markup};
+pub use history::NotificationHistory;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};

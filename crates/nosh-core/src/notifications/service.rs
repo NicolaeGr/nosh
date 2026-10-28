@@ -231,6 +231,7 @@ impl SessionRunner {
     async fn handle_command(&mut self, command: Command) {
         match command {
             Command::NotificationDismiss(id) => self.close(id, ClosedReason::DismissedByUser).await,
+            Command::NotificationExpire(id) => self.close(id, ClosedReason::Expired).await,
             Command::NotificationInvoke { id, action } => self.invoke(id, action).await,
             Command::NotificationSetDnd(enabled) if self.settings.dont_disturb != enabled => {
                 self.settings.dont_disturb = enabled;

@@ -1,8 +1,9 @@
 mod battery;
 mod idle_inhibitor;
+mod media;
 mod network;
 mod stats;
-mod time;
+pub(crate) mod time;
 mod tray;
 mod volume;
 mod workspaces;
@@ -19,6 +20,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk::gdk;
+use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
@@ -27,6 +29,7 @@ use nosh_core::{
     TrayItemModel, TrayMenu, WorkspaceSnapshot,
 };
 
+use crate::center_panel::{CenterPanelWindow, Geometry, Rect, Tab};
 use crate::quick_settings::QuickSettingsWindow;
 
 pub struct BarWindow {
@@ -48,6 +51,7 @@ impl BarWindow {
         connector: String,
         core: Rc<Core>,
         quick_settings: Rc<QuickSettingsWindow>,
+        center_panel: Rc<CenterPanelWindow>,
     ) -> Self {
         let window = gtk::ApplicationWindow::new(app);
         window.set_decorated(false);
@@ -122,9 +126,72 @@ impl BarWindow {
 
         let center = section(gtk::Align::Center);
         let center_island = island("IslandCenter");
-        center_island.append(&time::build());
+        let clock = time::Clock::new();
+        let media = media::Media::new();
+        center_island.append(clock.button());
+        let media_divider = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        media_divider.add_css_class("MediaDivider");
+        media_divider.set_size_request(1, 1);
+        media_divider.set_valign(gtk::Align::Center);
+        center_island.append(&media_divider);
+        center_island.append(media.button());
         center.append(&center_island);
         bar.set_center_widget(Some(&center));
+
+        {
+            let panel = Rc::clone(&center_panel);
+            let monitor = monitor.clone();
+            let island = center_island.clone();
+            let root = bar.clone();
+            let clock_label = clock.label().clone();
+            let media_button = media.button().clone();
+            let open: Rc<dyn Fn(Tab, bool)> = Rc::new(move |tab, hover| {
+                if panel.is_open() {
+                    return;
+                }
+                let Some(island_rect) = bounds(&island, &root) else {
+                    return;
+                };
+                let Some(clock_rect) = bounds(&clock_label, &root) else {
+                    return;
+                };
+                let Some(media_rect) = bounds(&media_button, &root) else {
+                    return;
+                };
+                let restore = island.clone();
+                let fallback = restore.clone();
+                island.set_opacity(0.0);
+                let opened = panel.open(
+                    Some(&monitor),
+                    Geometry {
+                        island: island_rect,
+                        clock: clock_rect,
+                        media: media_rect,
+                    },
+                    &time::now_text(),
+                    tab,
+                    hover,
+                    move || restore.set_opacity(1.0),
+                );
+                if !opened {
+                    fallback.set_opacity(1.0);
+                }
+            });
+
+            let pending: Rc<std::cell::RefCell<Option<glib::SourceId>>> =
+                Rc::new(std::cell::RefCell::new(None));
+
+            let open_click = Rc::clone(&open);
+            clock
+                .button()
+                .connect_clicked(move |_| open_click(Tab::Calendar, false));
+            let open_click = Rc::clone(&open);
+            media
+                .button()
+                .connect_clicked(move |_| open_click(Tab::Media, false));
+
+            attach_hover(&center_island, media.button().clone(), open, pending);
+        }
 
         let right = section(gtk::Align::End);
         right.add_css_class("Right");
@@ -189,6 +256,88 @@ impl BarWindow {
     pub fn set_network(&self, model: &NetworkModel) {
         self.network.render(model);
     }
+}
+
+/// Hovering the centre island for a moment opens the panel. The tab follows
+/// the part of the island under the pointer when the delay fires, so sliding
+/// from the clock onto the player opens the media tab. Leaving before the delay
+/// fires cancels the open.
+fn attach_hover(
+    island: &gtk::Box,
+    media: gtk::Button,
+    open: Rc<dyn Fn(Tab, bool)>,
+    pending: Rc<std::cell::RefCell<Option<glib::SourceId>>>,
+) {
+    const HOVER_OPEN_MS: u64 = 500;
+
+    let pointer: Rc<std::cell::Cell<(f64, f64)>> = Rc::new(std::cell::Cell::new((0.0, 0.0)));
+    let motion = gtk::EventControllerMotion::new();
+    {
+        let open = Rc::clone(&open);
+        let pending = Rc::clone(&pending);
+        let island = island.clone();
+        let media = media.clone();
+        let pointer = Rc::clone(&pointer);
+        motion.connect_enter(move |_, x, y| {
+            cancel_hover(&pending);
+            pointer.set((x, y));
+            let open = Rc::clone(&open);
+            let fired = Rc::clone(&pending);
+            let island = island.clone();
+            let media = media.clone();
+            let pointer = Rc::clone(&pointer);
+            let source = glib::timeout_add_local(
+                std::time::Duration::from_millis(HOVER_OPEN_MS),
+                move || {
+                    *fired.borrow_mut() = None;
+                    let (x, y) = pointer.get();
+                    open(tab_at(&island, &media, x, y), true);
+                    glib::ControlFlow::Break
+                },
+            );
+            *pending.borrow_mut() = Some(source);
+        });
+    }
+    {
+        let pointer = Rc::clone(&pointer);
+        motion.connect_motion(move |_, x, y| pointer.set((x, y)));
+    }
+    {
+        let pending = Rc::clone(&pending);
+        motion.connect_leave(move |_| cancel_hover(&pending));
+    }
+    island.add_controller(motion);
+}
+
+/// Which tab the pointer is over, using hit testing so the check still works
+/// when the pointer sits on the media label or icon inside the button.
+fn tab_at(island: &gtk::Box, media: &gtk::Button, x: f64, y: f64) -> Tab {
+    let media: gtk::Widget = media.clone().upcast();
+    let mut hit = island.pick(x, y, gtk::PickFlags::DEFAULT);
+    while let Some(widget) = hit {
+        if widget == media {
+            return Tab::Media;
+        }
+        hit = widget.parent();
+    }
+    Tab::Calendar
+}
+
+fn cancel_hover(pending: &std::cell::RefCell<Option<glib::SourceId>>) {
+    if let Some(source) = pending.take() {
+        source.remove();
+    }
+}
+
+/// A widget rectangle relative to the bar root, in monitor coordinates.
+fn bounds(widget: &impl IsA<gtk::Widget>, root: &impl IsA<gtk::Widget>) -> Option<Rect> {
+    let rect = widget.compute_bounds(root)?;
+    Some(Rect {
+        x: rect.x().round() as i32,
+        y: rect.y().round() as i32,
+        width: rect.width().round().max(1.0) as i32,
+        height: rect.height().round().max(1.0) as i32,
+    })
 }
 
 /// One of the three bar sections. Only the outer sections expand.

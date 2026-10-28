@@ -1,0 +1,452 @@
+/*
+ * Centre island panel: notifications, calendar, and media.
+ *
+ * The panel opens from the centre island. The window is a transparent overlay
+ * and only the card is visible, so the rest of the screen stays clickable for
+ * the click-outside handler.
+ *
+ * The root font is 12px, one prototype pixel is 1/16 em. The card uses the
+ * same opaque surface, corner, border, and shadow as the quick settings card.
+ * The card's sharp corners match the island: top-left and bottom-right.
+ */
+
+window.CenterPanel {
+    font-size: 12px;
+    background-color: transparent;
+    color: @bar_ink;
+    border: none;
+    box-shadow: none;
+    letter-spacing: 0.015em;
+}
+
+.CenterPanelBackground {
+    background-color: transparent;
+}
+
+.CenterPanelCard {
+    background-color: @theme_bg_color;
+    color: @bar_ink;
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 0 1.125em 0 1.125em;
+    box-shadow:
+        0 1.125em 3.75em rgba(0, 0, 0, 0.42),
+        inset 0 0.0625em 0 @bar_highlight;
+}
+
+.CenterPanelViewport {
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.CenterPanelViewport viewport {
+    background-color: transparent;
+}
+
+/* Clock and media labels pinned to the card's top corners */
+.CenterPanelHeaderButton {
+    min-width: 0;
+    min-height: 0;
+    padding: 0.1875em 0.25em;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0.375em 0 0.375em 0;
+    box-shadow: none;
+}
+
+.CenterPanelHeaderButton:hover {
+    background-color: @bar_row_hover;
+}
+
+.CenterPanelHeaderButton:active {
+    background-color: @bar_row_active;
+}
+
+.CenterPanelClockLabel {
+    color: @bar_ink;
+    font-size: 0.875em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.CenterPanelClock.is-open .CenterPanelClockLabel {
+    font-size: 1.0625em;
+}
+
+.CenterPanelClock.is-active .CenterPanelClockLabel {
+    color: @accent_bg_color;
+}
+
+.CenterPanelMediaLabel {
+    color: @bar_ink;
+    font-size: 0.8125em;
+}
+
+.CenterPanelMedia.is-open .CenterPanelMediaLabel {
+    font-size: 0.9375em;
+}
+
+.CenterPanelMedia.is-active .CenterPanelMediaLabel {
+    color: @accent_bg_color;
+}
+
+.CenterPanelMediaIcon {
+    color: @accent_bg_color;
+    -gtk-icon-size: 0.875em;
+}
+
+/* Content */
+.CenterPanelContent {
+    padding: 0.875em 1.25em;
+    background-color: transparent;
+}
+
+.CenterPanelDateRow {
+    margin-top: 2.35em;
+    margin-bottom: 0.5em;
+}
+
+.CenterPanelDate {
+    font-size: 1em;
+    font-weight: 600;
+}
+
+.CenterPanelStack {
+    background-color: transparent;
+}
+
+.CenterPanelSectionTitle {
+    color: @bar_muted;
+    font-size: 0.75em;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+}
+
+.CenterPanelSectionCount {
+    min-width: 1.375em;
+    padding: 0.0625em 0.375em;
+    background-color: @bar_accent_soft;
+    border-radius: 0.3125em 0 0.3125em 0;
+    color: @accent_bg_color;
+    font-size: 0.6875em;
+    font-weight: 700;
+}
+
+/* Notifications */
+.CenterPanelNotificationScroll {
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.CenterPanelNotificationScroll viewport {
+    background-color: transparent;
+}
+
+.CenterPanelNotificationList {
+    background-color: transparent;
+}
+
+.CenterPanelGroupTitle {
+    margin-top: 0.125em;
+    color: @bar_muted;
+    font-size: 0.6875em;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.CenterPanelEmpty {
+    padding: 0.5em 0;
+    color: @bar_muted;
+    font-size: 0.8125em;
+}
+
+.CenterPanelClearAll {
+    margin-top: 0.125em;
+    padding: 0.375em 0.75em;
+    background-color: transparent;
+    background-image: none;
+    border: 0.0625em solid transparent;
+    border-radius: 0.5em 0 0.5em 0;
+    box-shadow: none;
+    color: @bar_muted;
+    font-size: 0.75em;
+    font-weight: 600;
+}
+
+.CenterPanelClearAll:hover {
+    background-color: @bar_row_hover;
+    border-color: @bar_surface_edge;
+    color: @bar_ink;
+}
+
+.CenterPanelClearAll:disabled {
+    color: alpha(@theme_fg_color, 0.32);
+    background-color: transparent;
+    border-color: transparent;
+}
+
+.CenterPanelNotification {
+    padding: 0.5em 0.625em;
+    background-color: @bar_row;
+    border: 0.0625em solid transparent;
+    border-radius: 0.625em 0 0.625em 0;
+}
+
+.CenterPanelNotification.critical {
+    border-color: alpha(@accent_bg_color, 0.5);
+}
+
+.CenterPanelNotification.low {
+    color: @bar_muted_strong;
+}
+
+.CenterPanelNotification:hover {
+    background-color: @bar_row_hover;
+    border-color: @bar_surface_edge;
+}
+
+.CenterPanelNotificationIcon {
+    color: @bar_muted;
+    -gtk-icon-size: 1em;
+}
+
+.CenterPanelNotificationApp {
+    color: @bar_muted;
+    font-size: 0.75em;
+}
+
+.CenterPanelNotificationTime {
+    color: @bar_muted;
+    font-size: 0.75em;
+}
+
+.CenterPanelNotificationClose {
+    min-width: 1.25em;
+    min-height: 1.25em;
+    padding: 0;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0.375em;
+    box-shadow: none;
+    color: @bar_muted;
+    opacity: 0.65;
+}
+
+.CenterPanelNotificationClose:hover {
+    background-color: @bar_row_active;
+    color: @bar_ink;
+    opacity: 1;
+}
+
+.CenterPanelNotificationClose image {
+    -gtk-icon-size: 0.75em;
+}
+
+.CenterPanelNotificationTitle {
+    font-size: 0.9375em;
+    font-weight: 600;
+}
+
+.CenterPanelNotificationBody {
+    color: @bar_muted;
+    font-size: 0.8125em;
+}
+
+.CenterPanelDivider {
+    min-width: 0.0625em;
+    margin: 0.25em 0.6875em;
+    background-color: @bar_surface_edge;
+}
+
+/* Calendar */
+.CalendarSide {
+    min-width: 0;
+}
+
+.CalendarMonth {
+    font-size: 0.9375em;
+    font-weight: 600;
+}
+
+.CalendarNav {
+    min-width: 1.5em;
+    min-height: 1.5em;
+    padding: 0;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0.375em 0 0.375em 0;
+    box-shadow: none;
+    color: @bar_muted;
+}
+
+.CalendarNav:hover {
+    background-color: @bar_row_hover;
+    color: @bar_ink;
+}
+
+.CalendarNav image {
+    -gtk-icon-size: 0.875em;
+}
+
+.CalendarWeekdays {
+    margin-top: 0.125em;
+}
+
+.CalendarWeekday {
+    color: @bar_muted;
+    font-size: 0.75em;
+    font-weight: 600;
+}
+
+.CalendarGrid {
+    border-spacing: 0;
+}
+
+.CalendarDay {
+    min-width: 0;
+    min-height: 0;
+    border-radius: 0.375em 0 0.375em 0;
+    font-size: 0.75em;
+}
+
+.CalendarDay.other-month {
+    color: @bar_muted;
+}
+
+.CalendarDay.today {
+    background-color: @accent_bg_color;
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 0 0 0.125em alpha(@accent_bg_color, 0.32);
+}
+
+/* Events under the calendar */
+.CalendarEventEmpty {
+    margin-top: 0.25em;
+    color: @bar_muted;
+    font-size: 0.8125em;
+}
+
+/* Media tab */
+.MediaPage {
+    padding: 0.5em 1.5em;
+    background-color: transparent;
+}
+
+.MediaSheet {
+    margin: 0;
+}
+
+.MediaArt {
+    min-width: 8em;
+    min-height: 8em;
+    background-color: @bar_row;
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 1em 0 1em 0;
+}
+
+.MediaArtIcon {
+    color: @bar_muted;
+    -gtk-icon-size: 3em;
+}
+
+.MediaTitle {
+    font-size: 1.125em;
+    font-weight: 600;
+}
+
+.MediaArtist {
+    color: @bar_muted;
+    font-size: 0.875em;
+}
+
+.MediaControls {
+    margin: 0.125em 0;
+}
+
+.MediaControl {
+    min-width: 2em;
+    min-height: 2em;
+    padding: 0;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0.5em 0 0.5em 0;
+    box-shadow: none;
+    color: @bar_ink;
+}
+
+.MediaControl:hover {
+    background-color: @bar_row_hover;
+}
+
+.MediaControl image {
+    -gtk-icon-size: 1.125em;
+}
+
+.MediaPlay {
+    background-color: @accent_bg_color;
+    color: #fff;
+}
+
+.MediaPlay:hover {
+    background-color: @accent_bg_color;
+}
+
+.MediaPlay image {
+    -gtk-icon-size: 1.25em;
+}
+
+.MediaSeek {
+    margin-top: 0.25em;
+}
+
+.MediaTime {
+    color: @bar_muted;
+    font-size: 0.75em;
+}
+
+.MediaVolume {
+    margin: 0;
+}
+
+.MediaVolumeIcon {
+    color: @bar_muted;
+    -gtk-icon-size: 0.9375em;
+}
+
+.MediaVolumeValue {
+    color: @bar_muted;
+    font-size: 0.75em;
+}
+
+.MediaSlider {
+    min-width: 8em;
+}
+
+.MediaSlider trough {
+    min-height: 0.25em;
+    border: none;
+    border-radius: 0.125em;
+    background-color: @bar_row;
+}
+
+.MediaSlider highlight {
+    border-radius: 0.125em;
+    background-color: @accent_bg_color;
+}
+
+.MediaSlider slider {
+    min-width: 0.65em;
+    min-height: 0.65em;
+    margin: -0.2em;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background-color: @bar_ink;
+    box-shadow: none;
+}

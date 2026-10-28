@@ -143,6 +143,7 @@ pub enum Command {
     BluetoothConnect(String),
     BluetoothDisconnect(String),
     NotificationDismiss(u32),
+    NotificationExpire(u32),
     NotificationInvoke { id: u32, action: String },
     NotificationSetDnd(bool),
     AppReload,

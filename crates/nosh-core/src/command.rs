@@ -80,6 +80,9 @@ pub enum Command {
     VpnDeactivate(String),
     AirplaneModeSet(bool),
     NotificationDismiss(u32),
+    /// The popup timeout ran out. The notification expired without the user
+    /// acting on it.
+    NotificationExpire(u32),
     NotificationInvoke {
         id: u32,
         action: String,
@@ -175,6 +178,7 @@ impl Command {
         matches!(
             self,
             Self::NotificationDismiss(_)
+                | Self::NotificationExpire(_)
                 | Self::NotificationInvoke { .. }
                 | Self::NotificationSetDnd(_)
         )
@@ -247,6 +251,7 @@ mod tests {
     #[test]
     fn notification_commands_are_classified_for_routing() {
         assert!(Command::NotificationDismiss(3).is_notifications());
+        assert!(Command::NotificationExpire(3).is_notifications());
         assert!(Command::NotificationInvoke {
             id: 3,
             action: "default".to_string(),

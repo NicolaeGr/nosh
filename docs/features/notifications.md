@@ -12,13 +12,13 @@ This feature has two halves. The core is a freedesktop notification daemon and s
 
 Settings live in GSettings schema `io.astal.notifd`:
 
-| Key | Type | Default |
-| --- | --- | --- |
-| `ignore-timeout` | bool | false |
-| `dont-disturb` | bool | false |
-| `default-timeout` | int | -1 |
-| `notifications` | array of variants | empty |
-| `server-capabilites` | string array | action-icons, actions, body, body-hyperlinks, body-images, body-markup, icon-static, persistence, sound |
+| Key                  | Type              | Default                                                                                                 |
+| -------------------- | ----------------- | ------------------------------------------------------------------------------------------------------- |
+| `ignore-timeout`     | bool              | false                                                                                                   |
+| `dont-disturb`       | bool              | false                                                                                                   |
+| `default-timeout`    | int               | -1                                                                                                      |
+| `notifications`      | array of variants | empty                                                                                                   |
+| `server-capabilites` | string array      | action-icons, actions, body, body-hyperlinks, body-images, body-markup, icon-static, persistence, sound |
 
 The daemon implements:
 
@@ -125,11 +125,11 @@ Add a `NotificationService` to `nosh-core`. It owns the daemon role, the store, 
 
 Daemon role try tree:
 
-| Order | Backend | Probe | Behavior |
-| --- | --- | --- | --- |
-| 1 | `OwnDaemonBackend` | can request `org.freedesktop.Notifications` | Full daemon, store, timeouts |
-| 2 | `ExistingDaemonProxyBackend` | another owner exists and answers `GetServerInformation` | Proxy notifications and actions |
-| 3 | `NullNotificationBackend` | always | Log and do not display |
+| Order | Backend                      | Probe                                                   | Behavior                        |
+| ----- | ---------------------------- | ------------------------------------------------------- | ------------------------------- |
+| 1     | `OwnDaemonBackend`           | can request `org.freedesktop.Notifications`             | Full daemon, store, timeouts    |
+| 2     | `ExistingDaemonProxyBackend` | another owner exists and answers `GetServerInformation` | Proxy notifications and actions |
+| 3     | `NullNotificationBackend`    | always                                                  | Log and do not display          |
 
 Use the try tree from [backends.md](../backends.md). Do not fail the shell when another notification daemon is already running. The UI receives the same `NotificationEvent` in all three cases.
 
@@ -238,7 +238,7 @@ Use `~/.local/state/nosh/notifications.json`. Write a JSON object with:
       "app_icon": "...",
       "summary": "...",
       "body": "...",
-      "actions": [{"id": "...", "label": "..."}],
+      "actions": [{ "id": "...", "label": "..." }],
       "hints": {},
       "expire_timeout": 5000,
       "time": 1700000000,
@@ -350,8 +350,8 @@ Timers:
 - Default display timeout 5000 ms.
 - Pause on enter, resume on leave with the remaining time.
 - Use `glib::timeout_add_local` or a `glib::Source` with a monotonic deadline.
-- On timeout, call `Command::NotificationDismiss(id)` and animate out.
-- On close click, same.
+- On timeout, call `Command::NotificationExpire(id)` and animate out. The close reason is `Expired`, and the UI keeps the notification for the centre panel list.
+- On close click, call `Command::NotificationDismiss(id)` and animate out. The close reason is `DismissedByUser`, and the notification is not kept.
 - On action click, call `Command::NotificationInvoke { id, action }`.
 
 Do not call D-Bus directly.

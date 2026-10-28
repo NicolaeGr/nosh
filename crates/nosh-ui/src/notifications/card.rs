@@ -230,6 +230,13 @@ impl NotificationCard {
         self.dismiss();
     }
 
+    /// Sends the expire command, then plays the exit animation. Used when the
+    /// display timer runs out instead of a user action.
+    pub fn expire(&self) {
+        self.core.send(Command::NotificationExpire(self.id));
+        self.dismiss();
+    }
+
     /// Plays the exit animation without sending a command. Used when the core
     /// reports that the notification is already gone.
     pub fn dismiss(&self) {
@@ -274,7 +281,7 @@ impl NotificationCard {
                 let remaining = card.remaining.get() - elapsed;
                 card.remaining.set(remaining);
                 if remaining <= 0 {
-                    card.close();
+                    card.expire();
                     return glib::ControlFlow::Break;
                 }
             }
@@ -299,7 +306,7 @@ impl NotificationCard {
     }
 }
 
-fn set_body_markup(label: &gtk::Label, body: &str) {
+pub(crate) fn set_body_markup(label: &gtk::Label, body: &str) {
     if body.is_empty() {
         label.set_text("");
         return;
@@ -424,7 +431,7 @@ fn escape_bare_angles(input: &str) -> String {
     out
 }
 
-fn format_time(unix_seconds: i64) -> String {
+pub(crate) fn format_time(unix_seconds: i64) -> String {
     glib::DateTime::from_unix_local(unix_seconds)
         .ok()
         .and_then(|time| time.format("%H:%M").ok())

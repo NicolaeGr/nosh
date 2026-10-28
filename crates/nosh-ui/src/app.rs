@@ -17,9 +17,10 @@ use nosh_core::{
 };
 
 use crate::bar::BarWindow;
+use crate::center_panel::CenterPanelWindow;
 use crate::indicator::ChangeIndicator;
 use crate::menu::MenuManager;
-use crate::notifications::NotificationsWindow;
+use crate::notifications::{NotificationHistory, NotificationsWindow};
 use crate::quick_settings::QuickSettingsWindow;
 
 #[cfg(all(feature = "dev", feature = "stable"))]
@@ -35,6 +36,7 @@ const STYLE: &str = include_str!("../resources/style.css");
 const MENU_STYLE: &str = include_str!("../resources/menu.css");
 const QUICK_SETTINGS_STYLE: &str = include_str!("../resources/quick_settings.css");
 const NOTIFICATIONS_STYLE: &str = include_str!("../resources/notifications.css");
+const CENTER_PANEL_STYLE: &str = include_str!("../resources/center_panel.css");
 
 /// When this marker is present in the user stylesheet it is replaced with the
 /// complete built-in stylesheet at load time.
@@ -68,6 +70,8 @@ struct Ui {
     bars: RefCell<BTreeMap<String, BarWindow>>,
     menus: RefCell<MenuManager>,
     quick_settings: Rc<QuickSettingsWindow>,
+    center_panel: Rc<CenterPanelWindow>,
+    notification_history: Rc<NotificationHistory>,
     notifications: Rc<NotificationsWindow>,
     indicator: ChangeIndicator,
 }
@@ -76,6 +80,11 @@ impl Ui {
     fn new(app: gtk::Application, core: Rc<Core>) -> Self {
         let indicator = ChangeIndicator::new(&app);
         let quick_settings = Rc::new(QuickSettingsWindow::new(&app, Rc::clone(&core)));
+        let notification_history = Rc::new(NotificationHistory::new());
+        let center_panel = Rc::new(CenterPanelWindow::new(
+            &app,
+            Rc::clone(&notification_history),
+        ));
         let notifications = Rc::new(NotificationsWindow::new(&app, Rc::clone(&core)));
         Self {
             app,
@@ -93,6 +102,8 @@ impl Ui {
             bars: RefCell::new(BTreeMap::new()),
             menus: RefCell::new(MenuManager::new()),
             quick_settings,
+            center_panel,
+            notification_history,
             notifications,
             indicator,
         }
@@ -128,6 +139,7 @@ impl Ui {
                 connector.clone(),
                 Rc::clone(&self.core),
                 Rc::clone(&self.quick_settings),
+                Rc::clone(&self.center_panel),
             );
             bar.set_workspaces(&self.workspaces.borrow());
             bar.set_stats(&self.stats.borrow());
@@ -342,15 +354,26 @@ impl Ui {
     fn apply_notification_event(&self, event: NotificationEvent) {
         match event {
             NotificationEvent::Snapshot(model) => {
+                for notification in &model.notifications {
+                    self.notification_history.remember(notification);
+                }
                 self.notifications.apply_snapshot(&model);
                 self.quick_settings.set_dnd(model.settings.dont_disturb);
+                self.center_panel.refresh_notifications();
             }
             NotificationEvent::Received {
                 notification,
                 suppress_popup,
                 ..
-            } => self.notifications.received(&notification, suppress_popup),
-            NotificationEvent::Closed { id, .. } => self.notifications.closed(id),
+            } => {
+                self.notification_history.remember(&notification);
+                self.notifications.received(&notification, suppress_popup);
+            }
+            NotificationEvent::Closed { id, reason } => {
+                self.notifications.closed(id);
+                self.notification_history.close(id, reason);
+                self.center_panel.refresh_notifications();
+            }
             NotificationEvent::DndChanged { enabled } => {
                 self.notifications.set_dnd(enabled);
                 self.quick_settings.set_dnd(enabled);
@@ -889,7 +912,9 @@ fn install_css() {
         return;
     };
 
-    let builtin = format!("{STYLE}\n{MENU_STYLE}\n{QUICK_SETTINGS_STYLE}\n{NOTIFICATIONS_STYLE}");
+    let builtin = format!(
+        "{STYLE}\n{MENU_STYLE}\n{QUICK_SETTINGS_STYLE}\n{NOTIFICATIONS_STYLE}\n{CENTER_PANEL_STYLE}"
+    );
     add_css(&display, &builtin, gtk::STYLE_PROVIDER_PRIORITY_USER);
 
     let Ok(paths) = nosh_core::NoshPaths::from_env() else {

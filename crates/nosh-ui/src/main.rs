@@ -1,5 +1,6 @@
 mod app;
 mod bar;
+mod center_panel;
 mod indicator;
 mod menu;
 mod notifications;

@@ -171,6 +171,8 @@ When the window becomes visible, call `present()` and `grab_focus()` on the card
 
 Bind visibility to the UI `quick_settings_open` boolean. Use a single function `set_quick_settings_open(bool)` that updates the window, the button state, and the dropdown state.
 
+The header's session button closes quick settings and opens the power menu on the same monitor. See `features/power-menu.md`.
+
 ### Card
 
 Reuse `Card` with the current CSS and margins. Use a `gtk::ScrolledWindow` only if the content can exceed the screen. The current policy is `NEVER` for both axes, so the scrolled window does nothing. If the card fits, a plain `gtk::Box` is simpler. Keep the minimum width 260.

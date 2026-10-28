@@ -12,7 +12,7 @@ mod network;
 mod sliders;
 mod toggles;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk::gdk;
@@ -40,6 +40,8 @@ struct Inner {
     header: Header,
     toggles: Toggles,
     sliders: Rc<Sliders>,
+    monitor: RefCell<Option<gdk::Monitor>>,
+    session_handler: RefCell<Option<Rc<dyn Fn()>>>,
 }
 
 impl QuickSettingsWindow {
@@ -89,7 +91,20 @@ impl QuickSettingsWindow {
             header,
             toggles,
             sliders,
+            monitor: RefCell::new(None),
+            session_handler: RefCell::new(None),
         });
+
+        {
+            let inner = Rc::clone(&inner);
+            let session = inner.header.session_button().clone();
+            session.connect_clicked(move |_| {
+                let handler = inner.session_handler.borrow().clone();
+                if let Some(handler) = handler {
+                    handler();
+                }
+            });
+        }
 
         let click = gtk::GestureClick::new();
         {
@@ -142,10 +157,21 @@ impl QuickSettingsWindow {
     pub fn open(&self, monitor: Option<&gdk::Monitor>) {
         if let Some(monitor) = monitor {
             self.window.set_monitor(Some(monitor));
+            *self.inner.monitor.borrow_mut() = Some(monitor.clone());
         }
         self.inner.open.set(true);
         self.window.present();
         self.inner.card.grab_focus();
+    }
+
+    /// The monitor the panel was last opened on. The power menu reuses it.
+    pub fn current_monitor(&self) -> Option<gdk::Monitor> {
+        self.inner.monitor.borrow().clone()
+    }
+
+    /// Runs when the header's session button is pressed.
+    pub fn set_session_handler(&self, handler: Rc<dyn Fn()>) {
+        *self.inner.session_handler.borrow_mut() = Some(handler);
     }
 
     pub fn close(&self) {

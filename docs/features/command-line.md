@@ -71,6 +71,7 @@ match command {
     "brightness-dim" => core.send(Command::BrightnessDim { value: 10.0 }),
     "brightness-restore" => core.send(Command::BrightnessRestore),
     "menu" => ui.open_menu(&id),
+    "session" => ui.open_power_menu(),
     "monitor-cycle" => core.send(Command::MonitorCycle { target: "next".into(), mode: None }),
     "power-profile" => core.send(Command::PowerProfileCycle),
     _ => { eprintln!("Unknown command or failed to handle command. \nIf you intended to start the main instance, it is already running.\n"); }
@@ -88,6 +89,7 @@ The Rust build wires these commands:
 - `brightness-up` and `brightness-down`
 - `brightness-dim` and `brightness-restore`
 - `menu <id>`
+- `session`, which opens the power menu on the active monitor
 - `monitor-cycle [target] [mode]`
 
 `power-profile` is not implemented yet. Unknown commands print the existing message and exit 0.
@@ -130,6 +132,7 @@ If a future command needs a reply, add a `oneshot` and send the result back thro
 - `nosh brightness-dim` saves and dims all displays; `nosh brightness-restore` restores them.
 - `nosh menu apps` opens the app launcher in the running instance on the current monitor.
 - `nosh menu <id>` opens the named menu in the running instance.
+- `nosh session` opens the power menu in the running instance.
 - `nosh monitor-cycle` applies the next layout preset to the next monitor.
 - `nosh power-profile` cycles the active power profile.
 - An unknown command prints the current message and exits 0.

@@ -5,6 +5,7 @@
 //! renders snapshots and sends commands.
 
 pub mod audio;
+pub mod auth;
 pub mod backoff;
 pub mod battery;
 pub mod bridge;
@@ -21,6 +22,7 @@ pub mod network;
 pub mod notifications;
 pub mod origin;
 pub mod paths;
+pub mod power;
 pub mod power_profiles;
 pub mod stats;
 pub mod tray;
@@ -32,6 +34,10 @@ pub use audio::{
     bar_step_volume, volume_icon, AudioBackend, AudioBackendEvent, AudioBackendRef, AudioCandidate,
     AudioCapabilities, AudioEndpoint, AudioModel, AudioService, AudioServiceConfig, EndpointKind,
     StaticAudioBackend, WpctlBackend, BAR_MAX_VOLUME, MAX_SOURCE_VOLUME, MAX_VOLUME, VOLUME_STEP,
+};
+pub use auth::{
+    AuthBackend, AuthBackendRef, AuthRequest, AuthResult, AuthService, AuthServiceConfig,
+    PamBackend, Secret,
 };
 pub use battery::{
     icon_name, normalize_percentage, tooltip, BatteryBackend, BatteryBackendEvent,
@@ -52,9 +58,9 @@ pub use error::{
     PathError, StatsError,
 };
 pub use event::{
-    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MediaEvent, MonitorEvent,
-    NetworkEvent, NotificationEvent, PowerProfilesEvent, Service, Snapshot, SystemStatsEvent,
-    TrayEvent, WorkspaceEvent,
+    AudioEvent, AuthEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MediaEvent,
+    MonitorEvent, NetworkEvent, NotificationEvent, PowerEvent, PowerProfilesEvent, Service,
+    Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
 };
 pub use idle_inhibit::{
     IdleInhibitBackend, IdleInhibitService, IdleInhibitServiceConfig, IdleInhibitState,
@@ -91,6 +97,11 @@ pub use notifications::{
 };
 pub use origin::ChangeOrigin;
 pub use paths::{HyprlandPaths, NoshPaths};
+pub use power::{
+    LogindBackend, PowerAction, PowerBackend, PowerBackendRef, PowerModel, PowerService,
+    PowerServiceConfig, LOGIND_MANAGER, LOGIND_PATH, LOGIND_SERVICE, LOGIND_SESSION_INTERFACE,
+    LOGIND_SESSION_PATH,
+};
 pub use power_profiles::{
     default_profiles, next_profile, DbusPowerProfilesBackend, PowerProfile, PowerProfilesBackend,
     PowerProfilesBackendEvent, PowerProfilesBackendRef, PowerProfilesModel, PowerProfilesService,

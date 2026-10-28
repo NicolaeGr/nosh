@@ -4,6 +4,7 @@ mod center_panel;
 mod indicator;
 mod menu;
 mod notifications;
+mod power_menu;
 mod quick_settings;
 
 use std::process::ExitCode;

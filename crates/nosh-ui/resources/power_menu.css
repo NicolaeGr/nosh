@@ -1,0 +1,181 @@
+/*
+ * Power menu styles. The card and buttons follow the quick settings surface,
+ * scaled to the 12px root font. See docs/features/power-menu.md.
+ */
+
+window.PowerMenu {
+    font-size: 12px;
+    background-color: rgba(0, 0, 0, 0.42);
+    color: @bar_ink;
+    border: none;
+    box-shadow: none;
+    letter-spacing: 0.015em;
+}
+
+.PowerMenuBackground {
+    background-color: transparent;
+}
+
+.PowerCard {
+    min-width: 19em;
+    padding: 1.25em;
+    background-color: @theme_bg_color;
+    color: @bar_ink;
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 0 1.375em 0 1.375em;
+    box-shadow:
+        0 1.5em 5em rgba(0, 0, 0, 0.55),
+        inset 0 0.0625em 0 @bar_highlight;
+}
+
+.PowerTitle {
+    font-size: 1.5em;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+}
+
+.PowerSubtitle {
+    margin-top: 0.125em;
+    margin-bottom: 1em;
+    color: @bar_muted;
+    font-size: 0.9375em;
+}
+
+.PowerActions {
+    margin-top: 0.125em;
+}
+
+.PowerAction {
+    padding: 0.6875em 0.875em;
+    background-color: @bar_row;
+    background-image: none;
+    border: 0.0625em solid transparent;
+    border-radius: 0 0.75em 0 0.75em;
+    box-shadow: none;
+    color: @bar_ink;
+    transition-property: background-color, border-color, color;
+    transition-duration: 160ms;
+    transition-timing-function: ease;
+}
+
+.PowerAction:hover,
+.PowerAction:focus-visible {
+    background-color: @bar_accent_soft;
+    border-left-color: alpha(@accent_bg_color, 0.7);
+    border-bottom-color: alpha(@accent_bg_color, 0.7);
+    outline: none;
+}
+
+.PowerAction:active {
+    background-color: @bar_accent_strong;
+}
+
+.PowerAction.danger:hover,
+.PowerAction.danger:focus-visible {
+    background-color: alpha(@error_color, 0.18);
+    border-left-color: alpha(@error_color, 0.7);
+    border-bottom-color: alpha(@error_color, 0.7);
+}
+
+.PowerAction:disabled {
+    opacity: 0.45;
+}
+
+.PowerActionIcon {
+    -gtk-icon-size: 1.125em;
+    color: @bar_muted;
+}
+
+.PowerAction:hover .PowerActionIcon {
+    color: @bar_ink;
+}
+
+.PowerActionLabel {
+    font-size: 1.0625em;
+}
+
+.PowerActionHint {
+    color: @bar_muted;
+    font-size: 0.8125em;
+}
+
+.PowerConfirm {
+    margin-top: 0.5em;
+}
+
+.PowerConfirmAction {
+    font-size: 1.125em;
+    font-weight: 650;
+}
+
+.PowerConfirmHint {
+    color: @bar_muted;
+    font-size: 0.875em;
+    margin-bottom: 0.25em;
+}
+
+.PowerPassword {
+    min-height: 2em;
+    padding: 0.25em 0.625em;
+    background-color: @theme_bg_color;
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 0 0.625em 0 0.625em;
+    outline-style: none;
+    outline-width: 0;
+    box-shadow: none;
+    color: @bar_ink;
+}
+
+.PowerPassword:focus,
+.PowerPassword:focus-within,
+.PowerPassword:focus-visible {
+    border-width: 0.125em;
+    border-color: @accent_bg_color;
+    outline-style: none;
+    outline-width: 0;
+    box-shadow: none;
+}
+
+.PowerError {
+    min-height: 1em;
+    color: @error_color;
+    font-size: 0.8125em;
+    line-height: 1.35;
+}
+
+.PowerConfirmButtons {
+    margin-top: 0.5em;
+}
+
+.PowerPasswordRow {
+    margin-top: 0.125em;
+}
+
+.PowerPrimary,
+.PowerSecondary {
+    min-height: 1.75em;
+    padding: 0.3125em 0.875em;
+    border: 0.0625em solid transparent;
+    border-radius: 0 0.625em 0 0.625em;
+    box-shadow: none;
+}
+
+.PowerPrimary {
+    background-color: @bar_accent_strong;
+    color: @bar_ink;
+}
+
+.PowerPrimary:hover {
+    background-color: @bar_accent_soft;
+    border-color: alpha(@accent_bg_color, 0.7);
+}
+
+.PowerSecondary {
+    background-color: @bar_row;
+    color: @bar_muted;
+}
+
+.PowerSecondary:hover {
+    background-color: @bar_row_hover;
+    color: @bar_ink;
+}

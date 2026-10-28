@@ -1,7 +1,9 @@
 use crate::audio::model::EndpointKind;
+use crate::auth::model::Secret;
 use crate::brightness::model::BrightnessDeviceId;
 use crate::monitors::LayoutPreset;
 use crate::monitors::MonitorLayout;
+use crate::power::model::PowerAction;
 use crate::power_profiles::model::PowerProfile;
 
 /// User intent. Sending a command does not block the caller.
@@ -88,6 +90,14 @@ pub enum Command {
         action: String,
     },
     NotificationSetDnd(bool),
+    /// Check a password. The reply is an [`crate::event::AuthEvent`].
+    AuthAuthenticate {
+        request_id: u64,
+        username: String,
+        password: Secret,
+    },
+    /// Run a session action after the UI has authenticated the user.
+    PowerAction(PowerAction),
     MediaPlayPause,
     MediaNext,
     MediaPrevious,
@@ -200,6 +210,16 @@ impl Command {
                 | Self::NotificationInvoke { .. }
                 | Self::NotificationSetDnd(_)
         )
+    }
+
+    /// Whether the auth service handles this command.
+    pub fn is_auth(&self) -> bool {
+        matches!(self, Self::AuthAuthenticate { .. })
+    }
+
+    /// Whether the power service handles this command.
+    pub fn is_power(&self) -> bool {
+        matches!(self, Self::PowerAction(_))
     }
 
     /// Whether the tray service handles this command.
@@ -382,6 +402,25 @@ mod tests {
 
         assert!(!Command::WorkspaceActivate("1".to_string()).is_audio());
         assert!(!Command::MonitorSetPrimary("DP-1".to_string()).is_audio());
+    }
+
+    #[test]
+    fn auth_and_power_commands_are_classified_for_routing() {
+        assert!(Command::AuthAuthenticate {
+            request_id: 1,
+            username: "user".to_string(),
+            password: Secret::new("x"),
+        }
+        .is_auth());
+        assert!(Command::PowerAction(PowerAction::Shutdown).is_power());
+
+        assert!(!Command::PowerAction(PowerAction::Shutdown).is_auth());
+        assert!(!Command::AuthAuthenticate {
+            request_id: 1,
+            username: "user".to_string(),
+            password: Secret::new("x"),
+        }
+        .is_power());
     }
 
     #[test]

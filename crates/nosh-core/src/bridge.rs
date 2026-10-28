@@ -4,6 +4,7 @@ use async_channel::{Receiver, Sender};
 
 use crate::audio::model::{volume_icon, AudioEndpoint, AudioModel, EndpointKind};
 use crate::audio::service::{AudioService, AudioServiceConfig};
+use crate::auth::service::{AuthService, AuthServiceConfig};
 use crate::battery::service::{BatteryService, BatteryServiceConfig};
 use crate::brightness::service::{BrightnessService, BrightnessServiceConfig};
 use crate::command::Command;
@@ -21,6 +22,7 @@ use crate::menu::service::{MenuService, MenuServiceConfig};
 use crate::monitors::service::{MonitorService, MonitorServiceConfig};
 use crate::network::service::{NetworkService, NetworkServiceConfig};
 use crate::notifications::service::{NotificationService, NotificationServiceConfig};
+use crate::power::service::{PowerService, PowerServiceConfig};
 use crate::power_profiles::service::{PowerProfilesService, PowerProfilesServiceConfig};
 use crate::stats::service::{SystemStatsService, SystemStatsServiceConfig};
 use crate::tray::service::{TrayService, TrayServiceConfig};
@@ -41,6 +43,8 @@ pub struct CoreSettings {
     pub media: MediaServiceConfig,
     pub menu: MenuServiceConfig,
     pub notifications: NotificationServiceConfig,
+    pub auth: AuthServiceConfig,
+    pub power: PowerServiceConfig,
 }
 
 /// Handle to the core thread.
@@ -96,6 +100,8 @@ impl Core {
         let (media_commands, media_receiver) = async_channel::unbounded();
         let (menu_commands, menu_receiver) = async_channel::unbounded();
         let (notification_commands, notification_receiver) = async_channel::unbounded();
+        let (auth_commands, auth_receiver) = async_channel::unbounded();
+        let (power_commands, power_receiver) = async_channel::unbounded();
 
         let thread = thread::Builder::new()
             .name("nosh-core".to_string())
@@ -117,6 +123,8 @@ impl Core {
                             media: media_commands,
                             menu: menu_commands,
                             notifications: notification_commands,
+                            auth: auth_commands,
+                            power: power_commands,
                         },
                     ));
                     let merger = tokio::spawn(merge_events(service_event_receiver, event_sender));
@@ -153,6 +161,10 @@ impl Core {
                         MenuService::new(settings.menu).run(menu_receiver, service_events.clone());
                     let notifications = NotificationService::from_env_with(settings.notifications)
                         .run(notification_receiver, service_events.clone());
+                    let auth = AuthService::from_env_with(settings.auth)
+                        .run(auth_receiver, service_events.clone());
+                    let power = PowerService::from_env_with(settings.power)
+                        .run(power_receiver, service_events.clone());
                     // The services own a clone. Dropping the original lets the
                     // merger finish once every service returns.
                     drop(service_events);
@@ -170,7 +182,9 @@ impl Core {
                         tray,
                         media,
                         menu,
-                        notifications
+                        notifications,
+                        auth,
+                        power
                     );
                     router.abort();
                     if let Some(bind_sync) = bind_sync {
@@ -233,6 +247,8 @@ struct ServiceSenders {
     media: Sender<Command>,
     menu: Sender<Command>,
     notifications: Sender<Command>,
+    auth: Sender<Command>,
+    power: Sender<Command>,
 }
 
 async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
@@ -257,6 +273,10 @@ async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
             &senders.menu
         } else if command.is_notifications() {
             &senders.notifications
+        } else if command.is_auth() {
+            &senders.auth
+        } else if command.is_power() {
+            &senders.power
         } else {
             &senders.workspaces
         };
@@ -355,6 +375,9 @@ fn merge_snapshot(accumulator: &mut Snapshot, incoming: Snapshot) {
     if incoming.notification_backend.is_some() {
         accumulator.notification_backend = incoming.notification_backend;
     }
+    if incoming.power.is_some() {
+        accumulator.power = incoming.power;
+    }
 }
 
 fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
@@ -380,7 +403,18 @@ fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
         Event::Tray(event) => absorb_tray(accumulator, event),
         Event::Media(event) => absorb_media(accumulator, event),
         Event::Notifications(event) => absorb_notifications(accumulator, event),
+        Event::Power(event) => absorb_power(accumulator, event),
         _ => {}
+    }
+}
+
+fn absorb_power(accumulator: &mut Snapshot, event: &crate::event::PowerEvent) {
+    match event {
+        crate::event::PowerEvent::Snapshot(model) => accumulator.power = Some(model.clone()),
+        crate::event::PowerEvent::Unavailable => accumulator.power = None,
+        crate::event::PowerEvent::ActionStarted(_)
+        | crate::event::PowerEvent::ActionCompleted(_)
+        | crate::event::PowerEvent::ActionFailed { .. } => {}
     }
 }
 
@@ -642,6 +676,8 @@ mod tests {
         let (media_tx, media_rx) = async_channel::unbounded();
         let (menu_tx, _menu_rx) = async_channel::unbounded();
         let (notification_tx, _notification_rx) = async_channel::unbounded();
+        let (auth_tx, _auth_rx) = async_channel::unbounded();
+        let (power_tx, _power_rx) = async_channel::unbounded();
 
         let task = tokio::spawn(route_commands(
             public_rx,
@@ -659,6 +695,8 @@ mod tests {
                 media: media_tx,
                 menu: menu_tx,
                 notifications: notification_tx,
+                auth: auth_tx,
+                power: power_tx,
             },
         ));
 

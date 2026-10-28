@@ -79,6 +79,10 @@ in
 
             services.upower.enable = mkDefault true;
 
+            # The power menu asks PAM for the user's password. Register the
+            # service stack so nosh-auth exists instead of the login fallback.
+            security.pam.services.nosh-auth = { };
+
             # DDC/CI backlights need i2c device nodes. brightnessctl and ddcutil
             # both ship udev rules that grant the active session access.
             hardware.i2c.enable = mkDefault true;

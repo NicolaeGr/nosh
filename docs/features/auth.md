@@ -1,6 +1,6 @@
 # Authentication
 
-Current state: nosh has no authentication. AstalAuth is the reference. The user wants authentication in the shell. This file defines the scope so it does not turn into a login manager by accident.
+Current state: implemented. `nosh-core/src/auth` loads libpam at runtime, runs the conversation on a blocking thread, and answers one request at a time. The power menu is the only caller.
 
 ## What AstalAuth is
 
@@ -37,17 +37,19 @@ Add an `AuthService` to `nosh-core`.
 
 ### Backend
 
-Use a PAM binding crate or a small `libpam` FFI. Keep the PAM conversation in a dedicated blocking thread. PAM calls can block and may invoke the conversation multiple times. Do not run PAM on the Tokio runtime thread or the GTK thread.
+The implementation is `auth::pam` plus `auth::backend::PamBackend`. The PAM library is opened with `dlopen` on first use, so the shell still builds and starts on a system without PAM. The lookup tries `libpam.so.0`, the directories in `LD_LIBRARY_PATH`, `/run/current-system/sw/lib/libpam.so.0`, and then `*-linux-pam-*` entries in `/nix/store`.
+
+PAM blocks during the conversation, so the service runs each check through `tokio::task::spawn_blocking`. The password is a `Secret`, a byte buffer that is zeroed when the last copy is dropped. It is never logged or sent over D-Bus.
 
 PAM service try tree:
 
-| Order | Service | Probe | Behavior |
-| --- | --- | --- | --- |
-| 1 | configured service, default `nosh-auth` | service file exists | Normal authentication |
-| 2 | `login` | configured service is missing and the user allows the fallback | Warn once, then use `login` |
-| 3 | none | always | Hide auth entry points |
+| Order | Service                                 | Probe                                                    | Behavior                            |
+| ----- | --------------------------------------- | -------------------------------------------------------- | ----------------------------------- |
+| 1     | configured service, default `nosh-auth` | `/etc/pam.d/<service>` exists                            | Normal authentication               |
+| 2     | `login`                                 | configured service is missing and `allow_fallback` is on | Warn once, then use `login`         |
+| 3     | none                                    | always                                                   | Reject every request with a message |
 
-Do not silently fall back to a different PAM service. A wrong service stack can grant more than intended. The fallback is opt-in in `config.toml`.
+The fallback is on by default so the power menu works on a machine that has not installed `nosh-auth` yet. Set `allow_fallback = false` to keep the shell on the configured stack only. A wrong service stack can grant more than intended, so a distribution should install `nosh-auth` and turn the fallback off.
 
 Suggested shape:
 
@@ -76,9 +78,9 @@ Ship a PAM service file:
 /etc/pam.d/nosh-auth
 ```
 
-Start with the same stack as a normal login service, for example `system-auth` on Arch or `common-auth` on Debian. Document that the user must install it. On NixOS, the service must be added to `security.pam.services`.
+Use the same stack as a normal login service. On Arch the file contains `auth include system-auth`. On Debian it contains `auth include common-auth`. On NixOS the `nix/modules.nix` NixOS module adds `security.pam.services.nosh-auth = { }`, which generates the default stack.
 
-Do not reuse the `astal-auth` service name. The rewrite should not depend on Astal being installed.
+With the file in place set `allow_fallback = false`. Do not reuse the `astal-auth` service name. The rewrite should not depend on Astal being installed.
 
 ### Security
 
@@ -94,30 +96,28 @@ Do not reuse the `astal-auth` service name. The rewrite should not depend on Ast
 ### Commands
 
 ```rust
-Command::AuthAuthenticate(AuthRequest)
-Command::AuthCancel
+Command::AuthAuthenticate { request_id, username, password }
 ```
 
-Return the result as an `AuthEvent` on a `oneshot` channel or as a normal event with a request ID. Do not block the UI waiting for PAM.
+`password` is a `Secret`. The service replies with `Event::Auth(AuthEvent::Finished(AuthResult))`, which carries the same `request_id` and an optional error message. The UI ignores a reply whose id does not match the open dialog.
 
 ## UI
 
-Start with a modal password dialog or a lock screen.
+The power menu is the only entry point.
 
 ### Host UI
 
-The first auth integration is a power menu overlay on the current monitor. It lists Shutdown, Reboot, Logout, Suspend, and Hibernate. Each action opens the password dialog, then calls the matching logind method. If the power menu is deferred, auth has no visible entry point and should not be wired yet. See `features/power-menu.md`.
+The power menu overlay opens on the monitor where quick settings was or on the active monitor for `nosh session`. It lists Log out, Suspend, Hibernate, Restart, and Power off. Every action asks for confirmation. The password step appears only when logind answers `challenge` for that action. See `features/power-menu.md`.
 
-### Power menu dialog
+### Password step
 
-- A small layer-shell or modal window on the current monitor.
-- Title: the action being confirmed.
-- Username prefilled from the session user, editable if the action targets another user.
-- Password entry.
-- Cancel and Confirm buttons.
-- Error label for a failed attempt.
-- Enter confirms, Escape cancels.
-- On success, send the action command. On failure, clear the password and show the error.
+- The card title becomes the action being confirmed.
+- Username comes from the session user and is not editable yet.
+- `gtk::PasswordEntry` with a peek icon.
+- Cancel returns to the action list. Confirm sends the request.
+- Error label for a failed attempt. The password is cleared on every failure.
+- Enter confirms, Escape goes back to the action list.
+- On success, send `PowerAction`. On failure, clear the password and show the error.
 
 ### Lock screen
 
@@ -139,20 +139,14 @@ The README lists a power menu and user switcher as planned. Auth fits there. The
 
 ## Configuration
 
-```toml
-[auth]
-service = "nosh-auth"
-lockout_attempts = 5
-lockout_seconds = 30
-```
-
-Keep the defaults conservative. Do not allow an empty password.
+`AuthServiceConfig` holds `service`, `allow_fallback`, `lockout_attempts`, and `lockout`. The defaults are `nosh-auth`, fallback on, 5 attempts, and 30 seconds. Keep the defaults conservative. An empty password is rejected in the UI.
 
 ## Definition of done
 
-- A password dialog verifies a user through PAM.
+- A password entry verifies a user through PAM.
 - A correct password returns success and the action proceeds.
 - A wrong password shows an error, clears the entry, and allows another attempt.
+- Repeated failures are rate limited.
 - The password is never logged, stored, or sent over IPC.
 - PAM runs off the GTK thread and off the Tokio runtime thread.
 - The PAM service file and its installation are documented.

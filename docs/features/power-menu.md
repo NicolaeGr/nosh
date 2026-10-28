@@ -1,6 +1,6 @@
 # Power menu
 
-Current state: none. The README lists a power menu and user switcher as planned. Authentication has no host UI until this exists. This file defines the first auth integration.
+Current state: implemented. The quick settings header's session button opens `nosh-power-menu` on the same monitor. The card lists the actions logind reports, then asks for a password through `AuthService`.
 
 ## Requirements
 
@@ -15,7 +15,7 @@ Current state: none. The README lists a power menu and user switcher as planned.
 
 ## Core
 
-Add a `PowerService` to `nosh-core`. It wraps logind over D-Bus and sends the action after auth succeeds.
+`power::service::PowerService` wraps logind over D-Bus. It publishes a snapshot of the actions logind accepts, then runs one action per `Command::PowerAction` after the UI has authenticated the user.
 
 ### D-Bus
 
@@ -31,7 +31,7 @@ method LockSessions()
 method TerminateSession(session_id: s)
 ```
 
-Logout needs the current session. Read `XDG_SESSION_ID` from the environment, or find the session that belongs to the current process through logind. If the id is missing, fall back to `Terminate()` on the session object at `/org/freedesktop/login1/session/auto`.
+Logout terminates the session object at `/org/freedesktop/login1/session/auto`. logind resolves that path to the caller's session, so the service does not need to parse `XDG_SESSION_ID`.
 
 ### Model
 
@@ -69,7 +69,7 @@ Do not retry a failed power action in a loop. `AccessDenied` and `InteractiveAut
 
 ### Availability
 
-Read logind capabilities or call the method and handle the error. Do not hide all actions because one is unavailable. For example, a desktop may support suspend but not hibernate.
+`LogindBackend::read` asks `CanPowerOff`, `CanReboot`, `CanSuspend`, and `CanHibernate`. Logout is always listed. An action whose answer is `no` or `na` is insensitive in the card. Do not hide all actions because one is unavailable.
 
 ### Auth
 
@@ -88,8 +88,8 @@ Create a layer-shell window:
 - Exclusivity `Ignore`.
 - Keyboard mode `Exclusive`.
 - Namespace `nosh-power-menu`.
-- Monitor: current monitor.
-- Classes `PowerMenu`, `background`, `power-card`.
+- Monitor: the monitor quick settings was opened on.
+- Classes `PowerMenu`, `PowerMenuBackground`, `PowerCard`.
 
 The background is a full-screen `gtk::Box` with a dimmed backdrop. The card is centered with a vertical list of buttons.
 
@@ -97,25 +97,34 @@ The background is a full-screen `gtk::Box` with a dimmed backdrop. The card is c
 
 ```text
 PowerMenuWindow
-  Box background
-    Box power-card
-      Label "Power"
-      Button "Shutdown"
-      Button "Reboot"
-      Button "Logout"
-      Button "Suspend"
-      Button "Hibernate"
-      Button "Cancel"
+  Box PowerMenuBackground
+    Box PowerCard
+      Label "Session"
+      Label user and host
+      Stack
+        Box PowerActions
+          Button log out
+          Button suspend
+          Button hibernate
+          Button restart
+          Button power off
+        Box PowerAuth
+          Label action
+          PasswordEntry
+          Label error
+          Button cancel
+          Button confirm
 ```
 
-Use the existing `square-icon` and button styles where they fit. Add `.power-card` rules for the card background, border, radius, padding, and minimum width.
+Use the existing icon and surface styles where they fit. The `power_menu.css` rules cover the card background, border, radius, padding, and minimum width.
 
 ### Interaction
 
-- Click an action: open the auth dialog, titled with the action.
-- Correct password: send `PowerAction`.
-- Wrong password: stay in the dialog, show the error, clear the entry.
-- Cancel or Escape: close the auth dialog, then the power menu.
+- Click an action: switch the card to the confirmation step, titled with the action. The card shrinks to the confirmation height instead of keeping the action list height.
+- The confirmation asks for a password only when logind answers `challenge` for that action. On a normal local session `CanPowerOff`, `CanReboot`, `CanSuspend`, and `CanHibernate` answer `yes`, so a confirmation is enough.
+- Correct password or no password required: send `PowerAction`. The window closes when logind accepts.
+- Wrong password: stay in the same card, show the error, clear the entry.
+- Cancel or Escape: return to the action list. Escape on the list closes the menu.
 - Background click: close the power menu.
 - On successful shutdown, reboot, or logout, the process may be terminated by the session. Do not try to keep the UI alive.
 
@@ -133,27 +142,15 @@ If the current monitor disappears while the menu is open, close the menu. Do not
 
 ## CSS
 
-Add:
-
-```css
-.PowerMenu { background-color: transparent; }
-.PowerMenu .background { background-color: rgba(0, 0, 0, 0.35); }
-.PowerMenu .power-card {
-  background-color: @window_bg_color;
-  border: 1px solid alpha(@window_fg_color, 0.12);
-  border-radius: 12px;
-  padding: 16px;
-  min-width: 260px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
-}
-```
-
-Keep the button styling consistent with the quick settings card. Do not introduce a new visual language.
+Add `crates/nosh-ui/resources/power_menu.css`. The file defines the rules the UI uses. Keep the button styling consistent with the quick settings card. Do not introduce a new visual language.
 
 ## Definition of done
 
 - The power menu opens on the current monitor.
+- The card is centered on the monitor.
+- The card height follows the visible step, so the confirmation does not leave empty space below it.
 - Shutdown, reboot, logout, suspend, and hibernate are available when logind supports them.
+- An action that logind answers with `challenge` asks for a password. An action it answers with `yes` asks only for confirmation.
 - A destructive action asks for confirmation and a password.
 - A correct password sends the logind action.
 - A wrong password shows an error and allows another attempt.

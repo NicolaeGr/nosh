@@ -11,6 +11,7 @@ pub struct Header {
     icon: gtk::Image,
     percent: gtk::Label,
     time: gtk::Label,
+    session: gtk::Button,
 }
 
 impl Header {
@@ -35,8 +36,7 @@ impl Header {
 
         let session = gtk::Button::new();
         session.add_css_class("QuickSettingsSession");
-        session.set_sensitive(false);
-        session.set_tooltip_text(Some("Session actions are not available yet"));
+        session.set_tooltip_text(Some("Session actions"));
         let session_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         session_box.append(&gtk::Image::from_icon_name("avatar-default-symbolic"));
         let name = user_name();
@@ -55,6 +55,7 @@ impl Header {
             icon,
             percent,
             time,
+            session,
         };
         header.render(&BatteryModel::default());
         header
@@ -62,6 +63,10 @@ impl Header {
 
     pub fn widget(&self) -> &gtk::Box {
         &self.root
+    }
+
+    pub fn session_button(&self) -> &gtk::Button {
+        &self.session
     }
 
     pub fn render(&self, battery: &BatteryModel) {

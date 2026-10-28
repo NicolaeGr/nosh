@@ -8,12 +8,13 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::{
-    volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel,
+    volume_icon, AudioEndpoint, AudioEvent, AudioModel, AuthEvent, BatteryEvent, BatteryModel,
     BrightnessDevice, BrightnessEvent, ChangeOrigin, Command, Core, EndpointKind, Event,
     IdleInhibitEvent, IdleInhibitState, LayoutPreset, MediaEvent, MediaModel, MenuEvent,
-    MonitorEvent, NetworkEvent, NetworkModel, NotificationEvent, PowerProfilesEvent,
-    PowerProfilesModel, SystemStats, SystemStatsEvent, TrayEvent, TrayItemModel, TrayMenu,
-    WorkspaceEvent, WorkspaceSnapshot, BRIGHTNESS_STEP, DIM_PERCENT, VOLUME_STEP,
+    MonitorEvent, NetworkEvent, NetworkModel, NotificationEvent, PowerEvent, PowerModel,
+    PowerProfilesEvent, PowerProfilesModel, SystemStats, SystemStatsEvent, TrayEvent,
+    TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot, BRIGHTNESS_STEP, DIM_PERCENT,
+    VOLUME_STEP,
 };
 
 use crate::bar::BarWindow;
@@ -21,6 +22,7 @@ use crate::center_panel::CenterPanelWindow;
 use crate::indicator::ChangeIndicator;
 use crate::menu::MenuManager;
 use crate::notifications::{NotificationHistory, NotificationsWindow};
+use crate::power_menu::PowerMenuWindow;
 use crate::quick_settings::QuickSettingsWindow;
 
 #[cfg(all(feature = "dev", feature = "stable"))]
@@ -37,6 +39,7 @@ const MENU_STYLE: &str = include_str!("../resources/menu.css");
 const QUICK_SETTINGS_STYLE: &str = include_str!("../resources/quick_settings.css");
 const NOTIFICATIONS_STYLE: &str = include_str!("../resources/notifications.css");
 const CENTER_PANEL_STYLE: &str = include_str!("../resources/center_panel.css");
+const POWER_MENU_STYLE: &str = include_str!("../resources/power_menu.css");
 
 /// When this marker is present in the user stylesheet it is replaced with the
 /// complete built-in stylesheet at load time.
@@ -71,6 +74,7 @@ struct Ui {
     bars: RefCell<BTreeMap<String, BarWindow>>,
     menus: RefCell<MenuManager>,
     quick_settings: Rc<QuickSettingsWindow>,
+    power_menu: Rc<PowerMenuWindow>,
     center_panel: Rc<CenterPanelWindow>,
     notification_history: Rc<NotificationHistory>,
     notifications: Rc<NotificationsWindow>,
@@ -80,7 +84,20 @@ struct Ui {
 impl Ui {
     fn new(app: gtk::Application, core: Rc<Core>) -> Self {
         let indicator = ChangeIndicator::new(&app);
+        let power_menu = Rc::new(PowerMenuWindow::new(&app, Rc::clone(&core)));
         let quick_settings = Rc::new(QuickSettingsWindow::new(&app, Rc::clone(&core)));
+        {
+            let weak_settings = Rc::downgrade(&quick_settings);
+            let power_menu = Rc::clone(&power_menu);
+            quick_settings.set_session_handler(Rc::new(move || {
+                let monitor = weak_settings.upgrade().map(|settings| {
+                    let monitor = settings.current_monitor();
+                    settings.close();
+                    monitor
+                });
+                power_menu.open(monitor.flatten().as_ref());
+            }));
+        }
         let notification_history = Rc::new(NotificationHistory::new());
         let center_panel = Rc::new(CenterPanelWindow::new(
             &app,
@@ -105,6 +122,7 @@ impl Ui {
             bars: RefCell::new(BTreeMap::new()),
             menus: RefCell::new(MenuManager::new()),
             quick_settings,
+            power_menu,
             center_panel,
             notification_history,
             notifications,
@@ -343,6 +361,9 @@ impl Ui {
                     *self.media.borrow_mut() = media;
                     self.render_media();
                 }
+                if let Some(power) = snapshot.power {
+                    self.power_menu.set_power(&power);
+                }
             }
             Event::Workspaces(event) => self.apply_workspace_event(event),
             Event::SystemStats(SystemStatsEvent::Changed(stats)) => {
@@ -357,6 +378,8 @@ impl Ui {
             Event::Network(event) => self.apply_network_event(event),
             Event::Tray(event) => self.apply_tray_event(event),
             Event::Media(event) => self.apply_media_event(event),
+            Event::Auth(AuthEvent::Finished(result)) => self.power_menu.handle_auth(&result),
+            Event::Power(event) => self.apply_power_event(event),
             Event::Menu(event) => self.apply_menu_event(event),
             Event::Monitors(MonitorEvent::Snapshot { layout, .. })
             | Event::Monitors(MonitorEvent::LayoutChanged(layout)) => {
@@ -697,6 +720,30 @@ impl Ui {
         self.core.send(Command::MenuOpen(id.to_string()));
     }
 
+    fn open_power_menu(&self) {
+        let monitor = self.active_monitor();
+        self.power_menu.open(monitor.as_ref());
+    }
+
+    fn apply_power_event(&self, event: PowerEvent) {
+        match event {
+            PowerEvent::Snapshot(model) => {
+                self.power_menu.set_power(&model);
+            }
+            PowerEvent::ActionStarted(action) => {
+                tracing::info!(action = action.as_str(), "session action sent");
+            }
+            PowerEvent::ActionCompleted(_) => self.power_menu.close(),
+            PowerEvent::ActionFailed { action, message } => {
+                tracing::warn!(action = action.as_str(), %message, "session action failed");
+                self.power_menu.show_failure(&message);
+            }
+            PowerEvent::Unavailable => {
+                self.power_menu.set_power(&PowerModel::default());
+            }
+        }
+    }
+
     fn apply_workspace_event(&self, event: WorkspaceEvent) {
         match event {
             WorkspaceEvent::Snapshot { state, .. } => {
@@ -764,6 +811,7 @@ fn update_endpoint(
 #[derive(Debug, Clone, PartialEq)]
 enum StartupAction {
     Menu(String),
+    Session,
     Command(Command),
 }
 
@@ -790,6 +838,10 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
                     StartupAction::Menu(id) => match &ui {
                         Some(ui) => ui.open_menu(&id),
                         None => pending.borrow_mut().push(StartupAction::Menu(id)),
+                    },
+                    StartupAction::Session => match &ui {
+                        Some(ui) => ui.open_power_menu(),
+                        None => pending.borrow_mut().push(StartupAction::Session),
                     },
                     StartupAction::Command(command) => match &ui {
                         Some(ui) => ui.core.send(command),
@@ -844,6 +896,7 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
             for action in pending {
                 match action {
                     StartupAction::Menu(id) => ui.open_menu(&id),
+                    StartupAction::Session => ui.open_power_menu(),
                     StartupAction::Command(command) => ui.core.send(command),
                 }
             }
@@ -879,6 +932,7 @@ fn startup_action(arguments: &[std::ffi::OsString]) -> Option<StartupAction> {
                     .get(index)
                     .map(|id| StartupAction::Menu((*id).to_string()));
             }
+            "session" => return Some(StartupAction::Session),
             "volume-up" => {
                 return Some(StartupAction::Command(Command::AudioStepVolume(
                     VOLUME_STEP,
@@ -947,7 +1001,7 @@ fn install_css() {
     };
 
     let builtin = format!(
-        "{STYLE}\n{MENU_STYLE}\n{QUICK_SETTINGS_STYLE}\n{NOTIFICATIONS_STYLE}\n{CENTER_PANEL_STYLE}"
+        "{STYLE}\n{MENU_STYLE}\n{QUICK_SETTINGS_STYLE}\n{NOTIFICATIONS_STYLE}\n{CENTER_PANEL_STYLE}\n{POWER_MENU_STYLE}"
     );
     add_css(&display, &builtin, gtk::STYLE_PROVIDER_PRIORITY_USER);
 
@@ -1040,6 +1094,14 @@ mod tests {
             Some(StartupAction::Menu("wallpapers".to_string()))
         );
         assert_eq!(startup_action(&arguments(&["menu"])), None);
+    }
+
+    #[test]
+    fn the_command_line_opens_the_session_menu() {
+        assert_eq!(
+            startup_action(&arguments(&["session"])),
+            Some(StartupAction::Session)
+        );
     }
 
     #[test]

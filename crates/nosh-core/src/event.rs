@@ -1,4 +1,5 @@
 use crate::audio::model::{AudioEndpoint, AudioModel, EndpointKind};
+use crate::auth::model::AuthResult;
 use crate::battery::model::BatteryModel;
 use crate::brightness::model::{BrightnessDevice, BrightnessDeviceId};
 use crate::idle_inhibit::model::IdleInhibitState;
@@ -8,6 +9,7 @@ use crate::monitors::MonitorLayout;
 use crate::network::model::NetworkModel;
 use crate::notifications::model::{ClosedReason, Notification, NotificationModel};
 use crate::origin::ChangeOrigin;
+use crate::power::model::{PowerAction, PowerModel};
 use crate::power_profiles::model::PowerProfilesModel;
 use crate::stats::model::SystemStats;
 use crate::tray::model::{TrayItemModel, TrayMenu};
@@ -34,6 +36,8 @@ pub enum Event {
     Tray(TrayEvent),
     Media(MediaEvent),
     Notifications(NotificationEvent),
+    Auth(AuthEvent),
+    Power(PowerEvent),
     Menu(MenuEvent),
     ServiceAvailability(Service, bool),
 }
@@ -60,6 +64,7 @@ pub struct Snapshot {
     pub media_backend: Option<&'static str>,
     pub notifications: Option<NotificationModel>,
     pub notification_backend: Option<&'static str>,
+    pub power: Option<PowerModel>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -77,6 +82,8 @@ pub enum Service {
     Tray,
     Media,
     Notifications,
+    Auth,
+    Power,
 }
 
 #[derive(Debug, Clone)]
@@ -277,6 +284,30 @@ pub enum NotificationEvent {
     BackendChanged {
         backend: &'static str,
     },
+    Unavailable,
+}
+
+/// The result of one password check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthEvent {
+    Finished(AuthResult),
+}
+
+/// The power menu actions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PowerEvent {
+    /// Which actions logind accepts on this machine.
+    Snapshot(PowerModel),
+    /// An authenticated action was sent to logind.
+    ActionStarted(PowerAction),
+    /// logind accepted the action. The session may end before the UI sees it.
+    ActionCompleted(PowerAction),
+    /// logind rejected the action or the call failed.
+    ActionFailed {
+        action: PowerAction,
+        message: String,
+    },
+    /// logind is missing or the system bus is down.
     Unavailable,
 }
 

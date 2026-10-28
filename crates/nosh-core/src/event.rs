@@ -2,6 +2,7 @@ use crate::audio::model::{AudioEndpoint, AudioModel, EndpointKind};
 use crate::battery::model::BatteryModel;
 use crate::brightness::model::{BrightnessDevice, BrightnessDeviceId};
 use crate::idle_inhibit::model::IdleInhibitState;
+use crate::media::model::MediaModel;
 use crate::menu::MenuEvent;
 use crate::monitors::MonitorLayout;
 use crate::network::model::NetworkModel;
@@ -31,6 +32,7 @@ pub enum Event {
     PowerProfiles(PowerProfilesEvent),
     Network(NetworkEvent),
     Tray(TrayEvent),
+    Media(MediaEvent),
     Notifications(NotificationEvent),
     Menu(MenuEvent),
     ServiceAvailability(Service, bool),
@@ -54,6 +56,8 @@ pub struct Snapshot {
     pub network_backend: Option<&'static str>,
     pub tray: Option<Vec<TrayItemModel>>,
     pub tray_backend: Option<&'static str>,
+    pub media: Option<MediaModel>,
+    pub media_backend: Option<&'static str>,
     pub notifications: Option<NotificationModel>,
     pub notification_backend: Option<&'static str>,
 }
@@ -71,6 +75,7 @@ pub enum Service {
     PowerProfiles,
     Network,
     Tray,
+    Media,
     Notifications,
 }
 
@@ -229,6 +234,19 @@ pub enum NetworkEvent {
     /// A user action failed, for example a wrong password.
     OperationFailed(String),
     /// NetworkManager is missing or the connection is down.
+    Unavailable,
+}
+
+/// The now-playing player.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MediaEvent {
+    /// Fresh state after startup or a backend reconnect.
+    Snapshot(MediaModel),
+    /// The track, playback state, position, or controls changed.
+    Changed(MediaModel),
+    /// A transport command failed.
+    WriteFailed(String),
+    /// The session bus is missing or left.
     Unavailable,
 }
 

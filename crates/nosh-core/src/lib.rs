@@ -14,6 +14,7 @@ pub mod error;
 pub mod event;
 pub mod hyprland;
 pub mod idle_inhibit;
+pub mod media;
 pub mod menu;
 pub mod monitors;
 pub mod network;
@@ -51,13 +52,17 @@ pub use error::{
     PathError, StatsError,
 };
 pub use event::{
-    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, NetworkEvent,
-    NotificationEvent, PowerProfilesEvent, Service, Snapshot, SystemStatsEvent, TrayEvent,
-    WorkspaceEvent,
+    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MediaEvent, MonitorEvent,
+    NetworkEvent, NotificationEvent, PowerProfilesEvent, Service, Snapshot, SystemStatsEvent,
+    TrayEvent, WorkspaceEvent,
 };
 pub use idle_inhibit::{
     IdleInhibitBackend, IdleInhibitService, IdleInhibitServiceConfig, IdleInhibitState,
     InhibitBackendEvent, InhibitCommand, InhibitSession, WaylandBackend,
+};
+pub use media::{
+    MediaBackend, MediaBackendEvent, MediaBackendRef, MediaModel, MediaService, MediaServiceConfig,
+    MprisBackend, PlaybackStatus,
 };
 pub use menu::{
     default_menus, expand_argv, load_menu_config, load_menus, menu_source, parse_menus,

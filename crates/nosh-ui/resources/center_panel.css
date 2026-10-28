@@ -333,7 +333,7 @@ window.CenterPanel {
 
 /* Media tab */
 .MediaPage {
-    padding: 0.5em 1.5em;
+    padding: 0.5em 1.25em;
     background-color: transparent;
 }
 
@@ -341,9 +341,10 @@ window.CenterPanel {
     margin: 0;
 }
 
+/* Cover art is sized to the source aspect ratio in code. Without art it is a
+ * square with the icon centered. The text and transport controls sit on a
+ * dark scrim along the bottom edge. */
 .MediaArt {
-    min-width: 8em;
-    min-height: 8em;
     background-color: @bar_row;
     border: 0.0625em solid @bar_surface_edge;
     border-radius: 1em 0 1em 0;
@@ -354,14 +355,47 @@ window.CenterPanel {
     -gtk-icon-size: 3em;
 }
 
+.MediaArtImage {
+    border-radius: 1em 0 1em 0;
+}
+
+.MediaArtScrim {
+    padding: 2.5em 0.875em 0.5em;
+    background-image: linear-gradient(
+        to bottom,
+        transparent,
+        rgba(0, 0, 0, 0.78)
+    );
+    border-radius: 0 0 1em 0;
+    color: #fff;
+}
+
+.MediaMarquee {
+    background-color: transparent;
+    border: none;
+}
+
+.MediaMarqueeTrack {
+    background-color: transparent;
+}
+
 .MediaTitle {
     font-size: 1.125em;
     font-weight: 600;
+    color: #fff;
 }
 
 .MediaArtist {
-    color: @bar_muted;
+    color: rgba(255, 255, 255, 0.74);
     font-size: 0.875em;
+}
+
+.MediaArtScrim .MediaControl {
+    color: #fff;
+}
+
+.MediaArtScrim .MediaControl:hover {
+    background-color: rgba(255, 255, 255, 0.16);
 }
 
 .MediaControls {

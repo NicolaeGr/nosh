@@ -1,132 +1,235 @@
 # Media
 
-Current file: `src/bar/widgets/Media.vala`.
+The bar shows the current track and the centre panel has a media tab with cover
+art, transport controls, seek, and volume.
 
 ## Current behavior
 
-`Media` is a `Gtk.Box` with CSS class `Media`. It gets `AstalMpris.get_default()`, connects `notify["players"]` to `sync`, and calls `sync`.
-
-`sync` clears the box. If there are no players, it returns. Otherwise it takes the first player, creates a `Gtk.Label`, and binds `player.metadata` to the label with a transform that sets:
-
-```text
-"{artist} - {title}"
-```
-
-The cover art code is commented out. The intended code would create a `Gtk.Picture` with height 32, class `Cover`, load `player.cover_art`, and update on `cover_art` changes.
-
-There are no controls. The label is not clickable. The first player is not chosen by playback state, only by list order.
+The Vala bar built a `Gtk.Box` and bound the first MPRIS player's metadata to a
+label as `"{artist} - {title}"`. It had no controls and no cover art. The Rust
+shell replaces that with a shared model, one selected player, and a full media
+tab in the centre panel.
 
 ## Core
 
-Add an `MprisService` to `nosh-core`. It tracks every `org.mpris.MediaPlayer2.*` name on the session bus.
+`nosh-core/src/media/` holds the model, the backend trait, the MPRIS backend, and
+the service.
 
-### Player model
+### Model
+
+`MediaModel` is one track and the controls that apply to it.
 
 ```rust
-pub struct PlayerModel {
-    pub bus_name: String,
+pub struct MediaModel {
+    pub player: Option<String>,
     pub identity: String,
-    pub playback_status: PlaybackStatus,
     pub title: String,
     pub artist: String,
     pub album: String,
     pub art_url: String,
-    pub cover_art_path: Option<PathBuf>,
+    pub track_id: String,
+    pub status: PlaybackStatus,
+    pub position: Duration,
     pub length: Option<Duration>,
-    pub position: Option<Duration>,
-    pub can_control: bool,
+    pub can_previous: bool,
+    pub can_next: bool,
     pub can_play: bool,
     pub can_pause: bool,
-    pub can_go_next: bool,
-    pub can_go_previous: bool,
     pub can_seek: bool,
-    pub available: bool,
+    pub volume: f64,
 }
 ```
 
-`artist` is the `xesam:artist` string array joined with `", "`. `album_artist` uses `", "`. Keep the current display format `"{artist} - {title}"`, even when one side is empty. The current code does not trim the separator.
+`player` is the MPRIS bus name. Transport commands use it, so the shell always
+controls the player it shows. A default model means no player runs.
 
-### Discovery
+Helpers on the model:
 
-- Subscribe to `NameOwnerChanged` on the session bus.
-- Add a player when a name with the MPRIS prefix appears.
-- Remove it when the name loses its owner.
-- Create a proxy for `org.mpris.MediaPlayer2` and `org.mpris.MediaPlayer2.Player`.
-- Read `Identity` from the first interface.
-- Read `PlaybackStatus`, `Metadata`, `CanControl`, `CanPlay`, `CanPause`, `CanGoNext`, `CanGoPrevious`, `CanSeek`, `Volume`, `LoopStatus`, `Shuffle`, `Rate` from the second.
-- Subscribe to `PropertiesChanged` on both interfaces.
-- Subscribe to `Seeked` and update the position.
+| Method      | Result                                                           |
+| ----------- | ---------------------------------------------------------------- |
+| `is_active` | true when a player name and a title exist                        |
+| `subtitle`  | artist, else album, else player identity, else `Unknown artist`  |
+| `progress`  | position divided by length, clamped to 0..1, zero without length |
+| `pick`      | the player the shell shows                                       |
 
-### Selection
+`pick` sorts the players by bus name, takes the first playing player, then the
+first paused one, then the first player. An empty list returns the default
+model. The sort makes the choice stable across reads, so the bar does not
+flicker between two players with the same state.
 
-The current UI always uses the first player. Keep that rule for parity, but define it explicitly: the first player in discovery order. Prefer a player whose `playback_status` is `Playing` if no player is playing, then the first. Do not rely on a `HashMap` iteration order. Store players in a `Vec` and preserve insertion order.
+### Backend
 
-Emit `MediaEvent::PlayersChanged(Vec<PlayerModel>)` when the list changes. Emit `MediaEvent::PlayerChanged(PlayerModel)` when a property changes.
-
-### Position
-
-Do not poll every second unless a UI shows progress. The current bar does not. If the future central console shows a progress bar, add a 1-second poll only while the player is playing, like AstalMpris. Do not poll in the background for an unused value.
-
-### Cover art
-
-The current bar does not display cover art. Implement the cache only if the UI will use it:
-
-- If `mpris:artUrl` is a local file, use its path.
-- If it is `http` or `https`, download it with `reqwest` or `ureq`.
-- If it is `data:image/...;base64,`, decode it.
-- Cache under `~/.cache/nosh/covers/<sha1-of-url>`.
-- Never cache in the source tree.
-- Cap the download size and the decoded image size.
-
-### Controls
-
-Expose commands only for methods the UI uses:
+`MediaBackend` is the seam for tests and for a future non-MPRIS source. Reads
+return one `MediaModel`, not a list. Writes take the bus name.
 
 ```rust
-Command::MediaPlayPause(String)
-Command::MediaNext(String)
-Command::MediaPrevious(String)
-Command::MediaSeek(String, Duration)
+async fn probe(&self) -> Result<(), BackendError>;
+async fn read(&self) -> Result<MediaModel, BackendError>;
+async fn watch(&self, events: Sender<MediaBackendEvent>) -> Result<(), BackendError>;
+async fn play_pause(&self, player: &str) -> Result<(), BackendError>;
+async fn next(&self, player: &str) -> Result<(), BackendError>;
+async fn previous(&self, player: &str) -> Result<(), BackendError>;
+async fn seek(&self, player: &str, position: Duration) -> Result<(), BackendError>;
+async fn set_volume(&self, player: &str, volume: f64) -> Result<(), BackendError>;
 ```
 
-If the first rewrite keeps the bar label only, do not add these commands. Add them with the central console or a clickable media widget.
+An empty session bus is not a probe failure. If no player runs, `read` returns
+the default model and writes do nothing.
+
+`MprisBackend` implements the trait:
+
+- List bus names and keep every `org.mpris.MediaPlayer2.` name.
+- Read `GetAll` on `org.mpris.MediaPlayer2.Player`, and on
+  `org.mpris.MediaPlayer2` for `Identity`. A failed root read is not fatal.
+- Watch `NameOwnerChanged`, `PropertiesChanged` on both interfaces, and `Seeked`.
+  Each one emits `MediaBackendEvent::Changed`.
+- `Seek` tries `SetPosition` with the stored track id, then falls back to a
+  relative `Seek`.
+- `SetVolume` clamps to 0..1 and writes the `Volume` property.
+- `xesam:artist` accepts a string list or a single string and joins a list with
+  `", "`.
+- `mpris:length` of zero or less becomes `None`.
+
+### Service
+
+`MediaService` owns the connection and the model the shell sees. It publishes a
+snapshot at startup, sends `MediaEvent::Changed` when the model differs from the
+last one, and keeps the player selected by `pick`.
+
+After every change signal, every transport command, and every poll tick, the
+service re-reads the player. The poll defaults to one second. Players publish
+metadata in stages, and Firefox sometimes writes artwork after the change
+signal without sending a second one, so the signal alone misses fields.
+
+A failed transport write sends `MediaEvent::WriteFailed` and keeps the service
+running. A dead bus sends `MediaEvent::Unavailable`, marks the service
+unavailable, and reconnects with the shared backoff. A connection that lasted
+five seconds resets the backoff.
+
+### Events and commands
+
+```rust
+pub enum MediaEvent {
+    Snapshot(MediaModel),
+    Changed(MediaModel),
+    WriteFailed(String),
+    Unavailable,
+}
+
+pub enum Command {
+    MediaPlayPause,
+    MediaNext,
+    MediaPrevious,
+    MediaSeek(u64),
+    MediaSetVolume(f64),
+}
+```
+
+`MediaSeek` takes milliseconds from the start of the track. `MediaSetVolume`
+takes 0..1.
+
+### Limits
+
+- MPRIS exposes one bus name per application, so two browser tabs arrive as one
+  player and the shell cannot switch between them. Showing per-tab entries needs
+  a browser extension.
+- The core does not download remote art. The panel loads local files only.
+- The core does not cache artwork. The panel loads the file each time the track
+  changes.
 
 ## UI
 
-`Media` is a `gtk::Box` with class `Media`.
+### Bar
 
-- If there are no players, hide the box or show nothing.
-- Otherwise show a `gtk::Label` with `"{artist} - {title}"`.
-- Use the first player from the core snapshot.
-- If the label is wider than the available space, ellipsize it. The current code does not, but the center box can shrink. Add `ellipsize(END)` and a reasonable max width.
-- Do not recreate the label on every property change. Update its text.
+The centre island holds a divider and a button. The section hides when the model
+is not active, so an idle island has no media item.
 
-Optional, if the feature is requested:
+The label shows the title with a middle ellipsis and a cap of 18 characters.
+The tooltip shows the title and the subtitle. A click opens the centre panel on
+the media tab.
 
-- A `gtk::Picture` with height 32 and class `Cover`, before the label.
-- A click on the label toggles play/pause.
-- Scroll up and down skip to the next and previous track.
-- A tooltip with the album and player identity.
+### Centre panel
 
-Do not add these silently. They change the interaction model.
+The media tab is narrower than the calendar tab because it holds less text. Its
+header button shows the title, also with a middle ellipsis and a cap of 28
+characters. The button hides when no player is active. Clicking the clock or the
+media label switches tabs, and an open media tab falls back to the calendar when
+the player stops.
 
-### CSS
+The page holds, top to bottom, cover art, a seek row, and a volume row. The art
+is an overlay:
 
-Current `.Media` has no dedicated rules. The commented cover code used `.Cover`. Add only the classes the UI actually uses.
+- The picture fills the box and crops with `ContentFit::Cover`.
+- The track title scrolls back and forth when it is wider than the box. This is
+  the `Marquee` widget, which uses a scrolling viewport and a tick callback.
+- The subtitle sits under the title, centered, with a middle ellipsis.
+- Previous, play/pause, and next sit at the bottom of the art over a gradient.
+- Without art, the box is a square with the generic audio icon centered.
 
-## Defects and scope
+Controls:
 
-- The current code binds `metadata` to a label with a transform but does not disconnect if the player list changes. The Rust UI updates by player ID and drops the old binding.
-- The commented cover art code is not part of the behavior. Do not port commented code.
-- The current code takes `players.nth_data(0)` without checking that the player is available. The core should expose only available players, or mark `available` and let the UI skip unavailable ones.
-- The current code does not handle a player name with no owner. The core removes it.
+| Control  | Command                                         |
+| -------- | ----------------------------------------------- |
+| Previous | `MediaPrevious` when `can_previous`             |
+| Play     | `MediaPlayPause` when `can_play` or `can_pause` |
+| Next     | `MediaNext` when `can_next`                     |
+| Seek     | `MediaSeek` when `can_seek` and a length exists |
+| Volume   | `MediaSetVolume` while a player is active       |
+
+A one-second tick advances the elapsed time and the seek slider from the stored
+position while the player is playing. The tick also retries cover art.
+
+### Cover art
+
+The art keeps the source aspect ratio inside a 354 by 168 box. Wide art fills
+the width. Tall art takes the height. The height never drops below 132. A square
+placeholder of 168 pixels stands in when the file does not load.
+
+The source is `mpris:artUrl` when it is a local file. The panel retries a failed
+read once a second for ten ticks, because a player may publish the URL before it
+finishes writing the image.
+
+Firefox, Zen, and the other Firefox-family browsers sometimes omit the URL while
+still writing the image. For those players the panel falls back to the newest
+image in the browser's `firefox-mpris` directory. A file older than the track
+start, with a three second tolerance, belongs to the previous track and is
+ignored. The first track after startup accepts any file, since the browser may
+have written it long before the shell started.
+
+Searched directories:
+
+```text
+~/.zen
+~/.mozilla/firefox
+$XDG_CONFIG_HOME/mozilla/firefox
+~/.librewolf
+~/.waterfox
+~/.floorp
+```
+
+### CSS classes
+
+The bar uses `MediaButton`, `MediaRow`, `MediaIcon`, `MediaLabel`, and
+`MediaSection` in `style.css`.
+
+The panel uses `CenterPanelMedia`, `CenterPanelMediaLabel`, and
+`CenterPanelMediaIcon` for the header, and `MediaPage`, `MediaSheet`,
+`MediaArt`, `MediaArtImage`, `MediaArtIcon`, `MediaArtScrim`, `MediaMarquee`,
+`MediaMarqueeTrack`, `MediaTitle`, `MediaArtist`, `MediaControls`,
+`MediaControl`, `MediaPlay`, `MediaSeek`, `MediaTime`, `MediaVolume`,
+`MediaVolumeIcon`, `MediaVolumeValue`, and `MediaSlider` for the tab.
 
 ## Definition of done
 
-- A playing MPRIS player adds a label with `"{artist} - {title}"`.
-- Pausing, changing track, or changing artist updates the label without recreating the widget.
-- Closing the player removes the label.
-- Multiple players follow the documented selection rule and do not flicker between players.
-- The core emits a full player snapshot on startup.
-- No cover art is downloaded when the UI does not display it.
-- The bar remains stable when no MPRIS service is available.
+- A playing player fills the bar label and opens the media tab.
+- Pausing, changing track, or changing artist updates the label and the tab
+  without rebuilding the widgets.
+- Closing the player hides the bar section and switches an open media tab to the
+  calendar.
+- Two players resolve to the same one on every read, and transport commands
+  reach that player.
+- The media tab shows art, title, subtitle, transport, seek, and volume, and
+  falls back to the placeholder without art.
+- The palette and the corner radius match the rest of the shell in both themes.
+- The shell starts and the bar stays stable when the session bus is missing or
+  no player runs.

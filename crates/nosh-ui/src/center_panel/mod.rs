@@ -7,15 +7,16 @@
 //! so they travel to opposite corners while the card grows.
 
 use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime};
 
 use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
-use nosh_core::{Notification, Urgency};
+use nosh_core::{Command, Core, MediaModel, Notification, Urgency};
 
 use crate::notifications::{format_time, set_body_markup, NotificationHistory};
 
@@ -23,7 +24,21 @@ use crate::notifications::{format_time, set_body_markup, NotificationHistory};
 /// calendar tab is wider than the media tab.
 const CALENDAR_WIDTH: i32 = 48 * 12;
 const MEDIA_WIDTH: i32 = 32 * 12;
-const PANEL_HEIGHT: i32 = 27 * 12;
+const PANEL_HEIGHT: i32 = 29 * 12;
+/// Cover art keeps its own aspect ratio inside this box. The width matches
+/// the media page minus its horizontal padding.
+const ART_MAX_WIDTH: i32 = MEDIA_WIDTH - 2 * 15;
+const ART_MAX_HEIGHT: i32 = 168;
+const ART_MIN_HEIGHT: i32 = 132;
+/// Square placeholder when no player supplies art.
+const ART_SQUARE: i32 = 168;
+/// Players publish the art URL before they finish writing the file, so a
+/// failed read is retried once a second for this many ticks.
+const ART_RETRIES: u8 = 10;
+/// The browser art fallback accepts files modified this close to the track
+/// change, which covers the browser writing the image just before it reports
+/// the new track.
+const ART_STALE_TOLERANCE: Duration = Duration::from_secs(3);
 const OPEN_SECONDS: f64 = 0.36;
 const CLOSE_SECONDS: f64 = 0.24;
 const TAB_SECONDS: f64 = 0.28;
@@ -36,9 +51,6 @@ const HEADER_PAD_X: i32 = 3;
 const HEADER_PAD_Y: i32 = 2;
 /// Side of a calendar day cell, matching 1.75em at the 12px root font.
 const DAY_CELL: i32 = 21;
-
-const NOW_PLAYING_TITLE: &str = "Midnight City";
-const NOW_PLAYING_ARTIST: &str = "M83";
 
 /// The calendar column keeps one third of the panel content width. The panel
 /// padding and divider take the rest.
@@ -102,6 +114,7 @@ struct Inner {
     media_label: gtk::Label,
     stack: gtk::Stack,
     calendar: Rc<CalendarView>,
+    media_view: Rc<MediaView>,
     notifications_view: Rc<NotificationsView>,
     state: Cell<State>,
     generation: Cell<u64>,
@@ -112,7 +125,7 @@ struct Inner {
 }
 
 impl CenterPanelWindow {
-    pub fn new(app: &gtk::Application, history: Rc<NotificationHistory>) -> Self {
+    pub fn new(app: &gtk::Application, core: Rc<Core>, history: Rc<NotificationHistory>) -> Self {
         let window = gtk::ApplicationWindow::new(app);
         window.set_decorated(false);
         window.init_layer_shell();
@@ -136,9 +149,11 @@ impl CenterPanelWindow {
         clock_label.add_css_class("CenterPanelClockLabel");
         clock.add_css_class("CenterPanelClock");
         let (media_label, media) = header_button(Some("audio-x-generic-symbolic"));
-        media_label.set_text(NOW_PLAYING_TITLE);
         media_label.add_css_class("CenterPanelMediaLabel");
+        media_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        media_label.set_max_width_chars(28);
         media.add_css_class("CenterPanelMedia");
+        media.set_visible(false);
 
         clock.set_halign(gtk::Align::Start);
         clock.set_valign(gtk::Align::Start);
@@ -147,7 +162,8 @@ impl CenterPanelWindow {
         media.set_valign(gtk::Align::Start);
         media.set_can_target(false);
 
-        let (content, stack, calendar, notifications_view) = build_content(history);
+        let (content, stack, calendar, media_view, notifications_view) =
+            build_content(core, history);
         content.set_can_target(false);
 
         let viewport = gtk::ScrolledWindow::new();
@@ -186,6 +202,7 @@ impl CenterPanelWindow {
             media_label,
             stack,
             calendar,
+            media_view,
             notifications_view,
             state: Cell::new(State::Closed),
             generation: Cell::new(0),
@@ -251,17 +268,17 @@ impl CenterPanelWindow {
         }
         inner.card.add_controller(motion);
 
-        let weak_clock = inner.clock_label.downgrade();
-        glib::timeout_add_seconds_local(1, move || match weak_clock.upgrade() {
-            Some(label) => {
-                if label.parent().is_some() {
-                    label.set_text(&crate::bar::time::now_text());
-                    glib::ControlFlow::Continue
-                } else {
-                    glib::ControlFlow::Break
-                }
+        let weak = Rc::downgrade(&inner);
+        glib::timeout_add_seconds_local(1, move || {
+            let Some(inner) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            if inner.clock_label.parent().is_none() {
+                return glib::ControlFlow::Break;
             }
-            None => glib::ControlFlow::Break,
+            inner.clock_label.set_text(&crate::bar::time::now_text());
+            inner.media_view.advance();
+            glib::ControlFlow::Continue
         });
 
         Self { inner }
@@ -274,6 +291,30 @@ impl CenterPanelWindow {
     /// Rebuilds the notification list after the history changed.
     pub fn refresh_notifications(&self) {
         self.inner.notifications_view.refresh();
+    }
+
+    /// Updates the media tab and the header label. When the player stops, the
+    /// media header hides and an open media tab falls back to the calendar.
+    pub fn set_media(&self, model: &MediaModel) {
+        self.inner.media_view.render(model);
+        if model.is_active() {
+            self.inner.media_label.set_text(&model.title);
+            self.inner.media.set_tooltip_text(Some(&format!(
+                "{} \u{b7} {}",
+                model.title,
+                model.subtitle()
+            )));
+            self.inner.media.set_visible(true);
+        } else {
+            self.inner.media_label.set_text("");
+            self.inner.media.set_tooltip_text(None);
+            self.inner.media.set_visible(false);
+        }
+
+        let open_media = self.inner.stack.visible_child_name().as_deref() == Some("media");
+        if !model.is_active() && open_media && self.inner.state.get() == State::Open {
+            show_tab(&self.inner, Tab::Calendar);
+        }
     }
 
     /// Opens the panel from `geometry`, the centre island in monitor coordinates.
@@ -317,7 +358,6 @@ impl CenterPanelWindow {
         self.inner.media.set_margin_end(collapsed.media_end);
         self.inner.media.set_margin_top(collapsed.media_top);
         self.inner.clock_label.set_text(clock_text);
-        self.inner.media_label.set_text(NOW_PLAYING_TITLE);
         self.inner.content.set_opacity(0.0);
         self.inner.content.set_can_target(false);
         self.inner.clock.set_can_target(false);
@@ -618,11 +658,13 @@ fn ease_in_cubic(t: f64) -> f64 {
 }
 
 fn build_content(
+    core: Rc<Core>,
     history: Rc<NotificationHistory>,
 ) -> (
     gtk::Box,
     gtk::Stack,
     Rc<CalendarView>,
+    Rc<MediaView>,
     Rc<NotificationsView>,
 ) {
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -640,6 +682,7 @@ fn build_content(
     content.append(&header);
 
     let calendar = CalendarView::new();
+    let media_view = MediaView::new(core);
     let notifications_view = NotificationsView::new(history);
 
     let stack = gtk::Stack::new();
@@ -653,10 +696,10 @@ fn build_content(
         &build_calendar_page(&notifications_view, &calendar),
         Some("calendar"),
     );
-    stack.add_named(&build_media_page(), Some("media"));
+    stack.add_named(media_view.widget(), Some("media"));
     content.append(&stack);
 
-    (content, stack, calendar, notifications_view)
+    (content, stack, calendar, media_view, notifications_view)
 }
 
 fn build_calendar_page(
@@ -1081,81 +1124,633 @@ fn today_text() -> String {
         .unwrap_or_else(|_| "Today".to_string())
 }
 
-fn build_media_page() -> gtk::Box {
-    let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    page.add_css_class("MediaPage");
+/// Holds the marquee at each end before it reverses, in seconds.
+const MARQUEE_PAUSE: f64 = 0.8;
+/// Marquee travel in logical pixels per second.
+const MARQUEE_SPEED: f64 = 26.0;
 
-    let sheet = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    sheet.add_css_class("MediaSheet");
-    sheet.set_halign(gtk::Align::Center);
-    sheet.set_valign(gtk::Align::Center);
-
-    let art = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    art.add_css_class("MediaArt");
-    art.set_halign(gtk::Align::Center);
-    art.set_valign(gtk::Align::Center);
-    let art_icon = gtk::Image::from_icon_name("audio-x-generic-symbolic");
-    art_icon.add_css_class("MediaArtIcon");
-    art.append(&art_icon);
-    sheet.append(&art);
-
-    let info = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    info.set_halign(gtk::Align::Center);
-    let title = gtk::Label::new(Some(NOW_PLAYING_TITLE));
-    title.add_css_class("MediaTitle");
-    let artist = gtk::Label::new(Some(NOW_PLAYING_ARTIST));
-    artist.add_css_class("MediaArtist");
-    info.append(&title);
-    info.append(&artist);
-    sheet.append(&info);
-
-    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    controls.add_css_class("MediaControls");
-    controls.set_halign(gtk::Align::Center);
-    controls.append(&media_button("media-skip-backward-symbolic", false));
-    controls.append(&media_button("media-playback-start-symbolic", true));
-    controls.append(&media_button("media-skip-forward-symbolic", false));
-    sheet.append(&controls);
-
-    let seek = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    seek.add_css_class("MediaSeek");
-    seek.append(&media_time("1:24"));
-    let progress = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
-    progress.add_css_class("MediaSlider");
-    progress.set_draw_value(false);
-    progress.set_value(36.0);
-    progress.set_hexpand(true);
-    seek.append(&progress);
-    seek.append(&media_time("3:58"));
-    sheet.append(&seek);
-
-    let volume = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    volume.add_css_class("MediaVolume");
-    let volume_icon = gtk::Image::from_icon_name("audio-volume-high-symbolic");
-    volume_icon.add_css_class("MediaVolumeIcon");
-    volume.append(&volume_icon);
-    let level = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
-    level.add_css_class("MediaSlider");
-    level.set_draw_value(false);
-    level.set_value(42.0);
-    level.set_hexpand(true);
-    volume.append(&level);
-    let value = gtk::Label::new(Some("42%"));
-    value.add_css_class("MediaVolumeValue");
-    value.set_width_chars(3);
-    volume.append(&value);
-    sheet.append(&volume);
-
-    page.append(&sheet);
-    page
+/// A single-line label that scrolls back and forth when the text is wider
+/// than the space it was given. The panel passes the full track title here,
+/// so the text stays readable instead of being cut in the middle.
+struct Marquee {
+    viewport: gtk::ScrolledWindow,
+    track: gtk::Box,
+    label: gtk::Label,
+    offset: Cell<f64>,
+    direction: Cell<f64>,
+    wait: Cell<f64>,
+    last: Cell<Option<Instant>>,
+    centered: Cell<bool>,
 }
 
-fn media_button(icon_name: &str, primary: bool) -> gtk::Button {
+impl Marquee {
+    fn new(text: &str) -> Rc<Self> {
+        let label = gtk::Label::new(Some(text));
+        label.add_css_class("MediaTitle");
+        label.set_xalign(0.0);
+        label.set_halign(gtk::Align::Center);
+        label.set_ellipsize(gtk::pango::EllipsizeMode::None);
+        label.set_single_line_mode(true);
+
+        let track = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        track.add_css_class("MediaMarqueeTrack");
+        track.append(&label);
+
+        let viewport = gtk::ScrolledWindow::new();
+        viewport.add_css_class("MediaMarquee");
+        // The horizontal policy is external so no scrollbar is drawn. The
+        // vertical size follows the label.
+        viewport.set_policy(gtk::PolicyType::External, gtk::PolicyType::Never);
+        viewport.set_propagate_natural_width(false);
+        viewport.set_propagate_natural_height(true);
+        viewport.set_hexpand(true);
+        viewport.set_child(Some(&track));
+
+        Rc::new(Self {
+            viewport,
+            track,
+            label,
+            offset: Cell::new(0.0),
+            direction: Cell::new(1.0),
+            wait: Cell::new(MARQUEE_PAUSE),
+            last: Cell::new(None),
+            centered: Cell::new(true),
+        })
+    }
+
+    fn widget(&self) -> &gtk::ScrolledWindow {
+        &self.viewport
+    }
+
+    fn set_text(&self, text: &str) {
+        if self.label.text().as_str() == text {
+            return;
+        }
+        self.label.set_text(text);
+        self.reset();
+    }
+
+    fn reset(&self) {
+        self.offset.set(0.0);
+        self.direction.set(1.0);
+        self.wait.set(MARQUEE_PAUSE);
+        self.viewport.hadjustment().set_value(0.0);
+    }
+
+    /// Moves the text when it overflows. Runs from a tick callback on the
+    /// viewport, which only fires while the media tab is mapped.
+    fn advance(&self) {
+        let now = Instant::now();
+        let dt = self
+            .last
+            .replace(Some(now))
+            .map(|last| (now - last).as_secs_f64().min(0.05))
+            .unwrap_or(0.0);
+
+        let overflow = (self.track.width() - self.viewport.width()).max(0) as f64;
+        if overflow < 1.0 {
+            // Short titles stay centered instead of hugging the left edge.
+            if !self.centered.replace(true) {
+                self.label.set_halign(gtk::Align::Center);
+                self.reset();
+            }
+            if self.offset.get() != 0.0 {
+                self.offset.set(0.0);
+                self.viewport.hadjustment().set_value(0.0);
+            }
+            return;
+        }
+        if self.centered.replace(false) {
+            self.label.set_halign(gtk::Align::Start);
+            self.reset();
+        }
+
+        if self.wait.get() > 0.0 {
+            self.wait.set(self.wait.get() - dt);
+            return;
+        }
+
+        let mut offset = self.offset.get() + self.direction.get() * MARQUEE_SPEED * dt;
+        if offset >= overflow {
+            offset = overflow;
+            self.direction.set(-1.0);
+            self.wait.set(MARQUEE_PAUSE);
+        } else if offset <= 0.0 {
+            offset = 0.0;
+            self.direction.set(1.0);
+            self.wait.set(MARQUEE_PAUSE);
+        }
+        self.offset.set(offset);
+        self.viewport.hadjustment().set_value(offset);
+    }
+}
+
+/// The media tab: cover art with the track text and transport controls on
+/// top, then the seek bar and the volume slider. The widget keeps the last
+/// model so the one-second tick can advance the elapsed time without waiting
+/// for a D-Bus event.
+struct MediaView {
+    root: gtk::Box,
+    art: gtk::Overlay,
+    art_icon: gtk::Image,
+    art_image: gtk::Picture,
+    /// Identifies the track the art belongs to. A Firefox-family browser can
+    /// drop the art URL from its metadata while keeping the track, so the URL
+    /// alone cannot tell the panel when to reload.
+    art_key: RefCell<String>,
+    /// The art URL of the current track, used by the retry loop.
+    art_url: RefCell<String>,
+    /// The player identity. It decides whether the browser art fallback runs.
+    identity: RefCell<String>,
+    /// The directory Firefox-family browsers write their artwork into.
+    art_dir: RefCell<Option<PathBuf>>,
+    /// When the current track was first seen. Artwork older than this belongs
+    /// to the previous track.
+    track_started: Cell<Option<SystemTime>>,
+    /// The first track may use whatever image the browser already has, since
+    /// the shell can start long after the browser wrote it.
+    allow_any_art: Cell<bool>,
+    art_loaded: Cell<bool>,
+    art_retries: Cell<u8>,
+    marquee: Rc<Marquee>,
+    artist: gtk::Label,
+    previous: gtk::Button,
+    play: gtk::Button,
+    play_icon: gtk::Image,
+    next: gtk::Button,
+    seek: gtk::Scale,
+    elapsed: gtk::Label,
+    total: gtk::Label,
+    volume: gtk::Scale,
+    volume_icon: gtk::Image,
+    volume_value: gtk::Label,
+    core: Rc<Core>,
+    model: RefCell<MediaModel>,
+    updated: Cell<Instant>,
+}
+
+impl MediaView {
+    fn new(core: Rc<Core>) -> Rc<Self> {
+        let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        root.add_css_class("MediaPage");
+
+        let sheet = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        sheet.add_css_class("MediaSheet");
+        sheet.set_halign(gtk::Align::Fill);
+        sheet.set_valign(gtk::Align::Center);
+
+        // The art keeps the source aspect ratio, so the overlay is sized from
+        // the image and centered in the sheet.
+        let art = gtk::Overlay::new();
+        art.add_css_class("MediaArt");
+        art.set_halign(gtk::Align::Center);
+        art.set_size_request(ART_SQUARE, ART_SQUARE);
+
+        let art_image = gtk::Picture::new();
+        art_image.add_css_class("MediaArtImage");
+        art_image.set_content_fit(gtk::ContentFit::Cover);
+        art_image.set_can_shrink(true);
+        art_image.set_visible(false);
+        let art_icon = gtk::Image::from_icon_name("audio-x-generic-symbolic");
+        art_icon.add_css_class("MediaArtIcon");
+        art_icon.set_halign(gtk::Align::Center);
+        art_icon.set_valign(gtk::Align::Center);
+        art_icon.set_can_target(false);
+
+        let controls = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        controls.add_css_class("MediaControls");
+        controls.set_halign(gtk::Align::Center);
+        let previous = media_control("media-skip-backward-symbolic");
+        let play_icon = gtk::Image::from_icon_name("media-playback-start-symbolic");
+        let play = gtk::Button::new();
+        play.add_css_class("MediaControl");
+        play.add_css_class("MediaPlay");
+        play.set_focus_on_click(false);
+        play.set_child(Some(&play_icon));
+        let next = media_control("media-skip-forward-symbolic");
+        controls.append(&previous);
+        controls.append(&play);
+        controls.append(&next);
+
+        let marquee = Marquee::new("Nothing playing");
+        let artist = gtk::Label::new(Some("Start a player to see it here"));
+        artist.add_css_class("MediaArtist");
+        artist.set_xalign(0.5);
+        artist.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        artist.set_single_line_mode(true);
+        // Overlay children count toward the overlay width. This cap keeps a
+        // long artist name from widening the art beyond its aspect ratio.
+        artist.set_max_width_chars(18);
+
+        let scrim = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        scrim.add_css_class("MediaArtScrim");
+        scrim.set_halign(gtk::Align::Fill);
+        scrim.set_valign(gtk::Align::End);
+        scrim.append(marquee.widget());
+        scrim.append(&artist);
+        scrim.append(&controls);
+
+        art.set_child(Some(&art_image));
+        art.add_overlay(&art_icon);
+        art.add_overlay(&scrim);
+        sheet.append(&art);
+
+        let seek = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        seek.add_css_class("MediaSeek");
+        let elapsed = media_time("0:00");
+        seek.append(&elapsed);
+        let progress = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.001);
+        progress.add_css_class("MediaSlider");
+        progress.set_draw_value(false);
+        progress.set_hexpand(true);
+        progress.set_sensitive(false);
+        seek.append(&progress);
+        let total = media_time("--:--");
+        seek.append(&total);
+        sheet.append(&seek);
+
+        let volume = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        volume.add_css_class("MediaVolume");
+        let volume_icon = gtk::Image::from_icon_name("audio-volume-high-symbolic");
+        volume_icon.add_css_class("MediaVolumeIcon");
+        volume.append(&volume_icon);
+        let level = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
+        level.add_css_class("MediaSlider");
+        level.set_draw_value(false);
+        level.set_hexpand(true);
+        level.set_sensitive(false);
+        volume.append(&level);
+        let value = gtk::Label::new(Some("--"));
+        value.add_css_class("MediaVolumeValue");
+        value.set_width_chars(3);
+        volume.append(&value);
+        sheet.append(&volume);
+
+        root.append(&sheet);
+
+        let view = Rc::new(Self {
+            root,
+            art,
+            art_icon,
+            art_image,
+            art_key: RefCell::new(String::new()),
+            art_url: RefCell::new(String::new()),
+            identity: RefCell::new(String::new()),
+            art_dir: RefCell::new(None),
+            track_started: Cell::new(None),
+            allow_any_art: Cell::new(true),
+            art_loaded: Cell::new(false),
+            art_retries: Cell::new(0),
+            marquee,
+            artist,
+            previous,
+            play,
+            play_icon,
+            next,
+            seek: progress,
+            elapsed,
+            total,
+            volume: level,
+            volume_icon,
+            volume_value: value,
+            core,
+            model: RefCell::new(MediaModel::default()),
+            updated: Cell::new(Instant::now()),
+        });
+
+        {
+            let core = Rc::clone(&view.core);
+            view.previous
+                .connect_clicked(move |_| core.send(Command::MediaPrevious));
+        }
+        {
+            let core = Rc::clone(&view.core);
+            view.play
+                .connect_clicked(move |_| core.send(Command::MediaPlayPause));
+        }
+        {
+            let core = Rc::clone(&view.core);
+            view.next
+                .connect_clicked(move |_| core.send(Command::MediaNext));
+        }
+        {
+            let weak = Rc::downgrade(&view);
+            view.seek.connect_change_value(move |_, _, value| {
+                if let Some(view) = weak.upgrade() {
+                    let length = view.model.borrow().length;
+                    if let Some(length) = length {
+                        let millis = (length.as_secs_f64() * value * 1000.0).round() as u64;
+                        view.core.send(Command::MediaSeek(millis));
+                    }
+                }
+                glib::Propagation::Proceed
+            });
+        }
+        {
+            let weak = Rc::downgrade(&view);
+            view.volume.connect_change_value(move |_, _, value| {
+                if let Some(view) = weak.upgrade() {
+                    view.core.send(Command::MediaSetVolume(value / 100.0));
+                }
+                glib::Propagation::Proceed
+            });
+        }
+        {
+            let weak = Rc::downgrade(&view);
+            view.marquee.widget().add_tick_callback(move |_, _| {
+                let Some(view) = weak.upgrade() else {
+                    return glib::ControlFlow::Break;
+                };
+                view.marquee.advance();
+                glib::ControlFlow::Continue
+            });
+        }
+        view
+    }
+
+    fn widget(&self) -> &gtk::Box {
+        &self.root
+    }
+
+    /// Shows the player the core picked.
+    fn render(&self, model: &MediaModel) {
+        let active = model.is_active();
+        let (title, subtitle) = if active {
+            (model.title.clone(), model.subtitle())
+        } else {
+            (
+                "Nothing playing".to_string(),
+                "Start a player to see it here".to_string(),
+            )
+        };
+        self.marquee.set_text(&title);
+        self.artist.set_text(&subtitle);
+
+        let playing = model.status.is_playing();
+        self.play_icon.set_icon_name(Some(if playing {
+            "media-playback-pause-symbolic"
+        } else {
+            "media-playback-start-symbolic"
+        }));
+        self.previous.set_sensitive(active && model.can_previous);
+        self.next.set_sensitive(active && model.can_next);
+        self.play
+            .set_sensitive(active && (model.can_play || model.can_pause));
+        self.seek
+            .set_sensitive(active && model.can_seek && model.length.is_some());
+        self.volume.set_sensitive(active);
+
+        self.total.set_text(
+            &model
+                .length
+                .map(format_duration)
+                .unwrap_or_else(|| "--:--".to_string()),
+        );
+        self.elapsed.set_text(&format_duration(model.position));
+        self.seek.set_value(model.progress());
+
+        let volume = (model.volume * 100.0).round().clamp(0.0, 100.0);
+        if !self.volume.has_focus() {
+            self.volume.set_value(volume);
+        }
+        self.volume_value.set_text(&format!("{}%", volume as i32));
+        self.volume_icon
+            .set_icon_name(Some(volume_icon_name(volume / 100.0)));
+
+        if *self.art_key.borrow() != art_key(model) {
+            let first = self.art_key.borrow().is_empty();
+            *self.art_key.borrow_mut() = art_key(model);
+            *self.art_url.borrow_mut() = model.art_url.clone();
+            *self.identity.borrow_mut() = model.identity.clone();
+            self.allow_any_art.set(first);
+            self.track_started.set(Some(SystemTime::now()));
+            self.art_loaded.set(false);
+            self.art_retries.set(0);
+            self.refresh_art(false);
+        } else if !self.art_loaded.get() {
+            self.refresh_art(false);
+        }
+
+        *self.model.borrow_mut() = model.clone();
+        self.updated.set(Instant::now());
+    }
+
+    /// Loads the cover art for the current track. A player may publish the URL
+    /// before the file it points at is complete, so the panel tick keeps
+    /// retrying instead of leaving the placeholder for the rest of the track.
+    /// Firefox-family browsers sometimes omit the URL entirely while still
+    /// writing the image, so that case falls back to the newest file in their
+    /// artwork directory.
+    fn refresh_art(&self, retry: bool) {
+        if self.art_loaded.get() {
+            return;
+        }
+        if retry {
+            let attempts = self.art_retries.get();
+            if attempts == ART_RETRIES {
+                tracing::debug!(
+                    url = %self.art_url.borrow(),
+                    "cover art could not be loaded"
+                );
+            }
+            self.art_retries.set(attempts.saturating_add(1));
+        }
+
+        let url = self.art_url.borrow().clone();
+        if let Some(path) = art_path(&url) {
+            if let Some(parent) = path.parent() {
+                *self.art_dir.borrow_mut() = Some(parent.to_path_buf());
+            }
+        }
+
+        let pixbuf = local_art_pixbuf(&url).or_else(|| {
+            if self.identity_is_firefox_family() {
+                self.browser_art_pixbuf()
+            } else {
+                None
+            }
+        });
+        let Some(pixbuf) = pixbuf else {
+            self.show_placeholder();
+            return;
+        };
+
+        let (width, height) = art_size(pixbuf.width(), pixbuf.height());
+        let scaled = pixbuf.scale_simple(width, height, gtk::gdk_pixbuf::InterpType::Hyper);
+        let texture = gdk::Texture::for_pixbuf(scaled.as_ref().unwrap_or(&pixbuf));
+        self.art.set_size_request(width, height);
+        self.art_image.set_paintable(Some(&texture));
+        self.art_image.set_visible(true);
+        self.art_icon.set_visible(false);
+        self.art_loaded.set(true);
+    }
+
+    fn identity_is_firefox_family(&self) -> bool {
+        let identity = self.identity.borrow().to_ascii_lowercase();
+        identity.contains("firefox") || identity.contains("zen") || identity.contains("mozilla")
+    }
+
+    /// The newest image in the browser's artwork directory. The browser
+    /// deletes the previous image when the track changes, so this follows the
+    /// current track.
+    fn browser_art_pixbuf(&self) -> Option<gtk::gdk_pixbuf::Pixbuf> {
+        let known = self.art_dir.borrow().clone();
+        let dir = match known {
+            Some(dir) => dir,
+            None => {
+                let dir = find_browser_art_dir()?;
+                *self.art_dir.borrow_mut() = Some(dir.clone());
+                dir
+            }
+        };
+        let (modified, file) = newest_image(&dir)?;
+        if !self.allow_any_art.get() {
+            if let Some(started) = self.track_started.get() {
+                if modified + ART_STALE_TOLERANCE < started {
+                    return None;
+                }
+            }
+        }
+        gtk::gdk_pixbuf::Pixbuf::from_file(file).ok()
+    }
+
+    fn show_placeholder(&self) {
+        self.art.set_size_request(ART_SQUARE, ART_SQUARE);
+        self.art_image.set_paintable(None::<&gdk::Texture>);
+        self.art_image.set_visible(false);
+        self.art_icon.set_visible(true);
+    }
+
+    /// Advances the elapsed label and slider between backend events. The
+    /// backend model carries the position at the moment of its last read, so
+    /// the time since then is added without changing the stored base.
+    fn advance(&self) {
+        self.refresh_art(true);
+
+        let model = self.model.borrow();
+        if !model.status.is_playing() || !model.is_active() {
+            return;
+        }
+        let Some(length) = model.length else {
+            return;
+        };
+        if length.is_zero() {
+            return;
+        }
+
+        let position = (model.position + self.updated.get().elapsed()).min(length);
+        self.elapsed.set_text(&format_duration(position));
+        if !self.seek.has_focus() {
+            self.seek
+                .set_value(position.as_secs_f64() / length.as_secs_f64());
+        }
+    }
+}
+
+/// Identifies the track, so a metadata update that drops the art URL still
+/// reloads when the track changes.
+fn art_key(model: &MediaModel) -> String {
+    format!(
+        "{}\u{1f}{}\u{1f}{}\u{1f}{}",
+        model.player.as_deref().unwrap_or_default(),
+        model.title,
+        model.artist,
+        model.art_url
+    )
+}
+
+fn art_path(url: &str) -> Option<PathBuf> {
+    gtk::gio::File::for_uri(url).path()
+}
+
+/// Loads the cover art from a local file URL. Remote URLs are not fetched.
+fn local_art_pixbuf(url: &str) -> Option<gtk::gdk_pixbuf::Pixbuf> {
+    gtk::gdk_pixbuf::Pixbuf::from_file(art_path(url)?).ok()
+}
+
+/// The browser art directory for the Firefox family. Each browser keeps its
+/// profile root in a different place, but all of them write artwork into a
+/// `firefox-mpris` directory under it.
+fn find_browser_art_dir() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let home = Path::new(&home);
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".config"));
+    let roots = [
+        home.join(".zen"),
+        home.join(".mozilla/firefox"),
+        config.join("mozilla/firefox"),
+        home.join(".librewolf"),
+        home.join(".waterfox"),
+        home.join(".floorp"),
+    ];
+
+    let mut best: Option<(SystemTime, PathBuf)> = None;
+    for root in roots {
+        let dir = root.join("firefox-mpris");
+        let Some((modified, _)) = newest_image(&dir) else {
+            continue;
+        };
+        if best.as_ref().is_none_or(|(time, _)| modified > *time) {
+            best = Some((modified, dir));
+        }
+    }
+    best.map(|(_, dir)| dir)
+}
+
+fn newest_image(dir: &Path) -> Option<(SystemTime, PathBuf)> {
+    let mut best: Option<(SystemTime, PathBuf)> = None;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        let is_image = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                matches!(
+                    extension.to_ascii_lowercase().as_str(),
+                    "png" | "jpg" | "jpeg" | "webp"
+                )
+            });
+        if !is_image || !path.is_file() {
+            continue;
+        }
+        let Ok(modified) = entry.metadata().and_then(|metadata| metadata.modified()) else {
+            continue;
+        };
+        if best.as_ref().is_none_or(|(time, _)| modified > *time) {
+            best = Some((modified, path));
+        }
+    }
+    best
+}
+
+/// Fits the cover inside the art box without changing its aspect ratio.
+fn art_size(width: i32, height: i32) -> (i32, i32) {
+    if width <= 0 || height <= 0 {
+        return (ART_SQUARE, ART_SQUARE);
+    }
+    let aspect = f64::from(width) / f64::from(height);
+    let max_width = f64::from(ART_MAX_WIDTH);
+    let max_height = f64::from(ART_MAX_HEIGHT);
+    let (mut width, mut height) = if aspect >= max_width / max_height {
+        (max_width, max_width / aspect)
+    } else {
+        (max_height * aspect, max_height)
+    };
+    if height < f64::from(ART_MIN_HEIGHT) {
+        height = f64::from(ART_MIN_HEIGHT);
+        width = (height * aspect).min(max_width);
+    }
+    (
+        (width.round() as i32).max(1),
+        (height.round() as i32).max(1),
+    )
+}
+
+fn media_control(icon_name: &str) -> gtk::Button {
     let button = gtk::Button::new();
     button.add_css_class("MediaControl");
-    if primary {
-        button.add_css_class("MediaPlay");
-    }
     button.set_focus_on_click(false);
     button.set_child(Some(&gtk::Image::from_icon_name(icon_name)));
     button
@@ -1165,6 +1760,30 @@ fn media_time(text: &str) -> gtk::Label {
     let label = gtk::Label::new(Some(text));
     label.add_css_class("MediaTime");
     label
+}
+
+fn format_duration(duration: Duration) -> String {
+    let total = duration.as_secs();
+    let hours = total / 3600;
+    let minutes = (total % 3600) / 60;
+    let seconds = total % 60;
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
+}
+
+fn volume_icon_name(volume: f64) -> &'static str {
+    if volume <= 0.0 {
+        "audio-volume-muted-symbolic"
+    } else if volume < 0.33 {
+        "audio-volume-low-symbolic"
+    } else if volume < 0.66 {
+        "audio-volume-medium-symbolic"
+    } else {
+        "audio-volume-high-symbolic"
+    }
 }
 
 struct Month {

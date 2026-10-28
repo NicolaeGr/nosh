@@ -9,12 +9,14 @@ use crate::brightness::service::{BrightnessService, BrightnessServiceConfig};
 use crate::command::Command;
 use crate::error::CoreError;
 use crate::event::{
-    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, NetworkEvent,
-    NotificationEvent, PowerProfilesEvent, Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
+    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MediaEvent, MonitorEvent,
+    NetworkEvent, NotificationEvent, PowerProfilesEvent, Snapshot, SystemStatsEvent, TrayEvent,
+    WorkspaceEvent,
 };
 use crate::hyprland::{binds, Hyprland};
 use crate::idle_inhibit::model::IdleInhibitState;
 use crate::idle_inhibit::service::{IdleInhibitService, IdleInhibitServiceConfig};
+use crate::media::service::{MediaService, MediaServiceConfig};
 use crate::menu::service::{MenuService, MenuServiceConfig};
 use crate::monitors::service::{MonitorService, MonitorServiceConfig};
 use crate::network::service::{NetworkService, NetworkServiceConfig};
@@ -36,6 +38,7 @@ pub struct CoreSettings {
     pub power_profiles: PowerProfilesServiceConfig,
     pub network: NetworkServiceConfig,
     pub tray: TrayServiceConfig,
+    pub media: MediaServiceConfig,
     pub menu: MenuServiceConfig,
     pub notifications: NotificationServiceConfig,
 }
@@ -90,6 +93,7 @@ impl Core {
         let (power_profiles_commands, power_profiles_receiver) = async_channel::unbounded();
         let (network_commands, network_receiver) = async_channel::unbounded();
         let (tray_commands, tray_receiver) = async_channel::unbounded();
+        let (media_commands, media_receiver) = async_channel::unbounded();
         let (menu_commands, menu_receiver) = async_channel::unbounded();
         let (notification_commands, notification_receiver) = async_channel::unbounded();
 
@@ -110,6 +114,7 @@ impl Core {
                             power_profiles: power_profiles_commands,
                             network: network_commands,
                             tray: tray_commands,
+                            media: media_commands,
                             menu: menu_commands,
                             notifications: notification_commands,
                         },
@@ -142,6 +147,8 @@ impl Core {
                         .run(network_receiver, service_events.clone());
                     let tray = TrayService::from_env_with(settings.tray)
                         .run(tray_receiver, service_events.clone());
+                    let media = MediaService::from_env_with(settings.media)
+                        .run(media_receiver, service_events.clone());
                     let menu =
                         MenuService::new(settings.menu).run(menu_receiver, service_events.clone());
                     let notifications = NotificationService::from_env_with(settings.notifications)
@@ -161,6 +168,7 @@ impl Core {
                         power_profiles,
                         network,
                         tray,
+                        media,
                         menu,
                         notifications
                     );
@@ -222,6 +230,7 @@ struct ServiceSenders {
     power_profiles: Sender<Command>,
     network: Sender<Command>,
     tray: Sender<Command>,
+    media: Sender<Command>,
     menu: Sender<Command>,
     notifications: Sender<Command>,
 }
@@ -242,6 +251,8 @@ async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
             &senders.network
         } else if command.is_tray() {
             &senders.tray
+        } else if command.is_media() {
+            &senders.media
         } else if command.is_menu() {
             &senders.menu
         } else if command.is_notifications() {
@@ -332,6 +343,12 @@ fn merge_snapshot(accumulator: &mut Snapshot, incoming: Snapshot) {
     if incoming.tray_backend.is_some() {
         accumulator.tray_backend = incoming.tray_backend;
     }
+    if incoming.media.is_some() {
+        accumulator.media = incoming.media;
+    }
+    if incoming.media_backend.is_some() {
+        accumulator.media_backend = incoming.media_backend;
+    }
     if incoming.notifications.is_some() {
         accumulator.notifications = incoming.notifications;
     }
@@ -361,6 +378,7 @@ fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
         Event::PowerProfiles(event) => absorb_power_profiles(accumulator, event),
         Event::Network(event) => absorb_network(accumulator, event),
         Event::Tray(event) => absorb_tray(accumulator, event),
+        Event::Media(event) => absorb_media(accumulator, event),
         Event::Notifications(event) => absorb_notifications(accumulator, event),
         _ => {}
     }
@@ -443,6 +461,16 @@ fn absorb_tray(accumulator: &mut Snapshot, event: &TrayEvent) {
             accumulator.tray_backend = Some(*backend);
         }
         TrayEvent::Unavailable => accumulator.tray = None,
+    }
+}
+
+fn absorb_media(accumulator: &mut Snapshot, event: &MediaEvent) {
+    match event {
+        MediaEvent::Snapshot(model) | MediaEvent::Changed(model) => {
+            accumulator.media = Some(model.clone());
+        }
+        MediaEvent::Unavailable => accumulator.media = None,
+        MediaEvent::WriteFailed(_) => {}
     }
 }
 
@@ -611,6 +639,7 @@ mod tests {
         let (power_profiles_tx, power_profiles_rx) = async_channel::unbounded();
         let (network_tx, network_rx) = async_channel::unbounded();
         let (tray_tx, tray_rx) = async_channel::unbounded();
+        let (media_tx, media_rx) = async_channel::unbounded();
         let (menu_tx, _menu_rx) = async_channel::unbounded();
         let (notification_tx, _notification_rx) = async_channel::unbounded();
 
@@ -627,6 +656,7 @@ mod tests {
                 power_profiles: power_profiles_tx,
                 network: network_tx,
                 tray: tray_tx,
+                media: media_tx,
                 menu: menu_tx,
                 notifications: notification_tx,
             },
@@ -661,6 +691,7 @@ mod tests {
             })
             .await
             .unwrap();
+        public_tx.send(Command::MediaPlayPause).await.unwrap();
 
         assert_eq!(
             tokio::time::timeout(Duration::from_secs(1), workspace_rx.recv())
@@ -732,6 +763,13 @@ mod tests {
             Command::TrayMenuAboutToShow {
                 item_id: "item".to_string()
             }
+        );
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), media_rx.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            Command::MediaPlayPause
         );
 
         drop(public_tx);

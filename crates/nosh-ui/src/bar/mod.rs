@@ -25,8 +25,8 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use nosh_core::{
-    AudioModel, BatteryModel, Core, IdleInhibitState, NetworkModel, SystemStats as StatsSnapshot,
-    TrayItemModel, TrayMenu, WorkspaceSnapshot,
+    AudioModel, BatteryModel, Core, IdleInhibitState, MediaModel, NetworkModel,
+    SystemStats as StatsSnapshot, TrayItemModel, TrayMenu, WorkspaceSnapshot,
 };
 
 use crate::center_panel::{CenterPanelWindow, Geometry, Rect, Tab};
@@ -42,6 +42,7 @@ pub struct BarWindow {
     idle_inhibitor: IdleInhibitor,
     battery: Battery,
     volume: Volume,
+    media: media::Media,
 }
 
 impl BarWindow {
@@ -129,12 +130,7 @@ impl BarWindow {
         let clock = time::Clock::new();
         let media = media::Media::new();
         center_island.append(clock.button());
-        let media_divider = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        media_divider.add_css_class("MediaDivider");
-        media_divider.set_size_request(1, 1);
-        media_divider.set_valign(gtk::Align::Center);
-        center_island.append(&media_divider);
-        center_island.append(media.button());
+        center_island.append(media.section());
         center.append(&center_island);
         bar.set_center_widget(Some(&center));
 
@@ -155,9 +151,9 @@ impl BarWindow {
                 let Some(clock_rect) = bounds(&clock_label, &root) else {
                     return;
                 };
-                let Some(media_rect) = bounds(&media_button, &root) else {
-                    return;
-                };
+                // The player may be hidden when nothing is playing. In that
+                // case the clock is the only header anchor.
+                let media_rect = bounds(&media_button, &root).unwrap_or(clock_rect);
                 let restore = island.clone();
                 let fallback = restore.clone();
                 island.set_opacity(0.0);
@@ -218,6 +214,7 @@ impl BarWindow {
             idle_inhibitor,
             battery,
             volume,
+            media,
         }
     }
 
@@ -251,6 +248,10 @@ impl BarWindow {
 
     pub fn set_audio(&self, model: &AudioModel) {
         self.volume.render(model);
+    }
+
+    pub fn set_media(&self, model: &MediaModel) {
+        self.media.render(model);
     }
 
     pub fn set_network(&self, model: &NetworkModel) {

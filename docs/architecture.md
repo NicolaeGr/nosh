@@ -146,6 +146,11 @@ pub enum Command {
     NotificationExpire(u32),
     NotificationInvoke { id: u32, action: String },
     NotificationSetDnd(bool),
+    MediaPlayPause,
+    MediaNext,
+    MediaPrevious,
+    MediaSeek(u64),
+    MediaSetVolume(f64),
     AppReload,
     AppLaunch(AppEntry),
     AppRecordLaunch(String),
@@ -259,6 +264,7 @@ Use a `gtk::Window` with decorations disabled and resizing disabled. Add it to t
 | Bar, one per monitor | top, left, right    | top     | exclusive   | none      | `nosh-topbar`              | each enabled monitor | none    |
 | Quick settings       | all four            | overlay | ignore      | exclusive | `nosh-quick-settings`      | current              | none    |
 | Notifications        | configured corner   | overlay | ignore      | none      | `nosh-notifications-outer` | farthest for corner  | 8 / 28  |
+| Centre panel         | all four            | overlay | ignore      | exclusive | `nosh-center-panel`        | current              | none    |
 | App launcher         | all four            | overlay | ignore      | exclusive | `nosh-app-launcher`        | current              | none    |
 | Menu                 | configured          | overlay | ignore      | exclusive | `nosh-menu-<id>`           | current              | none    |
 | Change indicator     | bottom, left, right | top     | ignore      | none      | `nosh-change-indicator`    | current              | none    |

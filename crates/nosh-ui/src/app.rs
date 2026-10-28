@@ -10,10 +10,10 @@ use gtk4 as gtk;
 use nosh_core::{
     volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel,
     BrightnessDevice, BrightnessEvent, ChangeOrigin, Command, Core, EndpointKind, Event,
-    IdleInhibitEvent, IdleInhibitState, LayoutPreset, MenuEvent, MonitorEvent, NetworkEvent,
-    NetworkModel, NotificationEvent, PowerProfilesEvent, PowerProfilesModel, SystemStats,
-    SystemStatsEvent, TrayEvent, TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot,
-    BRIGHTNESS_STEP, DIM_PERCENT, VOLUME_STEP,
+    IdleInhibitEvent, IdleInhibitState, LayoutPreset, MediaEvent, MediaModel, MenuEvent,
+    MonitorEvent, NetworkEvent, NetworkModel, NotificationEvent, PowerProfilesEvent,
+    PowerProfilesModel, SystemStats, SystemStatsEvent, TrayEvent, TrayItemModel, TrayMenu,
+    WorkspaceEvent, WorkspaceSnapshot, BRIGHTNESS_STEP, DIM_PERCENT, VOLUME_STEP,
 };
 
 use crate::bar::BarWindow;
@@ -67,6 +67,7 @@ struct Ui {
     brightness: RefCell<Vec<BrightnessDevice>>,
     tray: RefCell<Vec<TrayItemModel>>,
     tray_menus: RefCell<HashMap<String, TrayMenu>>,
+    media: RefCell<MediaModel>,
     bars: RefCell<BTreeMap<String, BarWindow>>,
     menus: RefCell<MenuManager>,
     quick_settings: Rc<QuickSettingsWindow>,
@@ -83,6 +84,7 @@ impl Ui {
         let notification_history = Rc::new(NotificationHistory::new());
         let center_panel = Rc::new(CenterPanelWindow::new(
             &app,
+            Rc::clone(&core),
             Rc::clone(&notification_history),
         ));
         let notifications = Rc::new(NotificationsWindow::new(&app, Rc::clone(&core)));
@@ -99,6 +101,7 @@ impl Ui {
             brightness: RefCell::new(Vec::new()),
             tray: RefCell::new(Vec::new()),
             tray_menus: RefCell::new(HashMap::new()),
+            media: RefCell::new(MediaModel::default()),
             bars: RefCell::new(BTreeMap::new()),
             menus: RefCell::new(MenuManager::new()),
             quick_settings,
@@ -148,6 +151,7 @@ impl Ui {
             bar.set_idle_inhibit(&self.idle_inhibit.borrow());
             bar.set_network(&self.network.borrow());
             bar.set_tray(&self.tray.borrow(), &self.tray_menus.borrow());
+            bar.set_media(&self.media.borrow());
             bar.present();
             self.bars.borrow_mut().insert(connector, bar);
         }
@@ -223,6 +227,14 @@ impl Ui {
         for bar in self.bars.borrow_mut().values_mut() {
             bar.set_tray(&items, &menus);
         }
+    }
+
+    fn render_media(&self) {
+        let model = self.media.borrow();
+        for bar in self.bars.borrow_mut().values_mut() {
+            bar.set_media(&model);
+        }
+        self.center_panel.set_media(&model);
     }
 
     fn show_indicator(&self, change: IndicatorChange) {
@@ -327,6 +339,10 @@ impl Ui {
                 if let Some(tray) = snapshot.tray {
                     self.replace_tray(tray);
                 }
+                if let Some(media) = snapshot.media {
+                    *self.media.borrow_mut() = media;
+                    self.render_media();
+                }
             }
             Event::Workspaces(event) => self.apply_workspace_event(event),
             Event::SystemStats(SystemStatsEvent::Changed(stats)) => {
@@ -340,6 +356,7 @@ impl Ui {
             Event::PowerProfiles(event) => self.apply_power_profiles_event(event),
             Event::Network(event) => self.apply_network_event(event),
             Event::Tray(event) => self.apply_tray_event(event),
+            Event::Media(event) => self.apply_media_event(event),
             Event::Menu(event) => self.apply_menu_event(event),
             Event::Monitors(MonitorEvent::Snapshot { layout, .. })
             | Event::Monitors(MonitorEvent::LayoutChanged(layout)) => {
@@ -449,6 +466,23 @@ impl Ui {
         }
 
         self.render_tray();
+    }
+
+    fn apply_media_event(&self, event: MediaEvent) {
+        match event {
+            MediaEvent::Snapshot(model) | MediaEvent::Changed(model) => {
+                *self.media.borrow_mut() = model;
+            }
+            MediaEvent::WriteFailed(message) => {
+                tracing::warn!(%message, "a media command failed");
+                return;
+            }
+            MediaEvent::Unavailable => {
+                *self.media.borrow_mut() = MediaModel::default();
+            }
+        }
+
+        self.render_media();
     }
 
     fn apply_audio_event(&self, event: AudioEvent) {

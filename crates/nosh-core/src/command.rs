@@ -88,6 +88,12 @@ pub enum Command {
         action: String,
     },
     NotificationSetDnd(bool),
+    MediaPlayPause,
+    MediaNext,
+    MediaPrevious,
+    /// Seek the current track to an absolute position in milliseconds.
+    MediaSeek(u64),
+    MediaSetVolume(f64),
     TrayActivate {
         item_id: String,
         x: i32,
@@ -173,6 +179,18 @@ impl Command {
         )
     }
 
+    /// Whether the media service handles this command.
+    pub fn is_media(&self) -> bool {
+        matches!(
+            self,
+            Self::MediaPlayPause
+                | Self::MediaNext
+                | Self::MediaPrevious
+                | Self::MediaSeek(_)
+                | Self::MediaSetVolume(_)
+        )
+    }
+
     /// Whether the notification service handles this command.
     pub fn is_notifications(&self) -> bool {
         matches!(
@@ -247,6 +265,18 @@ impl Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn media_commands_are_classified_for_routing() {
+        assert!(Command::MediaPlayPause.is_media());
+        assert!(Command::MediaNext.is_media());
+        assert!(Command::MediaPrevious.is_media());
+        assert!(Command::MediaSeek(1_000).is_media());
+        assert!(Command::MediaSetVolume(0.4).is_media());
+
+        assert!(!Command::AudioSetVolume(0.5).is_media());
+        assert!(!Command::NotificationDismiss(3).is_media());
+    }
 
     #[test]
     fn notification_commands_are_classified_for_routing() {

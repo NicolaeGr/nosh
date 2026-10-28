@@ -45,6 +45,19 @@ impl BatteryState {
     pub const fn is_charging(self) -> bool {
         matches!(self, Self::Charging | Self::FullyCharged)
     }
+
+    /// The state as the UI shows it. Unknown has no label.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Charging => "Charging",
+            Self::Discharging => "Discharging",
+            Self::Empty => "Empty",
+            Self::FullyCharged => "Fully charged",
+            Self::PendingCharge => "Pending charge",
+            Self::PendingDischarge => "Pending discharge",
+            Self::Unknown => "",
+        }
+    }
 }
 
 /// The battery state the UI renders.
@@ -77,8 +90,26 @@ impl Default for BatteryModel {
 }
 
 impl BatteryModel {
+    /// The time left in the current state, when UPower reports one.
+    pub fn remaining(&self) -> Option<Duration> {
+        match self.state {
+            BatteryState::Charging | BatteryState::PendingCharge => self.time_to_full,
+            BatteryState::Discharging | BatteryState::PendingDischarge => self.time_to_empty,
+            _ => None,
+        }
+    }
+
+    /// `Charging · 1h 18m`, or just the state when UPower has no estimate.
+    pub fn status_text(&self) -> String {
+        match (self.state.label(), self.remaining()) {
+            ("", _) => String::new(),
+            (label, None) => label.to_string(),
+            (label, Some(duration)) => format!("{label} · {}", format_duration(duration)),
+        }
+    }
+
     /// The tooltip text. The percentage is floored for parity with the Vala
-    /// widget.
+    /// widget and the state and estimate follow on a second line.
     pub fn tooltip(&self) -> String {
         tooltip(self)
     }
@@ -161,9 +192,41 @@ pub fn icon_name(model: &BatteryModel) -> String {
 }
 
 /// `Battery: {floor(percentage * 100)}%`. The floor matches the Vala tooltip.
+///
+/// A state line follows when UPower reports one:
+/// `Battery: 32%\nCharging · 1h 18m until full`.
 pub fn tooltip(model: &BatteryModel) -> String {
     let percent = (model.percentage * 100.0).floor() as i64;
-    format!("Battery: {percent}%")
+    let mut text = format!("Battery: {percent}%");
+    let status = model.status_text();
+    if status.is_empty() {
+        return text;
+    }
+
+    text.push('\n');
+    text.push_str(&status);
+    if model.remaining().is_some() {
+        match model.state {
+            BatteryState::Charging | BatteryState::PendingCharge => text.push_str(" until full"),
+            BatteryState::Discharging | BatteryState::PendingDischarge => {
+                text.push_str(" remaining")
+            }
+            _ => {}
+        }
+    }
+    text
+}
+
+/// `4h 12m` or `42m`.
+pub fn format_duration(duration: Duration) -> String {
+    let minutes = duration.as_secs() / 60;
+    let hours = minutes / 60;
+    let minutes = minutes % 60;
+    if hours > 0 {
+        format!("{hours}h {minutes:02}m")
+    } else {
+        format!("{minutes}m")
+    }
 }
 
 #[cfg(test)]
@@ -277,15 +340,84 @@ mod tests {
     #[test]
     fn the_tooltip_floors_the_percentage() {
         let model = laptop(0.999, BatteryState::Discharging);
-        assert_eq!(tooltip(&model), "Battery: 99%");
+        assert_eq!(tooltip(&model), "Battery: 99%\nDischarging");
         assert_eq!(
             tooltip(&laptop(0.54, BatteryState::Charging)),
-            "Battery: 54%"
+            "Battery: 54%\nCharging"
         );
         assert_eq!(
             tooltip(&laptop(1.0, BatteryState::FullyCharged)),
-            "Battery: 100%"
+            "Battery: 100%\nFully charged"
         );
+    }
+
+    fn with_times(
+        percentage: f64,
+        state: BatteryState,
+        time_to_empty: i64,
+        time_to_full: i64,
+    ) -> BatteryModel {
+        BatteryProperties {
+            kind: TYPE_BATTERY,
+            percentage: percentage * 100.0,
+            state: match state {
+                BatteryState::Charging => 1,
+                BatteryState::Discharging => 2,
+                BatteryState::Empty => 3,
+                BatteryState::FullyCharged => 4,
+                BatteryState::PendingCharge => 5,
+                BatteryState::PendingDischarge => 6,
+                BatteryState::Unknown => 0,
+            },
+            present: true,
+            power_supply: true,
+            time_to_empty,
+            time_to_full,
+        }
+        .model()
+    }
+
+    #[test]
+    fn status_text_uses_the_state_appropriate_estimate() {
+        let charging = with_times(0.32, BatteryState::Charging, 0, 78 * 60);
+        assert_eq!(charging.remaining(), Some(Duration::from_secs(78 * 60)));
+        assert_eq!(charging.status_text(), "Charging · 1h 18m");
+        assert_eq!(
+            charging.tooltip(),
+            "Battery: 32%\nCharging · 1h 18m until full"
+        );
+
+        let discharging = with_times(0.84, BatteryState::Discharging, 3 * 3600 + 42 * 60, 0);
+        assert_eq!(discharging.status_text(), "Discharging · 3h 42m");
+        assert_eq!(
+            discharging.tooltip(),
+            "Battery: 84%\nDischarging · 3h 42m remaining"
+        );
+    }
+
+    #[test]
+    fn fully_charged_has_no_estimate() {
+        let model = with_times(1.0, BatteryState::FullyCharged, 0, 3600);
+        assert_eq!(model.remaining(), None);
+        assert_eq!(model.status_text(), "Fully charged");
+        assert_eq!(model.tooltip(), "Battery: 100%\nFully charged");
+    }
+
+    #[test]
+    fn an_unknown_state_adds_no_tooltip_line() {
+        let model = with_times(0.5, BatteryState::Unknown, 3600, 3600);
+        assert_eq!(model.status_text(), "");
+        assert_eq!(model.tooltip(), "Battery: 50%");
+    }
+
+    #[test]
+    fn durations_use_hours_and_minutes() {
+        assert_eq!(
+            format_duration(Duration::from_secs(4 * 3600 + 12 * 60)),
+            "4h 12m"
+        );
+        assert_eq!(format_duration(Duration::from_secs(42 * 60)), "42m");
+        assert_eq!(format_duration(Duration::from_secs(0)), "0m");
     }
 
     #[test]

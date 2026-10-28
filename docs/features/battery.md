@@ -84,16 +84,27 @@ Round before multiplying. `0.949` rounds to 9, giving 90. `0.95` rounds to 10, g
 
 ### Tooltip
 
-Format `Battery: {floor(percentage * 100)}%`. Use `floor`, not `round`, for parity.
+`Battery: {floor(percentage * 100)}%` on the first line. Use `floor`, not `round`, for parity.
 
-If `time_to_empty` or `time_to_full` is available and the user wants a richer tooltip, add it later. Do not change the default text.
+UPower fills `TimeToEmpty` and `TimeToFull` itself, from `Energy` and a smoothed `EnergyRate`; the kernel only reports the raw energy counters. When an estimate is present, a second line follows:
+
+```text
+Battery: 32%
+Charging · 1h 18m until full
+```
+
+- Charging and pending charge use `TimeToFull`.
+- Discharging and pending discharge use `TimeToEmpty`.
+- Fully charged, empty, and unknown states show the label with no estimate.
+
+The quick settings header shows the same `status_text` next to the percentage.
 
 ## UI
 
 `Battery` is a `gtk::Button` with class `square-icon`, a centered `gtk::Image` child, and a tooltip.
 
 - Bind the image `icon-name` to `BatteryModel.icon_name`.
-- Bind the tooltip to `Battery: N%`.
+- Bind the tooltip to `Battery: N%` plus the state and estimate line described above.
 - Hide the button when `BatteryModel.present` is false or `is_battery` is false. The current code shows a missing-battery icon; hiding is cleaner on desktops. This is a small behavior change. If exact parity matters, keep the missing icon.
 - Do not create a new image on every update.
 

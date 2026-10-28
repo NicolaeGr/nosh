@@ -439,7 +439,10 @@ mod tests {
         assert_eq!(model.icon_name, "battery-level-50-symbolic");
         assert_eq!(model.time_to_empty, Some(Duration::from_secs(3600)));
         assert_eq!(model.time_to_full, None);
-        assert_eq!(model.tooltip(), "Battery: 54%");
+        assert_eq!(
+            model.tooltip(),
+            "Battery: 54%\nDischarging · 1h 00m remaining"
+        );
     }
 
     #[tokio::test]

@@ -1,7 +1,5 @@
 //! The quick settings header: battery state and the session entry point.
 
-use std::time::Duration;
-
 use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
@@ -75,13 +73,7 @@ impl Header {
 
         self.icon.set_icon_name(Some(&battery.icon_name));
         self.percent.set_text(&percent_text(battery.percentage));
-        let remaining = if battery.charging {
-            battery.time_to_full
-        } else {
-            battery.time_to_empty
-        };
-        self.time
-            .set_text(&remaining.map(remaining_text).unwrap_or_default());
+        self.time.set_text(&battery.status_text());
         self.battery.set_tooltip_text(Some(&battery.tooltip()));
     }
 }
@@ -99,17 +91,6 @@ fn percent_text(percentage: f64) -> String {
     format!("{}%", (percentage.clamp(0.0, 1.0) * 100.0).round() as i64)
 }
 
-fn remaining_text(duration: Duration) -> String {
-    let minutes = duration.as_secs() / 60;
-    let hours = minutes / 60;
-    let minutes = minutes % 60;
-    if hours > 0 {
-        format!("· {hours}h {minutes:02}m")
-    } else {
-        format!("· {minutes}m")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,15 +101,5 @@ mod tests {
         assert_eq!(percent_text(0.864), "86%");
         assert_eq!(percent_text(1.0), "100%");
         assert_eq!(percent_text(2.0), "100%");
-    }
-
-    #[test]
-    fn remaining_time_uses_hours_and_minutes() {
-        assert_eq!(
-            remaining_text(Duration::from_secs(4 * 3600 + 12 * 60)),
-            "· 4h 12m"
-        );
-        assert_eq!(remaining_text(Duration::from_secs(42 * 60)), "· 42m");
-        assert_eq!(remaining_text(Duration::from_secs(0)), "· 0m");
     }
 }

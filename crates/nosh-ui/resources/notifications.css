@@ -1,0 +1,149 @@
+/*
+ * Notification styles. The surface matches the quick settings card: themed
+ * colours, the same asymmetric corner, and the same 12px root font.
+ *
+ * The window is sized to its contents by the widget layer. Do not add an outer
+ * margin here, because a margin would enlarge the layer surface and capture
+ * clicks meant for the bar or the windows underneath.
+ */
+
+window.Notifications-outer {
+    font-size: 12px;
+    background-color: transparent;
+    color: @bar_ink;
+    border: none;
+    box-shadow: none;
+    letter-spacing: 0.015em;
+}
+
+.NotificationsContainer {
+    padding: 0.25em;
+    background-color: transparent;
+}
+
+.NotificationCard {
+    margin-bottom: 0.5em;
+    padding: 0.625em 0.75em;
+    background-color: alpha(@theme_bg_color, 0.96);
+    color: @bar_ink;
+    border: 0.0625em solid @bar_surface_edge;
+    border-radius: 0.875em 0 0.875em 0;
+    box-shadow:
+        0 0.75em 2.25em rgba(0, 0, 0, 0.38),
+        inset 0 0.0625em 0 @bar_highlight;
+    transition:
+        background-color 200ms ease,
+        border-color 200ms ease,
+        box-shadow 200ms ease;
+}
+
+.NotificationCard:hover {
+    background-color: @theme_bg_color;
+    border-color: alpha(@accent_bg_color, 0.4);
+    box-shadow:
+        0 0.5em 1.5em rgba(0, 0, 0, 0.3),
+        inset 0 0.0625em 0 @bar_highlight;
+}
+
+.NotificationCard .header {
+    min-width: 0;
+}
+
+.NotificationCard .AppIcon {
+    border-radius: 0.375em;
+}
+
+.NotificationCard .AppIcon.FallbackIcon {
+    color: @bar_muted;
+    opacity: 0.8;
+}
+
+.NotificationCard .heading {
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.NotificationCard .Title {
+    font-size: 1rem;
+}
+
+.NotificationCard .Time {
+    color: @bar_muted;
+    font-weight: 500;
+}
+
+.NotificationCard .Body {
+    margin-top: 0.125em;
+    padding-left: 0.75em;
+    padding-right: 0.75em;
+    color: @bar_muted_strong;
+    font-size: 0.8125rem;
+}
+
+.NotificationCard .Actions {
+    margin-top: 0.5em;
+}
+
+.NotificationCard .TextButton {
+    min-height: 0;
+    margin: 0;
+    padding: 0.375em 0.75em;
+    font-size: 0.75rem;
+    color: @bar_ink;
+    background-color: @bar_row;
+    background-image: none;
+    border: 0.0625em solid transparent;
+    border-radius: 0.375em;
+    box-shadow: none;
+}
+
+.NotificationCard .TextButton:hover {
+    background-color: @bar_row_hover;
+    border-color: @bar_surface_edge;
+}
+
+.NotificationCard .TextButton:active {
+    background-color: @bar_row_active;
+}
+
+.NotificationCard.critical {
+    border-color: alpha(@accent_bg_color, 0.6);
+}
+
+.NotificationCard.low {
+    opacity: 0.92;
+}
+
+@keyframes notification-bounce-in {
+    0% {
+        opacity: 0;
+        transform: translateY(-0.75em) scale(0.96);
+    }
+    60% {
+        opacity: 1;
+        transform: translateY(0.125em) scale(1.01);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.NotificationCard.notification-card-appear {
+    animation: notification-bounce-in 0.4s ease-out;
+}
+
+@keyframes notification-slide-out {
+    0% {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    100% {
+        opacity: 0;
+        transform: translateX(1.5em);
+    }
+}
+
+.NotificationCard.notification-card-dismiss {
+    animation: notification-slide-out 0.25s ease-in;
+}

@@ -5,6 +5,7 @@ use crate::idle_inhibit::model::IdleInhibitState;
 use crate::menu::MenuEvent;
 use crate::monitors::MonitorLayout;
 use crate::network::model::NetworkModel;
+use crate::notifications::model::{ClosedReason, Notification, NotificationModel};
 use crate::origin::ChangeOrigin;
 use crate::power_profiles::model::PowerProfilesModel;
 use crate::stats::model::SystemStats;
@@ -30,6 +31,7 @@ pub enum Event {
     PowerProfiles(PowerProfilesEvent),
     Network(NetworkEvent),
     Tray(TrayEvent),
+    Notifications(NotificationEvent),
     Menu(MenuEvent),
     ServiceAvailability(Service, bool),
 }
@@ -52,6 +54,8 @@ pub struct Snapshot {
     pub network_backend: Option<&'static str>,
     pub tray: Option<Vec<TrayItemModel>>,
     pub tray_backend: Option<&'static str>,
+    pub notifications: Option<NotificationModel>,
+    pub notification_backend: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -67,6 +71,7 @@ pub enum Service {
     PowerProfiles,
     Network,
     Tray,
+    Notifications,
 }
 
 #[derive(Debug, Clone)]
@@ -224,6 +229,36 @@ pub enum NetworkEvent {
     /// A user action failed, for example a wrong password.
     OperationFailed(String),
     /// NetworkManager is missing or the connection is down.
+    Unavailable,
+}
+
+/// The notification daemon and store.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NotificationEvent {
+    /// Fresh state after startup, a reconnect, or a backend change.
+    Snapshot(NotificationModel),
+    /// A notification was stored. `suppress_popup` is true under DND.
+    Received {
+        notification: Notification,
+        replaced: bool,
+        suppress_popup: bool,
+    },
+    /// A notification left the store.
+    Closed {
+        id: u32,
+        reason: ClosedReason,
+    },
+    /// An action was invoked from this shell.
+    Invoked {
+        id: u32,
+        action: String,
+    },
+    DndChanged {
+        enabled: bool,
+    },
+    BackendChanged {
+        backend: &'static str,
+    },
     Unavailable,
 }
 

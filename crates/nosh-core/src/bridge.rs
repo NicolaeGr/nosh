@@ -10,7 +10,7 @@ use crate::command::Command;
 use crate::error::CoreError;
 use crate::event::{
     AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, NetworkEvent,
-    PowerProfilesEvent, Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
+    NotificationEvent, PowerProfilesEvent, Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
 };
 use crate::hyprland::{binds, Hyprland};
 use crate::idle_inhibit::model::IdleInhibitState;
@@ -18,6 +18,7 @@ use crate::idle_inhibit::service::{IdleInhibitService, IdleInhibitServiceConfig}
 use crate::menu::service::{MenuService, MenuServiceConfig};
 use crate::monitors::service::{MonitorService, MonitorServiceConfig};
 use crate::network::service::{NetworkService, NetworkServiceConfig};
+use crate::notifications::service::{NotificationService, NotificationServiceConfig};
 use crate::power_profiles::service::{PowerProfilesService, PowerProfilesServiceConfig};
 use crate::stats::service::{SystemStatsService, SystemStatsServiceConfig};
 use crate::tray::service::{TrayService, TrayServiceConfig};
@@ -36,6 +37,7 @@ pub struct CoreSettings {
     pub network: NetworkServiceConfig,
     pub tray: TrayServiceConfig,
     pub menu: MenuServiceConfig,
+    pub notifications: NotificationServiceConfig,
 }
 
 /// Handle to the core thread.
@@ -58,7 +60,8 @@ impl Core {
                     Ok(config) => settings.menu.menus = config.menus,
                     Err(error) => tracing::error!(%error, "the menu config could not be loaded"),
                 }
-                settings.menu.paths = Some(paths);
+                settings.menu.paths = Some(paths.clone());
+                settings.notifications.paths = Some(paths);
             }
             Err(error) => tracing::error!(%error, "the config paths could not be resolved"),
         }
@@ -88,6 +91,7 @@ impl Core {
         let (network_commands, network_receiver) = async_channel::unbounded();
         let (tray_commands, tray_receiver) = async_channel::unbounded();
         let (menu_commands, menu_receiver) = async_channel::unbounded();
+        let (notification_commands, notification_receiver) = async_channel::unbounded();
 
         let thread = thread::Builder::new()
             .name("nosh-core".to_string())
@@ -107,6 +111,7 @@ impl Core {
                             network: network_commands,
                             tray: tray_commands,
                             menu: menu_commands,
+                            notifications: notification_commands,
                         },
                     ));
                     let merger = tokio::spawn(merge_events(service_event_receiver, event_sender));
@@ -139,6 +144,8 @@ impl Core {
                         .run(tray_receiver, service_events.clone());
                     let menu =
                         MenuService::new(settings.menu).run(menu_receiver, service_events.clone());
+                    let notifications = NotificationService::from_env_with(settings.notifications)
+                        .run(notification_receiver, service_events.clone());
                     // The services own a clone. Dropping the original lets the
                     // merger finish once every service returns.
                     drop(service_events);
@@ -154,7 +161,8 @@ impl Core {
                         power_profiles,
                         network,
                         tray,
-                        menu
+                        menu,
+                        notifications
                     );
                     router.abort();
                     if let Some(bind_sync) = bind_sync {
@@ -215,6 +223,7 @@ struct ServiceSenders {
     network: Sender<Command>,
     tray: Sender<Command>,
     menu: Sender<Command>,
+    notifications: Sender<Command>,
 }
 
 async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
@@ -235,6 +244,8 @@ async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
             &senders.tray
         } else if command.is_menu() {
             &senders.menu
+        } else if command.is_notifications() {
+            &senders.notifications
         } else {
             &senders.workspaces
         };
@@ -321,6 +332,12 @@ fn merge_snapshot(accumulator: &mut Snapshot, incoming: Snapshot) {
     if incoming.tray_backend.is_some() {
         accumulator.tray_backend = incoming.tray_backend;
     }
+    if incoming.notifications.is_some() {
+        accumulator.notifications = incoming.notifications;
+    }
+    if incoming.notification_backend.is_some() {
+        accumulator.notification_backend = incoming.notification_backend;
+    }
 }
 
 fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
@@ -344,6 +361,7 @@ fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
         Event::PowerProfiles(event) => absorb_power_profiles(accumulator, event),
         Event::Network(event) => absorb_network(accumulator, event),
         Event::Tray(event) => absorb_tray(accumulator, event),
+        Event::Notifications(event) => absorb_notifications(accumulator, event),
         _ => {}
     }
 }
@@ -425,6 +443,37 @@ fn absorb_tray(accumulator: &mut Snapshot, event: &TrayEvent) {
             accumulator.tray_backend = Some(*backend);
         }
         TrayEvent::Unavailable => accumulator.tray = None,
+    }
+}
+
+fn absorb_notifications(accumulator: &mut Snapshot, event: &NotificationEvent) {
+    match event {
+        NotificationEvent::Snapshot(model) => {
+            accumulator.notifications = Some(model.clone());
+        }
+        NotificationEvent::Received { notification, .. } => {
+            if let Some(model) = accumulator.notifications.as_mut() {
+                model.upsert(notification.clone());
+            }
+        }
+        NotificationEvent::Closed { id, .. } => {
+            if let Some(model) = accumulator.notifications.as_mut() {
+                model.remove(*id);
+            }
+        }
+        NotificationEvent::DndChanged { enabled } => {
+            if let Some(model) = accumulator.notifications.as_mut() {
+                model.settings.dont_disturb = *enabled;
+            }
+        }
+        NotificationEvent::BackendChanged { backend } => {
+            accumulator.notification_backend = Some(*backend);
+        }
+        NotificationEvent::Invoked { .. } => {}
+        NotificationEvent::Unavailable => {
+            accumulator.notifications = None;
+            accumulator.notification_backend = None;
+        }
     }
 }
 
@@ -563,6 +612,7 @@ mod tests {
         let (network_tx, network_rx) = async_channel::unbounded();
         let (tray_tx, tray_rx) = async_channel::unbounded();
         let (menu_tx, _menu_rx) = async_channel::unbounded();
+        let (notification_tx, _notification_rx) = async_channel::unbounded();
 
         let task = tokio::spawn(route_commands(
             public_rx,
@@ -578,6 +628,7 @@ mod tests {
                 network: network_tx,
                 tray: tray_tx,
                 menu: menu_tx,
+                notifications: notification_tx,
             },
         ));
 

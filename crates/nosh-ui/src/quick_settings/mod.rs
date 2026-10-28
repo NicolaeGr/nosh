@@ -168,6 +168,14 @@ impl QuickSettingsWindow {
         self.inner.toggles.render_idle_inhibit(state);
     }
 
+    pub fn set_dnd(&self, enabled: bool) {
+        self.inner.toggles.render_dnd(enabled);
+    }
+
+    pub fn set_dnd_unavailable(&self) {
+        self.inner.toggles.render_dnd_unavailable();
+    }
+
     pub fn set_power_profiles(&self, model: Option<&PowerProfilesModel>) {
         self.inner.toggles.render_power_profiles(model);
     }

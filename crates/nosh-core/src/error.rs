@@ -98,6 +98,17 @@ pub enum StatsError {
     Parse { path: String, message: String },
 }
 
+/// A notification state file or image cache failed.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum NotificationError {
+    #[error("cannot read notification state {path}: {message}")]
+    Read { path: String, message: String },
+    #[error("cannot write notification state {path}: {message}")]
+    Write { path: String, message: String },
+    #[error("cannot parse notification state {path}: {message}")]
+    Parse { path: String, message: String },
+}
+
 /// A Hyprland event line that does not match the documented payload shape.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EventParseError {

@@ -17,6 +17,7 @@ pub mod idle_inhibit;
 pub mod menu;
 pub mod monitors;
 pub mod network;
+pub mod notifications;
 pub mod origin;
 pub mod paths;
 pub mod power_profiles;
@@ -46,11 +47,13 @@ pub use brightness::{
 };
 pub use command::{Command, IdleInhibitCommand};
 pub use error::{
-    BackendError, BrightnessError, CoreError, EventParseError, MonitorError, PathError, StatsError,
+    BackendError, BrightnessError, CoreError, EventParseError, MonitorError, NotificationError,
+    PathError, StatsError,
 };
 pub use event::{
     AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MonitorEvent, NetworkEvent,
-    PowerProfilesEvent, Service, Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
+    NotificationEvent, PowerProfilesEvent, Service, Snapshot, SystemStatsEvent, TrayEvent,
+    WorkspaceEvent,
 };
 pub use idle_inhibit::{
     IdleInhibitBackend, IdleInhibitService, IdleInhibitServiceConfig, IdleInhibitState,
@@ -74,6 +77,12 @@ pub use network::{
     DeviceState, NetworkBackend, NetworkBackendEvent, NetworkBackendRef, NetworkManagerBackend,
     NetworkModel, NetworkService, NetworkServiceConfig, RfkillDevice, RfkillKind, SecurityType,
     VpnKind, VpnModel, VpnProfileModel, WifiMode, WifiModel, WiredDeviceModel, RFKILL_ROOT,
+};
+pub use notifications::{
+    parse_actions, restore as restore_notifications, ClosedReason, DaemonRole, Notification,
+    NotificationAction, NotificationBackend, NotificationBackendRef, NotificationCandidate,
+    NotificationModel, NotificationService, NotificationServiceConfig, NotificationSettings,
+    NotificationState, NotificationStore, OwnDaemonBackend, Urgency, DEFAULT_CAPABILITIES,
 };
 pub use origin::ChangeOrigin;
 pub use paths::{HyprlandPaths, NoshPaths};

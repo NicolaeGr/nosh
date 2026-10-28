@@ -2,6 +2,7 @@ mod app;
 mod bar;
 mod indicator;
 mod menu;
+mod notifications;
 mod quick_settings;
 
 use std::process::ExitCode;

@@ -10,15 +10,16 @@ use gtk4 as gtk;
 use nosh_core::{
     volume_icon, AudioEndpoint, AudioEvent, AudioModel, BatteryEvent, BatteryModel,
     BrightnessDevice, BrightnessEvent, ChangeOrigin, Command, Core, EndpointKind, Event,
-    IdleInhibitEvent, IdleInhibitState, LayoutPreset, MenuEvent, NetworkEvent, NetworkModel,
-    PowerProfilesEvent, PowerProfilesModel, SystemStats, SystemStatsEvent, TrayEvent,
-    TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot, BRIGHTNESS_STEP, DIM_PERCENT,
-    VOLUME_STEP,
+    IdleInhibitEvent, IdleInhibitState, LayoutPreset, MenuEvent, MonitorEvent, NetworkEvent,
+    NetworkModel, NotificationEvent, PowerProfilesEvent, PowerProfilesModel, SystemStats,
+    SystemStatsEvent, TrayEvent, TrayItemModel, TrayMenu, WorkspaceEvent, WorkspaceSnapshot,
+    BRIGHTNESS_STEP, DIM_PERCENT, VOLUME_STEP,
 };
 
 use crate::bar::BarWindow;
 use crate::indicator::ChangeIndicator;
 use crate::menu::MenuManager;
+use crate::notifications::NotificationsWindow;
 use crate::quick_settings::QuickSettingsWindow;
 
 #[cfg(all(feature = "dev", feature = "stable"))]
@@ -33,6 +34,7 @@ pub const APP_ID: &str = if cfg!(feature = "dev") {
 const STYLE: &str = include_str!("../resources/style.css");
 const MENU_STYLE: &str = include_str!("../resources/menu.css");
 const QUICK_SETTINGS_STYLE: &str = include_str!("../resources/quick_settings.css");
+const NOTIFICATIONS_STYLE: &str = include_str!("../resources/notifications.css");
 
 /// When this marker is present in the user stylesheet it is replaced with the
 /// complete built-in stylesheet at load time.
@@ -66,6 +68,7 @@ struct Ui {
     bars: RefCell<BTreeMap<String, BarWindow>>,
     menus: RefCell<MenuManager>,
     quick_settings: Rc<QuickSettingsWindow>,
+    notifications: Rc<NotificationsWindow>,
     indicator: ChangeIndicator,
 }
 
@@ -73,6 +76,7 @@ impl Ui {
     fn new(app: gtk::Application, core: Rc<Core>) -> Self {
         let indicator = ChangeIndicator::new(&app);
         let quick_settings = Rc::new(QuickSettingsWindow::new(&app, Rc::clone(&core)));
+        let notifications = Rc::new(NotificationsWindow::new(&app, Rc::clone(&core)));
         Self {
             app,
             core,
@@ -89,6 +93,7 @@ impl Ui {
             bars: RefCell::new(BTreeMap::new()),
             menus: RefCell::new(MenuManager::new()),
             quick_settings,
+            notifications,
             indicator,
         }
     }
@@ -267,6 +272,14 @@ impl Ui {
     fn apply(&self, event: Event) {
         match event {
             Event::Snapshot(snapshot) => {
+                if let Some(layout) = snapshot.monitors {
+                    self.notifications.set_layout(&layout);
+                }
+                if let Some(notifications) = snapshot.notifications {
+                    self.notifications.apply_snapshot(&notifications);
+                    self.quick_settings
+                        .set_dnd(notifications.settings.dont_disturb);
+                }
                 if let Some(workspaces) = snapshot.workspaces {
                     *self.workspaces.borrow_mut() = workspaces;
                     self.render_workspaces();
@@ -316,7 +329,37 @@ impl Ui {
             Event::Network(event) => self.apply_network_event(event),
             Event::Tray(event) => self.apply_tray_event(event),
             Event::Menu(event) => self.apply_menu_event(event),
+            Event::Monitors(MonitorEvent::Snapshot { layout, .. })
+            | Event::Monitors(MonitorEvent::LayoutChanged(layout)) => {
+                self.notifications.set_layout(&layout);
+            }
+            Event::Monitors(_) => {}
+            Event::Notifications(event) => self.apply_notification_event(event),
             _ => {}
+        }
+    }
+
+    fn apply_notification_event(&self, event: NotificationEvent) {
+        match event {
+            NotificationEvent::Snapshot(model) => {
+                self.notifications.apply_snapshot(&model);
+                self.quick_settings.set_dnd(model.settings.dont_disturb);
+            }
+            NotificationEvent::Received {
+                notification,
+                suppress_popup,
+                ..
+            } => self.notifications.received(&notification, suppress_popup),
+            NotificationEvent::Closed { id, .. } => self.notifications.closed(id),
+            NotificationEvent::DndChanged { enabled } => {
+                self.notifications.set_dnd(enabled);
+                self.quick_settings.set_dnd(enabled);
+            }
+            NotificationEvent::Invoked { .. } | NotificationEvent::BackendChanged { .. } => {}
+            NotificationEvent::Unavailable => {
+                self.notifications.set_dnd(false);
+                self.quick_settings.set_dnd_unavailable();
+            }
         }
     }
 
@@ -846,7 +889,7 @@ fn install_css() {
         return;
     };
 
-    let builtin = format!("{STYLE}\n{MENU_STYLE}\n{QUICK_SETTINGS_STYLE}");
+    let builtin = format!("{STYLE}\n{MENU_STYLE}\n{QUICK_SETTINGS_STYLE}\n{NOTIFICATIONS_STYLE}");
     add_css(&display, &builtin, gtk::STYLE_PROVIDER_PRIORITY_USER);
 
     let Ok(paths) = nosh_core::NoshPaths::from_env() else {

@@ -25,6 +25,8 @@ pub struct Toggles {
     network_model: Rc<RefCell<NetworkModel>>,
     caffeine: Toggle,
     caffeine_active: Rc<Cell<bool>>,
+    dnd: Toggle,
+    dnd_active: Rc<Cell<bool>>,
     power: Toggle,
     power_list: gtk::Box,
     power_dropdown: Dropdown,
@@ -143,6 +145,14 @@ impl Toggles {
         }
 
         let caffeine_active = Rc::new(Cell::new(false));
+        let dnd_active = Rc::new(Cell::new(false));
+        {
+            let core = Rc::clone(&core);
+            let active = Rc::clone(&dnd_active);
+            dnd.button().connect_clicked(move |_| {
+                core.send(Command::NotificationSetDnd(!active.get()));
+            });
+        }
         {
             let core = Rc::clone(&core);
             let active = Rc::clone(&caffeine_active);
@@ -179,6 +189,8 @@ impl Toggles {
             network_model,
             caffeine,
             caffeine_active,
+            dnd,
+            dnd_active,
             power,
             power_list,
             power_dropdown,
@@ -191,6 +203,33 @@ impl Toggles {
 
     pub fn widget(&self) -> &gtk::Box {
         &self.root
+    }
+
+    /// DND follows the daemon state, so the toggle flips only after the core
+    /// reports the new value.
+    pub fn render_dnd(&self, enabled: bool) {
+        self.dnd_active.set(enabled);
+        self.dnd.set_available(true, "");
+        self.dnd.set_on(enabled);
+        self.dnd.set_icon(if enabled {
+            "notifications-disabled-symbolic"
+        } else {
+            "notifications-symbolic"
+        });
+        self.dnd.set_status(if enabled { "On" } else { "Off" });
+        self.dnd.set_tooltip(Some(if enabled {
+            "Notifications are stored without showing a card"
+        } else {
+            "Show notification cards"
+        }));
+    }
+
+    pub fn render_dnd_unavailable(&self) {
+        self.dnd_active.set(false);
+        self.dnd
+            .set_available(false, "The notification daemon is not available");
+        self.dnd.set_on(false);
+        self.dnd.set_status("Not available");
     }
 
     pub fn render_idle_inhibit(&self, state: &IdleInhibitState) {

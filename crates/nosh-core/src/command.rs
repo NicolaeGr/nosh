@@ -79,6 +79,12 @@ pub enum Command {
     VpnActivate(String),
     VpnDeactivate(String),
     AirplaneModeSet(bool),
+    NotificationDismiss(u32),
+    NotificationInvoke {
+        id: u32,
+        action: String,
+    },
+    NotificationSetDnd(bool),
     TrayActivate {
         item_id: String,
         x: i32,
@@ -164,6 +170,16 @@ impl Command {
         )
     }
 
+    /// Whether the notification service handles this command.
+    pub fn is_notifications(&self) -> bool {
+        matches!(
+            self,
+            Self::NotificationDismiss(_)
+                | Self::NotificationInvoke { .. }
+                | Self::NotificationSetDnd(_)
+        )
+    }
+
     /// Whether the tray service handles this command.
     pub fn is_tray(&self) -> bool {
         matches!(
@@ -227,6 +243,20 @@ impl Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notification_commands_are_classified_for_routing() {
+        assert!(Command::NotificationDismiss(3).is_notifications());
+        assert!(Command::NotificationInvoke {
+            id: 3,
+            action: "default".to_string(),
+        }
+        .is_notifications());
+        assert!(Command::NotificationSetDnd(true).is_notifications());
+
+        assert!(!Command::IdleInhibitToggle.is_notifications());
+        assert!(!Command::AudioSetVolume(0.5).is_notifications());
+    }
 
     #[test]
     fn menu_commands_are_classified_for_routing() {

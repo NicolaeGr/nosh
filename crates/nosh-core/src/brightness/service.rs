@@ -352,16 +352,17 @@ impl BrightnessService {
 
             match device.backend.read(&device.device.id).await {
                 Ok(reading) => {
+                    let new_percent = clamp_percent(reading.percent);
                     let old = device.device.percent;
-                    if (reading.percent - old).abs() >= PERCENT_EPSILON {
-                        device.device.percent = reading.percent;
+                    if (new_percent - old).abs() >= PERCENT_EPSILON {
+                        device.device.percent = new_percent;
                         device.device.raw = reading.raw;
                         device.device.max_raw = reading.max_raw;
                         changed = true;
                         if events
                             .send(Event::Brightness(BrightnessEvent::DeviceChanged {
                                 device: device.device.id.clone(),
-                                percent: reading.percent,
+                                percent: new_percent,
                                 old,
                                 origin: ChangeOrigin::External,
                             }))
@@ -464,6 +465,18 @@ async fn add_or_rebind(
     let existing = state.index(&info.id);
     if let Some(index) = existing {
         if state.devices[index].device.available {
+            // A device that was bound to a fallback backend keeps that backend
+            // until it fails. Try the preferred candidates again so a backend
+            // that appeared after startup (usually sysfs) takes over.
+            if state.devices[index].priority == 0 {
+                return false;
+            }
+            if let Some(bound) = bind_device(info, candidates).await {
+                if bound.priority < state.devices[index].priority {
+                    state.devices[index] = bound;
+                    return true;
+                }
+            }
             return false;
         }
         // A device that came back gets a fresh backend and its current value.
@@ -494,7 +507,7 @@ async fn bind_device(
             kind: info.kind,
             name: info.name,
             connector: info.connector,
-            percent: reading.percent,
+            percent: clamp_percent(reading.percent),
             pending_percent: None,
             available: true,
             raw: reading.raw,
@@ -666,7 +679,7 @@ async fn apply_target(
                     let device = &mut state.devices[index];
                     device.device.pending_percent = None;
                     device.device.available = true;
-                    device.device.percent = reading.percent;
+                    device.device.percent = clamp_percent(reading.percent);
                     device.device.raw = reading.raw;
                     device.device.max_raw = reading.max_raw;
                     tracing::info!(
@@ -796,7 +809,7 @@ async fn refresh_readings(state: &mut BrightnessState) {
         }
         match device.backend.read(&device.device.id).await {
             Ok(reading) => {
-                device.device.percent = reading.percent;
+                device.device.percent = clamp_percent(reading.percent);
                 device.device.raw = reading.raw;
                 device.device.max_raw = reading.max_raw;
             }
@@ -1456,6 +1469,32 @@ mod tests {
 
         drop(commands);
         task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_available_device_moves_to_the_preferred_backend() {
+        let preferred =
+            FakeBrightnessBackend::new("sysfs-logind", vec![info("intel_backlight")]).arc();
+        let fallback =
+            FakeBrightnessBackend::new("brightnessctl", vec![info("intel_backlight")]).arc();
+        let candidates = vec![fake_candidate(preferred), fake_candidate(fallback.clone())];
+
+        // The device was bound while the preferred backend was missing, so it
+        // sits on the second candidate.
+        let bound = bind_device(info("intel_backlight"), &[fake_candidate(fallback)])
+            .await
+            .unwrap();
+        let mut state = BrightnessState {
+            devices: vec![BoundDevice {
+                priority: 1,
+                candidates: candidates.clone(),
+                ..bound
+            }],
+        };
+
+        assert!(add_or_rebind(&mut state, &candidates, info("intel_backlight")).await);
+        assert_eq!(state.devices[0].device.backend, Some("sysfs-logind"));
+        assert_eq!(state.devices[0].priority, 0);
     }
 
     #[tokio::test]

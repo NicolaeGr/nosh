@@ -142,21 +142,19 @@ pub fn parse_device_list(output: &str) -> Vec<String> {
 
 /// Parses the percentage from `brightnessctl -m`.
 ///
-/// The documented machine format is `device,class,current,percent%`. Some
-/// versions include the device type, so the last field ending in `%` wins.
+/// The documented machine format is `device,class,current,percent%,max`. Some
+/// versions include the device type, so `percent%` is not always at the same
+/// index. Only a field with a trailing `%` is a percentage; the trailing `max`
+/// field is a raw value and must not be mistaken for one.
 pub fn parse_machine_output(output: &str) -> Option<f64> {
     let line = output.lines().find(|line| !line.trim().is_empty())?;
-    let fields: Vec<&str> = line.split(',').collect();
-    fields
-        .iter()
-        .rev()
-        .find_map(|field| parse_percent_field(field))
-        .or_else(|| fields.get(3).and_then(|field| parse_percent_field(field)))
-}
-
-fn parse_percent_field(field: &str) -> Option<f64> {
-    let value = field.trim().trim_end_matches('%');
-    value.parse::<f64>().ok().map(round_percent)
+    line.split(',').rev().find_map(|field| {
+        field
+            .trim()
+            .strip_suffix('%')
+            .and_then(|value| value.trim().parse::<f64>().ok())
+            .map(round_percent)
+    })
 }
 
 #[cfg(test)]
@@ -192,7 +190,19 @@ mod tests {
     }
 
     #[test]
+    fn the_maximum_field_is_not_mistaken_for_a_percentage() {
+        assert_eq!(
+            parse_machine_output("amdgpu_bl2,backlight,49603,87%,65535\n"),
+            Some(87.0)
+        );
+    }
+
+    #[test]
     fn machine_output_without_a_percent_is_rejected() {
         assert_eq!(parse_machine_output("garbage"), None);
+        assert_eq!(
+            parse_machine_output("amdgpu_bl2,backlight,49603,65535\n"),
+            None
+        );
     }
 }

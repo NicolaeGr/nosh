@@ -214,13 +214,16 @@ impl BrightnessService {
     }
 
     async fn discover_local(&self, state: &mut BrightnessState) {
-        let discovered = discover_first(&self.internal).await;
-        for info in discovered.into_iter().take(1) {
-            add_or_rebind(state, &self.internal, info).await;
+        if let Some(discovered) = discover_first(&self.internal).await {
+            for info in discovered.devices.into_iter().take(1) {
+                add_or_rebind(state, &self.internal, info).await;
+            }
         }
 
-        for info in discover_first(&self.command).await {
-            add_or_rebind(state, &self.command, info).await;
+        if let Some(discovered) = discover_first(&self.command).await {
+            for info in discovered.devices {
+                add_or_rebind(state, &self.command, info).await;
+            }
         }
     }
 
@@ -233,11 +236,13 @@ impl BrightnessService {
         tokio::spawn(async move {
             // DDC reads are slow. Bind every display here so the service only
             // has to insert the finished devices.
-            let infos = discover_first(&candidates).await;
-            let mut bound = Vec::with_capacity(infos.len());
-            for info in infos {
-                if let Some(device) = bind_device(info, &candidates).await {
-                    bound.push(device);
+            let mut bound = Vec::new();
+            if let Some(discovered) = discover_first(&candidates).await {
+                bound.reserve(discovered.devices.len());
+                for info in discovered.devices {
+                    if let Some(device) = bind_device(info, &candidates).await {
+                        bound.push(device);
+                    }
                 }
             }
             let _ = sender.send(bound).await;
@@ -384,11 +389,28 @@ impl BrightnessService {
         }
 
         let discovered = discover_first(&self.internal).await;
-        let present: Vec<BrightnessDeviceId> =
-            discovered.iter().map(|info| info.id.clone()).collect();
+        let source = discovered.as_ref().map(|found| found.source);
+        let present: Vec<BrightnessDeviceId> = discovered
+            .as_ref()
+            .map(|found| found.devices.iter().map(|info| info.id.clone()).collect())
+            .unwrap_or_default();
 
-        if let Some(info) = discovered.into_iter().next() {
-            changed |= add_or_rebind(state, &self.internal, info).await;
+        if let Some(info) = discovered.and_then(|found| found.devices.into_iter().next()) {
+            // Discovery already tried the preferred candidates. Rebinding only
+            // helps when the device is new or unavailable, or when discovery
+            // found a backend that outranks the bound one. Otherwise it would
+            // repeat the same probe and read on every tick.
+            let needs_bind = match state.index(&info.id) {
+                Some(index) => {
+                    let device = &state.devices[index];
+                    !device.device.available
+                        || source.is_some_and(|source| source < device.priority)
+                }
+                None => true,
+            };
+            if needs_bind {
+                changed |= add_or_rebind(state, &self.internal, info).await;
+            }
         }
 
         for device in state.devices.iter_mut() {
@@ -1495,6 +1517,35 @@ mod tests {
         assert!(add_or_rebind(&mut state, &candidates, info("intel_backlight")).await);
         assert_eq!(state.devices[0].device.backend, Some("sysfs-logind"));
         assert_eq!(state.devices[0].priority, 0);
+    }
+
+    #[tokio::test]
+    async fn polling_does_not_rebind_a_device_on_its_fallback_backend() {
+        // The preferred backend sees no devices, so the panel binds to the
+        // fallback. Later polls must not probe and read the fallback again.
+        let preferred = FakeBrightnessBackend::new("sysfs-logind", Vec::new()).arc();
+        let fallback =
+            FakeBrightnessBackend::new("brightnessctl", vec![info("intel_backlight")]).arc();
+        let service = BrightnessService::with_candidates(
+            vec![fake_candidate(preferred), fake_candidate(fallback.clone())],
+            Vec::new(),
+            Vec::new(),
+            config(),
+        );
+        let (event_tx, event_rx) = async_channel::unbounded();
+        let mut state = BrightnessState::default();
+
+        service.discover_local(&mut state).await;
+        assert_eq!(state.devices[0].device.backend, Some("brightnessctl"));
+        let reads = fallback.read_count().await;
+
+        for _ in 0..3 {
+            service.poll(&mut state, &event_tx).await.unwrap();
+        }
+
+        assert_eq!(fallback.read_count().await, reads);
+        assert_eq!(state.devices[0].device.backend, Some("brightnessctl"));
+        drop(event_rx);
     }
 
     #[tokio::test]

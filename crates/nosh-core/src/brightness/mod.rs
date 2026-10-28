@@ -18,7 +18,7 @@ pub mod sysfs;
 pub use crate::event::BrightnessEvent;
 pub use backend::{
     discover_first, resolve_device, BrightnessBackend, BrightnessBackendRef, BrightnessCandidate,
-    BrightnessCapabilities, ResolvedBrightness,
+    BrightnessCapabilities, DiscoveredBrightness, ResolvedBrightness,
 };
 pub use brightnessctl::{BrightnessctlBackend, BrightnessctlConfig};
 pub use command::{CommandBackend, CommandDeviceConfig};

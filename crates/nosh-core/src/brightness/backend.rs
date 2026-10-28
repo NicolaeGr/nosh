@@ -161,10 +161,17 @@ pub async fn resolve_device(
     None
 }
 
-/// Returns the devices from the first candidate that discovers any. Binding then
-/// runs for each device.
-pub async fn discover_first(candidates: &[BrightnessCandidate]) -> Vec<BrightnessDeviceInfo> {
-    for candidate in candidates {
+/// The devices found by one discovery pass and the candidate that found them.
+pub struct DiscoveredBrightness {
+    /// Index into the candidate list of the backend that reported the devices.
+    pub source: usize,
+    pub devices: Vec<BrightnessDeviceInfo>,
+}
+
+/// Returns the devices from the first candidate that discovers any, along with
+/// the index of that candidate. Binding then runs for each device.
+pub async fn discover_first(candidates: &[BrightnessCandidate]) -> Option<DiscoveredBrightness> {
+    for (source, candidate) in candidates.iter().enumerate() {
         let backend = match candidate.create() {
             Ok(backend) => backend,
             Err(error) => {
@@ -193,7 +200,7 @@ pub async fn discover_first(candidates: &[BrightnessCandidate]) -> Vec<Brightnes
                     devices = devices.len(),
                     "discovered brightness devices"
                 );
-                return devices;
+                return Some(DiscoveredBrightness { source, devices });
             }
             Ok(_) => continue,
             Err(error) => {
@@ -206,7 +213,7 @@ pub async fn discover_first(candidates: &[BrightnessCandidate]) -> Vec<Brightnes
         }
     }
 
-    Vec::new()
+    None
 }
 
 #[cfg(test)]
@@ -226,6 +233,7 @@ pub(crate) mod test_support {
         pub probe_result: Result<BrightnessCapabilities, BrightnessError>,
         pub values: Mutex<HashMap<BrightnessDeviceId, f64>>,
         pub writes: Mutex<Vec<(BrightnessDeviceId, f64)>>,
+        pub reads: Mutex<usize>,
         pub failing: Mutex<HashSet<BrightnessDeviceId>>,
     }
 
@@ -237,6 +245,7 @@ pub(crate) mod test_support {
                 probe_result: Ok(BrightnessCapabilities::CONTROL),
                 values: Mutex::new(HashMap::new()),
                 writes: Mutex::new(Vec::new()),
+                reads: Mutex::new(0),
                 failing: Mutex::new(HashSet::new()),
             }
         }
@@ -250,6 +259,10 @@ pub(crate) mod test_support {
 
         pub async fn writes(&self) -> Vec<(BrightnessDeviceId, f64)> {
             self.writes.lock().await.clone()
+        }
+
+        pub async fn read_count(&self) -> usize {
+            *self.reads.lock().await
         }
 
         pub fn arc(self) -> Arc<Self> {
@@ -279,6 +292,7 @@ pub(crate) mod test_support {
             &self,
             device: &BrightnessDeviceId,
         ) -> Result<BrightnessReading, BrightnessError> {
+            *self.reads.lock().await += 1;
             let values = self.values.lock().await;
             let percent = values.get(device).copied().unwrap_or(50.0);
             Ok(BrightnessReading {

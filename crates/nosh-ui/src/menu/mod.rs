@@ -548,7 +548,7 @@ fn media_widget(item: &MenuItem, layout: ItemLayout) -> Option<gtk::Widget> {
         None => match &item.icon {
             Some(MenuIcon::Image { image }) => Some(picture(image, width, height)),
             Some(MenuIcon::Named(name)) => {
-                Some(icon(name, if layout == ItemLayout::Row { 24 } else { 40 }))
+                Some(icon(name, if layout == ItemLayout::Row { 36 } else { 40 }))
             }
             None => None,
         },
@@ -560,15 +560,39 @@ fn picture(path: &Path, width: i32, height: i32) -> gtk::Widget {
     picture.set_content_fit(gtk::ContentFit::Cover);
     picture.set_can_shrink(true);
     picture.set_size_request(width, height);
+    picture.set_halign(gtk::Align::Center);
+    picture.set_valign(gtk::Align::Center);
     picture.add_css_class("MenuItemMedia");
     picture.upcast()
 }
 
 fn icon(name: &str, size: i32) -> gtk::Widget {
-    let image = gtk::Image::from_icon_name(name);
+    let image = gtk::Image::from_icon_name(&resolve_icon_name(name));
     image.set_pixel_size(size);
-    image.add_css_class("MenuItemMedia");
-    image.upcast()
+    image.set_halign(gtk::Align::Center);
+    image.set_valign(gtk::Align::Center);
+
+    let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    frame.set_size_request(size, size);
+    frame.set_halign(gtk::Align::Center);
+    frame.set_valign(gtk::Align::Center);
+    frame.append(&image);
+    frame.upcast()
+}
+
+/// GTK renders an unknown icon name as `image-missing`. Use a generic
+/// executable icon instead when the theme has no entry for the name.
+fn resolve_icon_name(name: &str) -> String {
+    const FALLBACK: &str = "application-x-executable";
+    let Some(display) = gdk::Display::default() else {
+        return name.to_string();
+    };
+    let theme = gtk::IconTheme::for_display(&display);
+    if theme.has_icon(name) {
+        name.to_string()
+    } else {
+        FALLBACK.to_string()
+    }
 }
 
 fn description_label(text: &str) -> gtk::Label {

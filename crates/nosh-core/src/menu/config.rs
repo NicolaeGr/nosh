@@ -6,6 +6,7 @@ use std::path::Path;
 use serde::Deserialize;
 use thiserror::Error;
 
+use super::keys::{MenuKey, TERMINAL_ACTION};
 use super::model::{ActionDef, MenuDef, SourceKind, Template, SCHEMA_VERSION};
 
 /// The file written on first start. It is the only source of the default menus.
@@ -204,6 +205,41 @@ impl MenuDef {
         }
         for (name, action) in &self.context_menu {
             validate_action(&format!("context_menu.{name}"), action)?;
+        }
+
+        if let Some(terminal) = &self.terminal {
+            if terminal.command.is_empty()
+                || terminal.command.iter().any(|word| word.trim().is_empty())
+            {
+                return Err("terminal.command must contain non-empty words".to_string());
+            }
+        }
+
+        let mut terminal_actions = self
+            .action
+            .iter()
+            .chain(self.actions.values())
+            .chain(self.context_menu.values());
+        if self.terminal.is_none() && terminal_actions.any(|action| action.terminal) {
+            return Err(
+                "an action asks for a terminal but terminal.command is not set".to_string(),
+            );
+        }
+
+        for (chord, name) in &self.keys {
+            MenuKey::parse(chord).map_err(|message| format!("keys.{chord:?}: {message}"))?;
+            if name.trim().is_empty() {
+                return Err(format!("keys.{chord:?} names an empty action"));
+            }
+            if name == TERMINAL_ACTION {
+                if self.terminal.is_none() {
+                    return Err(format!(
+                        "keys.{chord:?} asks for a terminal but terminal.command is not set"
+                    ));
+                }
+            } else if !self.actions.contains_key(name) && !self.context_menu.contains_key(name) {
+                return Err(format!("keys.{chord:?} names the unknown action {name:?}"));
+            }
         }
 
         if let Some(bind) = &self.bind {
@@ -405,6 +441,117 @@ name = "static"
 
 [menu.example.action]
 command = []
+"#;
+        assert!(parse_menus(text).is_err());
+    }
+
+    #[test]
+    fn named_actions_and_keys_parse() {
+        let text = r#"
+schema = 1
+
+[menu.example]
+title = "Example"
+
+[menu.example.source]
+type = "builtin"
+name = "static"
+
+[menu.example.actions.open]
+command = ["xdg-open", "{item.path}"]
+
+[menu.example.keys]
+"ctrl+return" = "open"
+"#;
+        let config = parse_menus(text).unwrap();
+        let menu = config.menus.get("example").unwrap();
+
+        assert!(menu.actions.contains_key("open"));
+        assert_eq!(
+            menu.keys.get("ctrl+return").map(String::as_str),
+            Some("open")
+        );
+    }
+
+    #[test]
+    fn a_key_naming_an_unknown_action_is_rejected() {
+        let text = r#"
+schema = 1
+
+[menu.example]
+title = "Example"
+
+[menu.example.source]
+type = "builtin"
+name = "static"
+
+[menu.example.keys]
+"ctrl+return" = "nope"
+"#;
+        let error = parse_menus(text).unwrap_err();
+        assert!(matches!(error, MenuConfigError::InvalidMenu { message, .. }
+                if message.contains("unknown action")));
+    }
+
+    #[test]
+    fn an_invalid_key_chord_is_rejected() {
+        let text = r#"
+schema = 1
+
+[menu.example]
+title = "Example"
+
+[menu.example.source]
+type = "builtin"
+name = "static"
+
+[menu.example.actions.open]
+command = ["true"]
+
+[menu.example.keys]
+"ctr+return" = "open"
+"#;
+        let error = parse_menus(text).unwrap_err();
+        assert!(matches!(error, MenuConfigError::InvalidMenu { message, .. }
+                if message.contains("unknown modifier")));
+    }
+
+    #[test]
+    fn a_terminal_action_needs_a_terminal_command() {
+        let text = r#"
+schema = 1
+
+[menu.example]
+title = "Example"
+
+[menu.example.source]
+type = "builtin"
+name = "static"
+
+[menu.example.actions.edit]
+command = ["nvim"]
+terminal = true
+"#;
+        assert!(parse_menus(text).is_err());
+
+        let text = format!("{text}\n[menu.example.terminal]\ncommand = [\"kitty\", \"--\"]\n");
+        assert!(parse_menus(&text).is_ok());
+    }
+
+    #[test]
+    fn the_terminal_pseudo_action_needs_a_terminal_command() {
+        let text = r#"
+schema = 1
+
+[menu.example]
+title = "Example"
+
+[menu.example.source]
+type = "builtin"
+name = "static"
+
+[menu.example.keys]
+"ctrl+return" = "terminal"
 "#;
         assert!(parse_menus(text).is_err());
     }

@@ -122,6 +122,8 @@ struct CustomEntry {
     icon: Option<String>,
     #[serde(default)]
     exec: String,
+    #[serde(default)]
+    terminal: bool,
 }
 
 /// Custom entries stay in `app_launcher.toml`. Unknown sections are ignored so
@@ -172,6 +174,7 @@ fn custom_entries(env: &SourceEnv) -> Vec<MenuItem> {
                     keep_open: false,
                     after: crate::menu::model::After::Close,
                     launch: LaunchMode::Auto,
+                    terminal: entry.terminal,
                 });
             }
             item.keywords = vec![entry.exec];
@@ -325,6 +328,7 @@ fn parse_desktop_entry(text: &str, path: &Path, id: &str) -> Option<MenuItem> {
             keep_open: false,
             after: crate::menu::model::After::Close,
             launch: LaunchMode::Auto,
+            terminal,
         });
     }
 
@@ -474,6 +478,13 @@ Terminal=false
     }
 
     #[test]
+    fn a_terminal_entry_marks_its_action() {
+        let text = FIREFOX.replace("Terminal=false", "Terminal=true");
+        let item = parse_desktop_entry(&text, Path::new("/tmp/x.desktop"), "x").unwrap();
+        assert!(item.action.unwrap().terminal);
+    }
+
+    #[test]
     fn a_missing_exec_disables_the_item() {
         let text = FIREFOX.replace("Exec=firefox %u", "");
         let item =
@@ -553,5 +564,33 @@ command = ["ignored"]
             items[0].action.as_ref().unwrap().command,
             vec!["firefox", "--new-window"]
         );
+        assert!(!items[0].action.as_ref().unwrap().terminal);
+    }
+
+    #[test]
+    fn a_custom_entry_can_ask_for_a_terminal() {
+        let directory = tempfile::tempdir().unwrap();
+        let config_dir = directory.path().join("nosh");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("app_launcher.toml"),
+            r#"
+[[entry]]
+name = "Edit"
+exec = "nvim"
+terminal = true
+"#,
+        )
+        .unwrap();
+
+        let env = SourceEnv {
+            home: directory.path().to_path_buf(),
+            config_dir,
+            data_dirs: Vec::new(),
+            usage: Arc::new(Usage::empty()),
+        };
+        let items = custom_entries(&env);
+
+        assert!(items[0].action.as_ref().unwrap().terminal);
     }
 }

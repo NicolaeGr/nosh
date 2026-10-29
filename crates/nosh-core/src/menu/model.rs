@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use super::keys::TERMINAL_ACTION;
+
 /// The only schema version this build understands.
 pub const SCHEMA_VERSION: u32 = 1;
 
@@ -213,6 +215,9 @@ pub struct ActionDef {
     pub after: After,
     #[serde(default)]
     pub launch: LaunchMode,
+    /// Start the command inside the menu's terminal wrapper.
+    #[serde(default)]
+    pub terminal: bool,
 }
 
 /// How the action process is started.
@@ -460,6 +465,7 @@ fn action_from_json(value: &serde_json::Value) -> Result<ActionDef, ItemError> {
                 keep_open: false,
                 after: After::default(),
                 launch: LaunchMode::default(),
+                terminal: false,
             })
         }
         serde_json::Value::Object(_) => serde_json::from_value(value.clone())
@@ -618,6 +624,13 @@ pub struct MenuBind {
     pub forced: bool,
 }
 
+/// The argv that starts a terminal emulator. The action argv follows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TerminalDef {
+    pub command: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MenuDef {
@@ -635,6 +648,13 @@ pub struct MenuDef {
     pub actions: BTreeMap<String, ActionDef>,
     #[serde(default)]
     pub context_menu: BTreeMap<String, ActionDef>,
+    /// Terminal emulator argv used by actions marked `terminal = true` and by
+    /// the reserved `terminal` action.
+    #[serde(default)]
+    pub terminal: Option<TerminalDef>,
+    /// In-menu key bindings, as `"ctrl+return" = "action name"`.
+    #[serde(default)]
+    pub keys: BTreeMap<String, String>,
     #[serde(default)]
     pub placeholder: Option<String>,
     #[serde(default)]
@@ -670,6 +690,26 @@ impl MenuDef {
 
     pub fn action_for(&self, item: &MenuItem) -> Option<ActionDef> {
         item.action.clone().or_else(|| self.action.clone())
+    }
+
+    /// Resolves the default action or a named alternate.
+    ///
+    /// The name `terminal` is reserved: it runs the default action inside the
+    /// menu terminal. Every other name looks up `actions`, then `context_menu`.
+    pub fn action_named(&self, item: &MenuItem, name: Option<&str>) -> Option<ActionDef> {
+        match name {
+            None => self.action_for(item),
+            Some(name) if name == TERMINAL_ACTION => {
+                let mut action = self.action_for(item)?;
+                action.terminal = true;
+                Some(action)
+            }
+            Some(name) => self
+                .actions
+                .get(name)
+                .or_else(|| self.context_menu.get(name))
+                .cloned(),
+        }
     }
 }
 
@@ -797,6 +837,7 @@ mod tests {
                 keep_open: false,
                 after: After::Close,
                 launch: LaunchMode::Auto,
+                terminal: false,
             })
         );
     }
@@ -825,6 +866,52 @@ mod tests {
     }
 
     #[test]
+    fn named_actions_resolve_in_order() {
+        let menu: MenuDef = toml::from_str(
+            r#"
+title = "Test"
+
+[source]
+type = "builtin"
+name = "static"
+
+[action]
+command = ["default"]
+
+[actions.open]
+command = ["open"]
+
+[context_menu.ctx]
+command = ["ctx"]
+
+[terminal]
+command = ["kitty", "--"]
+"#,
+        )
+        .unwrap();
+        let item = MenuItem::new("id", "Name");
+
+        assert_eq!(
+            menu.action_named(&item, None).unwrap().command,
+            vec!["default"]
+        );
+        assert_eq!(
+            menu.action_named(&item, Some("open")).unwrap().command,
+            vec!["open"]
+        );
+        assert_eq!(
+            menu.action_named(&item, Some("ctx")).unwrap().command,
+            vec!["ctx"]
+        );
+
+        let terminal = menu.action_named(&item, Some("terminal")).unwrap();
+        assert_eq!(terminal.command, vec!["default"]);
+        assert!(terminal.terminal);
+
+        assert!(menu.action_named(&item, Some("nope")).is_none());
+    }
+
+    #[test]
     fn width_prefers_the_window_then_the_cell_grid() {
         let mut menu = MenuDef {
             title: "Test".to_string(),
@@ -844,6 +931,8 @@ mod tests {
             action: None,
             actions: BTreeMap::new(),
             context_menu: BTreeMap::new(),
+            terminal: None,
+            keys: BTreeMap::new(),
             placeholder: None,
             bind: None,
         };

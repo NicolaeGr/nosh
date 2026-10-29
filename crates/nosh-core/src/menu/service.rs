@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 use crate::command::Command;
 use crate::event::Event;
 use crate::menu::action::{expand_argv, spawn_action};
-use crate::menu::config::default_menus;
+use crate::menu::config::{default_menus, load_menu_config};
 use crate::menu::model::{dedupe_ids, After, ItemState, MenuDef, MenuItem, SearchMode};
 use crate::menu::query::filter_and_sort;
 use crate::menu::source::{menu_source, MenuSource, SourceEnv, SourceError};
@@ -60,6 +60,9 @@ pub struct MenuServiceConfig {
 
 pub struct MenuService {
     menus: BTreeMap<String, MenuDef>,
+    /// The config directory to re-read on every open. `None` keeps the menus
+    /// handed to `new`, which tests and embedders rely on.
+    config_dir: Option<std::path::PathBuf>,
     env: Arc<SourceEnv>,
     sessions: HashMap<String, Session>,
 }
@@ -94,6 +97,7 @@ struct Activation {
 
 impl MenuService {
     pub fn new(config: MenuServiceConfig) -> Self {
+        let config_dir = config.paths.as_ref().map(|paths| paths.config_dir.clone());
         let mut env = SourceEnv::from_env();
         if let Some(paths) = &config.paths {
             env.config_dir = paths.config_dir.clone();
@@ -108,8 +112,30 @@ impl MenuService {
 
         Self {
             menus,
+            config_dir,
             env: Arc::new(env),
             sessions: HashMap::new(),
+        }
+    }
+
+    /// Re-reads the menu files so a change reaches the next invocation. An open
+    /// session keeps the definition it started with.
+    fn refresh_menus(&mut self) {
+        let Some(config_dir) = self.config_dir.as_ref() else {
+            return;
+        };
+
+        match load_menu_config(config_dir) {
+            Ok(config) => {
+                if self.menus != config.menus {
+                    self.menus = config.menus;
+                }
+            }
+            Err(error) => tracing::warn!(
+                %error,
+                path = %config_dir.display(),
+                "the menu config could not be reloaded"
+            ),
         }
     }
 
@@ -151,7 +177,9 @@ impl MenuService {
         match command {
             Command::MenuOpen(id) => self.open(id, events, completions),
             Command::MenuQuery { id, query } => self.query(id, query, events, completions),
-            Command::MenuActivate { id, index } => self.activate(id, index, events, activations),
+            Command::MenuActivate { id, index, action } => {
+                self.activate(id, index, action, events, activations)
+            }
             Command::MenuReload(id) => self.reload(id, events, completions),
             Command::MenuClose(id) => self.close(id, events),
             _ => {}
@@ -159,6 +187,7 @@ impl MenuService {
     }
 
     fn open(&mut self, id: String, events: &Sender<Event>, completions: &Sender<Completion>) {
+        self.refresh_menus();
         self.remove_session(&id);
 
         let Some(def) = self.menus.get(&id).cloned() else {
@@ -365,6 +394,7 @@ impl MenuService {
         &mut self,
         id: String,
         index: usize,
+        action_name: Option<String>,
         events: &Sender<Event>,
         activations: &Sender<Activation>,
     ) {
@@ -392,18 +422,22 @@ impl MenuService {
             return;
         }
 
-        let Some(action) = session.def.action_for(&item) else {
-            emit(
-                events,
-                MenuEvent::ActionFailed {
-                    id,
-                    message: "the item has no action".to_string(),
-                },
-            );
+        let Some(action) = session.def.action_named(&item, action_name.as_deref()) else {
+            let message = match action_name.as_deref() {
+                Some(name) => format!("no action named {name:?}"),
+                None => "the item has no action".to_string(),
+            };
+            emit(events, MenuEvent::ActionFailed { id, message });
             return;
         };
 
-        let argv = expand_argv(&action.command, &item, &session.query);
+        let argv = match action_argv(&session.def, &action, &item, &session.query) {
+            Ok(argv) => argv,
+            Err(message) => {
+                emit(events, MenuEvent::ActionFailed { id, message });
+                return;
+            }
+        };
         let after = if action.keep_open {
             After::None
         } else {
@@ -500,6 +534,29 @@ fn spawn_task(
     })
 }
 
+/// Expands the action argv and prepends the menu terminal when the action asks
+/// for one.
+fn action_argv(
+    def: &MenuDef,
+    action: &crate::menu::model::ActionDef,
+    item: &MenuItem,
+    query: &str,
+) -> Result<Vec<String>, String> {
+    let argv = expand_argv(&action.command, item, query);
+    if !action.terminal {
+        return Ok(argv);
+    }
+
+    let Some(terminal) = def.terminal.as_ref() else {
+        return Err("the action needs a terminal and the menu has none".to_string());
+    };
+
+    let mut wrapped = Vec::with_capacity(terminal.command.len() + argv.len());
+    wrapped.extend(terminal.command.iter().cloned());
+    wrapped.extend(argv);
+    Ok(wrapped)
+}
+
 fn emit(events: &Sender<Event>, event: MenuEvent) {
     if events.try_send(Event::Menu(event)).is_err() {
         tracing::debug!("a menu event was not delivered");
@@ -541,6 +598,120 @@ mod tests {
         let mut menus = BTreeMap::new();
         menus.insert("power".to_string(), static_menu());
         MenuService::new(MenuServiceConfig { menus, paths: None })
+    }
+
+    fn menu_file(title: &str, id: &str) -> String {
+        format!(
+            r#"
+schema = 1
+
+[menu.{id}]
+title = "{title}"
+
+[menu.{id}.source]
+type = "builtin"
+name = "static"
+"#
+        )
+    }
+
+    fn service_with_paths(config_dir: std::path::PathBuf) -> MenuService {
+        let root = config_dir.parent().unwrap().to_path_buf();
+        let paths = NoshPaths {
+            config_dir,
+            data_dir: root.join("data"),
+            cache_dir: root.join("cache"),
+            state_dir: root.join("state"),
+            runtime_dir: None,
+        };
+        MenuService::new(MenuServiceConfig {
+            menus: BTreeMap::new(),
+            paths: Some(paths),
+        })
+    }
+
+    #[test]
+    fn opening_reloads_the_menu_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let config_dir = directory.path().join("nosh");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(config_dir.join("menus.toml"), menu_file("First", "first")).unwrap();
+
+        let mut service = service_with_paths(config_dir.clone());
+        assert!(!service.menus.contains_key("first"));
+
+        service.refresh_menus();
+        assert!(service.menus.contains_key("first"));
+
+        std::fs::write(config_dir.join("menus.toml"), menu_file("Second", "second")).unwrap();
+        service.refresh_menus();
+        assert!(service.menus.contains_key("second"));
+        assert!(!service.menus.contains_key("first"));
+    }
+
+    #[test]
+    fn a_broken_menu_file_keeps_the_previous_menus() {
+        let directory = tempfile::tempdir().unwrap();
+        let config_dir = directory.path().join("nosh");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(config_dir.join("menus.toml"), menu_file("First", "first")).unwrap();
+
+        let mut service = service_with_paths(config_dir.clone());
+        service.refresh_menus();
+        assert!(service.menus.contains_key("first"));
+
+        std::fs::write(config_dir.join("menus.toml"), "not toml").unwrap();
+        service.refresh_menus();
+        assert!(service.menus.contains_key("first"));
+    }
+
+    #[test]
+    fn terminal_actions_put_the_wrapper_first() {
+        let menu: MenuDef = toml::from_str(
+            r#"
+            title = "Power"
+
+            [source]
+            type = "builtin"
+            name = "static"
+
+            [terminal]
+            command = ["kitty", "--"]
+            "#,
+        )
+        .unwrap();
+        let action: crate::menu::model::ActionDef = toml::from_str(
+            r#"
+            command = ["nvim", "{item.path}"]
+            terminal = true
+            "#,
+        )
+        .unwrap();
+        let mut item = MenuItem::new("id", "Name");
+        item.fields.insert(
+            "path".to_string(),
+            crate::menu::model::MenuValue::String("/tmp/x".to_string()),
+        );
+
+        assert_eq!(
+            action_argv(&menu, &action, &item, "").unwrap(),
+            vec!["kitty", "--", "nvim", "/tmp/x"]
+        );
+    }
+
+    #[test]
+    fn a_terminal_action_without_a_wrapper_fails() {
+        let menu = static_menu();
+        let action: crate::menu::model::ActionDef = toml::from_str(
+            r#"
+            command = ["nvim"]
+            terminal = true
+            "#,
+        )
+        .unwrap();
+        let item = MenuItem::new("id", "Name");
+
+        assert!(action_argv(&menu, &action, &item, "").is_err());
     }
 
     #[tokio::test]

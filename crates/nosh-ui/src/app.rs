@@ -44,6 +44,10 @@ const CENTER_PANEL_STYLE: &str = include_str!("../resources/center_panel.css");
 const POWER_MENU_STYLE: &str = include_str!("../resources/power_menu.css");
 const LOCK_SCREEN_STYLE: &str = include_str!("../resources/lock_screen.css");
 
+thread_local! {
+    static USER_STYLE_PROVIDER: RefCell<Option<gtk::CssProvider>> = const { RefCell::new(None) };
+}
+
 /// When this marker is present in the user stylesheet it is replaced with the
 /// complete built-in stylesheet at load time.
 const BUILTIN_MARKER: &str = "/* nosh:builtin-styles */";
@@ -738,6 +742,7 @@ impl Ui {
     fn apply_menu_event(&self, event: MenuEvent) {
         match event {
             MenuEvent::Opened { id, menu } => {
+                refresh_user_style();
                 self.menus
                     .borrow_mut()
                     .open(id, *menu, &self.app, Rc::clone(&self.core));
@@ -1120,9 +1125,7 @@ fn install_css() {
         return;
     };
 
-    let builtin = format!(
-        "{STYLE}\n{MENU_STYLE}\n{QUICK_SETTINGS_STYLE}\n{NOTIFICATIONS_STYLE}\n{CENTER_PANEL_STYLE}\n{POWER_MENU_STYLE}\n{LOCK_SCREEN_STYLE}"
-    );
+    let builtin = builtin_style();
     add_css(&display, &builtin, gtk::STYLE_PROVIDER_PRIORITY_USER);
 
     let Ok(paths) = nosh_core::NoshPaths::from_env() else {
@@ -1137,21 +1140,61 @@ fn install_css() {
         );
     }
 
-    let user_path = paths.user_styles();
-    ensure_user_style(&user_path);
+    install_user_style(&display, &builtin);
+}
 
-    match std::fs::read_to_string(&user_path) {
-        Ok(text) => {
-            let css = expand_user_style(&text, &builtin);
-            add_css(&display, &css, gtk::STYLE_PROVIDER_PRIORITY_USER + 1);
+fn builtin_style() -> String {
+    format!(
+        "{STYLE}\n{MENU_STYLE}\n{QUICK_SETTINGS_STYLE}\n{NOTIFICATIONS_STYLE}\n{CENTER_PANEL_STYLE}\n{POWER_MENU_STYLE}\n{LOCK_SCREEN_STYLE}"
+    )
+}
+
+/// Loads or updates the user stylesheet. The provider is reused so a reload
+/// replaces its rules instead of stacking another one.
+fn install_user_style(display: &gdk::Display, builtin: &str) {
+    let Ok(paths) = nosh_core::NoshPaths::from_env() else {
+        return;
+    };
+    let path = paths.user_styles();
+    ensure_user_style(&path);
+
+    let css = match std::fs::read_to_string(&path) {
+        Ok(text) => expand_user_style(&text, builtin),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                path = %path.display(),
+                "cannot read the user stylesheet"
+            );
+            return;
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => tracing::warn!(
-            %error,
-            path = %user_path.display(),
-            "cannot read the user stylesheet"
-        ),
-    }
+    };
+
+    USER_STYLE_PROVIDER.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        match slot.as_ref() {
+            Some(provider) => provider.load_from_data(&css),
+            None => {
+                let provider = make_css_provider(&css);
+                gtk::style_context_add_provider_for_display(
+                    display,
+                    &provider,
+                    gtk::STYLE_PROVIDER_PRIORITY_USER + 1,
+                );
+                *slot = Some(provider);
+            }
+        }
+    });
+}
+
+/// Re-reads the user stylesheet so a change reaches the next invocation.
+fn refresh_user_style() {
+    let Some(display) = gdk::Display::default() else {
+        return;
+    };
+    let builtin = builtin_style();
+    install_user_style(&display, &builtin);
 }
 
 fn ensure_user_style(path: &std::path::Path) {
@@ -1174,7 +1217,13 @@ fn ensure_user_style(path: &std::path::Path) {
     }
 }
 
-fn add_css(display: &gdk::Display, css: &str, priority: u32) {
+fn add_css(display: &gdk::Display, css: &str, priority: u32) -> gtk::CssProvider {
+    let provider = make_css_provider(css);
+    gtk::style_context_add_provider_for_display(display, &provider, priority);
+    provider
+}
+
+fn make_css_provider(css: &str) -> gtk::CssProvider {
     let provider = gtk::CssProvider::new();
     provider.connect_parsing_error(|_, section, error| {
         tracing::warn!(
@@ -1184,7 +1233,7 @@ fn add_css(display: &gdk::Display, css: &str, priority: u32) {
         );
     });
     provider.load_from_data(css);
-    gtk::style_context_add_provider_for_display(display, &provider, priority);
+    provider
 }
 
 fn expand_user_style(text: &str, builtin: &str) -> String {

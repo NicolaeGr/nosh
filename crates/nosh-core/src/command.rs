@@ -144,6 +144,8 @@ pub enum Command {
     MenuActivate {
         id: String,
         index: usize,
+        /// A named alternate action, or `None` for the default action.
+        action: Option<String>,
     },
     MenuReload(String),
     MenuClose(String),
@@ -338,6 +340,7 @@ mod tests {
         assert!(Command::MenuActivate {
             id: "apps".to_string(),
             index: 0,
+            action: None,
         }
         .is_menu());
         assert!(Command::MenuReload("apps".to_string()).is_menu());

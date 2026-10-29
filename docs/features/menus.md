@@ -230,7 +230,42 @@ launch = "auto"
 
 Tokens are `{item.<field>}`, `{item.id}`, `{item.name}`, `{item.description}`, `{item.badge}`, `{item.group}`, and `{query}`. Unknown tokens stay literal. Values come from `fields` first, then the display slots.
 
-`after` is `close`, `reload`, or `none`. `keep_open = true` keeps the window open and overrides `after`. Modifier actions (`[menu.<id>.actions]`) and context menu entries (`[menu.<id>.context_menu]`) use the same action type.
+`after` is `close`, `reload`, or `none`. `keep_open = true` keeps the window open and overrides `after`. Named actions (`[menu.<id>.actions]`) and context menu entries (`[menu.<id>.context_menu]`) use the same action type.
+
+### Named actions and keys
+
+`[menu.<id>.actions]` holds alternate actions. `[menu.<id>.keys]` maps a key chord to one of them.
+
+```toml
+[menu.wallpapers.action]
+command = ["awww", "img", "{item.path}"]
+
+[menu.wallpapers.actions.open]
+command = ["xdg-open", "{item.path}"]
+launch = "detached"
+
+[menu.wallpapers.keys]
+"ctrl+return" = "open"
+```
+
+A chord is `MODIFIER+...+KEY`, where modifiers are `ctrl`, `shift`, `alt`, and `super` (`meta` and `logo` are aliases). Key names are lowercase GDK keyval names, for example `return`, `escape`, `space`, `tab`, `f1`, or `x`. `enter` matches both Return and KP_Enter, and `return` matches Return.
+
+The name `terminal` is reserved. It runs the item's default action inside the terminal emulator, which is useful for command-line programs that do not declare `Terminal=true` in their desktop entry.
+
+### Terminal actions
+
+`[menu.<id>.terminal]` names the terminal emulator. Any action can set `terminal = true`, and the desktop `Terminal=true` key sets it automatically for the `apps` builtin. The wrapper argv comes first, then the action argv.
+
+```toml
+[menu.apps.terminal]
+command = ["kitty", "--"]
+
+[menu.apps.actions.edit]
+command = ["nvim", "{item.path}"]
+terminal = true
+```
+
+A menu that has actions with `terminal = true` must also define `terminal.command`, otherwise the action fails with an error footer. Custom entries in `app_launcher.toml` accept `terminal = true` as well.
 
 `launch` decides how the process starts:
 
@@ -272,7 +307,18 @@ The search bar has focus by default.
 - A printable key without Ctrl, Alt, or Super moves focus back to the search bar and inserts the character at the cursor. This works wherever focus sits, on the list, the grid, or a row inside them.
 - Backspace outside the search bar does the same and removes the character before the cursor.
 - Enter activates the highlighted item. Escape closes the menu.
+- A bound chord from `[menu.<id>.keys]` runs its named action. Bindings are captured before the search entry sees the key, so `ctrl+return` works while typing.
 - Typing sends `MenuQuery`. The core debounces source searches and answers client searches from the cached list.
+
+## Reloading
+
+Each new invocation re-reads `menus.toml` and `menus.d/*.toml`. An open menu keeps the definition it started with, so a change cannot interrupt a search. A changed definition appears the next time the menu is opened. A parse error logs a warning and keeps the previous menus.
+
+The `apps` builtin reads `app_launcher.toml` each time a menu is opened, because `MenuService::open` creates a new source per invocation.
+
+`style.css` and `menus.d/<id>.css` are re-read on each menu open. The previous rules are replaced, not stacked. A per-menu stylesheet that has been deleted removes its provider.
+
+The bind list built from `[menu.<id>.bind]` is computed once at startup and resynced unchanged on compositor events. A chord change takes effect after restarting nosh.
 
 ## Core and UI split
 
@@ -288,7 +334,7 @@ Core modules live under `crates/nosh-core/src/menu/`:
 - `action.rs`: token expansion, the UWSM/systemd/detached launch chain, and process reaping.
 - `service.rs`: sessions, debouncing, generations, and activation.
 
-The new commands are `MenuOpen(id)`, `MenuQuery { id, query }`, `MenuActivate { id, index }`, `MenuReload(id)`, and `MenuClose(id)`. The service publishes `MenuEvent::Opened`, `Results`, `Failed`, `Closed`, `ActionFailed`, and `ActionDone`. `NoshPaths::menus_config()` returns `~/.config/nosh/menus.toml`.
+The new commands are `MenuOpen(id)`, `MenuQuery { id, query }`, `MenuActivate { id, index, action }`, `MenuReload(id)`, and `MenuClose(id)`. `action` is `None` for the default action or a name from `actions` and `context_menu`. The service publishes `MenuEvent::Opened`, `Results`, `Failed`, `Closed`, `ActionFailed`, and `ActionDone`. `NoshPaths::menus_config()` returns `~/.config/nosh/menus.toml`.
 
 ## UI
 

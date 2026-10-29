@@ -11,6 +11,16 @@ schema = 1
 title = "Applications"
 placeholder = "Search applications"
 
+# The terminal emulator used by desktop entries with Terminal=true and by the
+# reserved "terminal" action. The item's argv is appended after this.
+[menu.apps.terminal]
+command = ["kitty", "--"]
+
+# In-menu key bindings. The value names an entry in [menu.apps.actions] or the
+# reserved "terminal" action.
+[menu.apps.keys]
+"ctrl+return" = "terminal"
+
 [menu.apps.window]
 namespace = "nosh-menu-apps"
 anchors = ["center"]
@@ -67,3 +77,11 @@ chord = "SUPER, X"
 # [menu.wallpapers.action]
 # command = ["swww", "img", "{item.path}"]
 # after = "close"
+#
+# [menu.wallpapers.actions.open]
+# command = ["xdg-open", "{item.path}"]
+# after = "close"
+# launch = "detached"
+#
+# [menu.wallpapers.keys]
+# "ctrl+return" = "open"

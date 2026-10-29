@@ -1,6 +1,6 @@
 //! One layer-shell window per open menu, with a virtualized item list.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -11,29 +11,68 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use nosh_core::menu::model::{Anchor, Keyboard, Layer as CoreLayer};
-use nosh_core::{Command, Core, ItemLayout, MenuDef, MenuIcon, MenuItem, MenuPreview, ViewKind};
+use nosh_core::{
+    Command, Core, ItemLayout, MenuDef, MenuIcon, MenuItem, MenuKey, MenuPreview, ViewKind,
+};
 
 pub struct MenuManager {
     windows: HashMap<String, MenuWindow>,
-    styled: HashSet<String>,
+    styles: HashMap<String, gtk::CssProvider>,
 }
 
 impl MenuManager {
     pub fn new() -> Self {
         Self {
             windows: HashMap::new(),
-            styled: HashSet::new(),
+            styles: HashMap::new(),
         }
     }
 
     pub fn open(&mut self, id: String, def: MenuDef, app: &gtk::Application, core: Rc<Core>) {
         self.close(&id);
-        if self.styled.insert(id.clone()) {
-            load_menu_styles(&id);
-        }
+        self.refresh_style(&id);
         let window = MenuWindow::new(app, &id, def, core);
         window.present();
         self.windows.insert(id, window);
+    }
+
+    /// Re-reads `menus.d/<id>.css` so a change reaches the next invocation.
+    fn refresh_style(&mut self, id: &str) {
+        let Ok(paths) = nosh_core::NoshPaths::from_env() else {
+            return;
+        };
+        let path = paths.menus_dir().join(format!("{id}.css"));
+        let css = match std::fs::read_to_string(&path) {
+            Ok(css) => css,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if let Some(provider) = self.styles.remove(id) {
+                    if let Some(display) = gdk::Display::default() {
+                        gtk::style_context_remove_provider_for_display(&display, &provider);
+                    }
+                }
+                return;
+            }
+            Err(error) => {
+                tracing::warn!(%error, path = %path.display(), "cannot read the per-menu stylesheet");
+                return;
+            }
+        };
+
+        if let Some(provider) = self.styles.get(id) {
+            provider.load_from_data(&css);
+            return;
+        }
+
+        let Some(display) = gdk::Display::default() else {
+            return;
+        };
+        let provider = style_provider(&css);
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_USER + 2,
+        );
+        self.styles.insert(id.to_string(), provider);
     }
 
     pub fn set_results(&mut self, id: &str, items: Vec<MenuItem>) {
@@ -124,18 +163,25 @@ impl MenuWindow {
         scrolled.set_vexpand(true);
         scrolled.set_hexpand(true);
 
-        let activate = {
+        let bindings = menu_bindings(&def);
+
+        let send = {
             let core = Rc::clone(&core);
             let id = id.to_string();
             let selection = selection.clone();
-            move || {
+            move |action: Option<String>| {
                 let index = selection.selected();
                 let index = if index == u32::MAX { 0 } else { index };
                 core.send(Command::MenuActivate {
                     id: id.clone(),
                     index: index as usize,
+                    action,
                 });
             }
+        };
+        let activate = {
+            let send = send.clone();
+            move || send(None)
         };
 
         let view: gtk::Widget = match def.view.kind {
@@ -190,11 +236,10 @@ impl MenuWindow {
             let selection = selection.clone();
             let core = Rc::clone(&core);
             let id = id.to_string();
-            let activate = activate.clone();
             let columns = def.view.resolved_columns();
             move |_, key, _, state| {
                 handle_key(
-                    key, state, &entry, &view, &selection, columns, &id, &core, &activate,
+                    key, state, &entry, &view, &selection, columns, &id, &core, &send, &bindings,
                 )
             }
         });
@@ -247,6 +292,84 @@ impl MenuWindow {
     }
 }
 
+struct KeyBinding {
+    menu: MenuKey,
+    keys: Vec<gdk::Key>,
+    action: String,
+}
+
+fn menu_bindings(def: &MenuDef) -> Vec<KeyBinding> {
+    def.keys
+        .iter()
+        .filter_map(|(chord, action)| {
+            let menu = match MenuKey::parse(chord) {
+                Ok(menu) => menu,
+                Err(error) => {
+                    tracing::warn!(%error, chord, "ignoring an invalid menu key binding");
+                    return None;
+                }
+            };
+            let keys = resolve_keys(&menu.key);
+            if keys.is_empty() {
+                tracing::warn!(
+                    chord,
+                    key = %menu.key,
+                    "ignoring a menu key with an unknown key name"
+                );
+                return None;
+            }
+            Some(KeyBinding {
+                menu,
+                keys,
+                action: action.clone(),
+            })
+        })
+        .collect()
+}
+
+/// Resolves a config key name against GDK key names. `enter` covers both the
+/// main and keypad Return keys, and `return` covers the main one.
+fn resolve_keys(name: &str) -> Vec<gdk::Key> {
+    match name {
+        "enter" => vec![gdk::Key::Return, gdk::Key::KP_Enter],
+        "return" => vec![gdk::Key::Return],
+        "kp_enter" => vec![gdk::Key::KP_Enter],
+        _ => gdk::Key::from_name(name)
+            .or_else(|| gdk::Key::from_name(capitalize(name)))
+            .or_else(|| gdk::Key::from_name(name.to_ascii_uppercase()))
+            .into_iter()
+            .collect(),
+    }
+}
+
+/// Turns `page_up` into `Page_Up` for GDK names that use capitals.
+fn capitalize(name: &str) -> String {
+    name.split('_')
+        .map(|part| {
+            let mut characters = part.chars();
+            match characters.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + characters.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
+fn matches_binding(binding: &KeyBinding, key: gdk::Key, state: gdk::ModifierType) -> bool {
+    let relevant = gdk::ModifierType::CONTROL_MASK
+        | gdk::ModifierType::SHIFT_MASK
+        | gdk::ModifierType::ALT_MASK
+        | gdk::ModifierType::SUPER_MASK;
+    let held = state & relevant;
+
+    binding.keys.contains(&key)
+        && binding.menu.ctrl == held.contains(gdk::ModifierType::CONTROL_MASK)
+        && binding.menu.shift == held.contains(gdk::ModifierType::SHIFT_MASK)
+        && binding.menu.alt == held.contains(gdk::ModifierType::ALT_MASK)
+        && binding.menu.logo == held.contains(gdk::ModifierType::SUPER_MASK)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_key(
     key: gdk::Key,
@@ -257,11 +380,19 @@ fn handle_key(
     columns: u32,
     id: &str,
     core: &Rc<Core>,
-    activate: &impl Fn(),
+    activate: &impl Fn(Option<String>),
+    bindings: &[KeyBinding],
 ) -> glib::Propagation {
     if key == gdk::Key::Escape {
         core.send(Command::MenuClose(id.to_string()));
         return glib::Propagation::Stop;
+    }
+
+    for binding in bindings {
+        if matches_binding(binding, key, state) {
+            activate(Some(binding.action.clone()));
+            return glib::Propagation::Stop;
+        }
     }
 
     let entry_focused = entry.has_focus();
@@ -277,8 +408,15 @@ fn handle_key(
         return glib::Propagation::Stop;
     }
 
-    if matches!(key, gdk::Key::Return | gdk::Key::KP_Enter) && !entry_focused {
-        activate();
+    if matches!(key, gdk::Key::Return | gdk::Key::KP_Enter)
+        && !entry_focused
+        && !state.intersects(
+            gdk::ModifierType::CONTROL_MASK
+                | gdk::ModifierType::ALT_MASK
+                | gdk::ModifierType::SUPER_MASK,
+        )
+    {
+        activate(None);
         return glib::Propagation::Stop;
     }
 
@@ -465,25 +603,9 @@ fn map_keyboard(keyboard: Keyboard) -> KeyboardMode {
     }
 }
 
-/// Loads `~/.config/nosh/menus.d/<id>.css` once per process. Rules should be
-/// scoped with `.menu-<id>` to avoid changing other menus.
-fn load_menu_styles(id: &str) {
-    let Ok(paths) = nosh_core::NoshPaths::from_env() else {
-        return;
-    };
-    let path = paths.menus_dir().join(format!("{id}.css"));
-    let css = match std::fs::read_to_string(&path) {
-        Ok(css) => css,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
-        Err(error) => {
-            tracing::warn!(%error, path = %path.display(), "cannot read the per-menu stylesheet");
-            return;
-        }
-    };
-    let Some(display) = gdk::Display::default() else {
-        return;
-    };
-
+/// Builds a provider for the per-menu stylesheet. Rules should be scoped with
+/// `.menu-<id>` to avoid changing other menus.
+fn style_provider(css: &str) -> gtk::CssProvider {
     let provider = gtk::CssProvider::new();
     provider.connect_parsing_error(|_, section, error| {
         tracing::warn!(
@@ -492,10 +614,6 @@ fn load_menu_styles(id: &str) {
             "per-menu CSS parse error"
         );
     });
-    provider.load_from_data(&css);
-    gtk::style_context_add_provider_for_display(
-        &display,
-        &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_USER + 2,
-    );
+    provider.load_from_data(css);
+    provider
 }

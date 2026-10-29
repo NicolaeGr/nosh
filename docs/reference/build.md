@@ -217,6 +217,8 @@ WantedBy=graphical-session.target
 
 Adjust the executable path for the install prefix. Use `systemctl --user daemon-reload` after installation.
 
+Do not set `Environment=PATH` in the unit. User services inherit the systemd user manager environment, which carries the desktop session's `PATH` after UWSM or the compositor imports it.
+
 ## Build script
 
 `crates/nosh-ui/build.rs`:
@@ -306,6 +308,18 @@ buildRustPackage {
 ```
 
 Add the PAM service through the NixOS module, not through `postInstall`, so `security.pam.services.nosh-auth` is declared.
+
+## NixOS module
+
+The NixOS module does not create a systemd unit itself. It installs the user-level configuration through the user environment manager:
+
+```nix
+services.nosh.withHJEM = true;
+# or
+services.nosh.withHM = true;
+```
+
+`withHJEM` adds a module to `hjem.extraModules`. `withHM` adds one to `home-manager.sharedModules`. The module installs the nosh package and the systemd user unit. On the hjem path the unit sets `enableDefaultPath = false`, so the service keeps the `PATH` that UWSM imported instead of the systemd default. Home Manager's `systemd.user.services` has no such option, so the HM unit inherits the user manager environment unchanged. The NixOS side keeps `package`, `startAfter`, and `wantedBy` on `services.nosh`, along with the upower, PAM, i2c, and udev setup. Import the hjem or the Home Manager NixOS module, not both. Do not also import `hjemModules.nosh` or `homeManagerModules.nosh` when using these options.
 
 ## Install layout
 

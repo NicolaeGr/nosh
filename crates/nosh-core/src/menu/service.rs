@@ -1,6 +1,7 @@
 //! The menu service. It owns menu definitions, sources, and request state.
 
 use std::collections::{BTreeMap, HashMap};
+use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,7 +10,7 @@ use tokio::task::JoinHandle;
 
 use crate::command::Command;
 use crate::event::Event;
-use crate::menu::action::{expand_argv, spawn_detached};
+use crate::menu::action::{expand_argv, spawn_action};
 use crate::menu::config::default_menus;
 use crate::menu::model::{dedupe_ids, After, ItemState, MenuDef, MenuItem, SearchMode};
 use crate::menu::query::filter_and_sort;
@@ -81,6 +82,16 @@ struct Completion {
     result: Result<Vec<MenuItem>, SourceError>,
 }
 
+/// The outcome of a launch, sent back from the thread that ran it. The launch
+/// blocks while a wrapper reports a setup error, so it stays off the run loop.
+struct Activation {
+    id: String,
+    after: After,
+    item: MenuItem,
+    source: Arc<dyn MenuSource>,
+    result: io::Result<()>,
+}
+
 impl MenuService {
     pub fn new(config: MenuServiceConfig) -> Self {
         let mut env = SourceEnv::from_env();
@@ -104,18 +115,25 @@ impl MenuService {
 
     pub async fn run(mut self, commands: Receiver<Command>, events: Sender<Event>) {
         let (completions, completion_events) = async_channel::unbounded();
+        let (activations, activation_events) = async_channel::unbounded::<Activation>();
 
         loop {
             tokio::select! {
                 command = commands.recv() => {
                     match command {
-                        Ok(command) => self.handle(command, &events, &completions),
+                        Ok(command) => self.handle(command, &events, &completions, &activations),
                         Err(_) => break,
                     }
                 }
                 completion = completion_events.recv() => {
                     match completion {
                         Ok(completion) => self.complete(completion, &events),
+                        Err(_) => break,
+                    }
+                }
+                activation = activation_events.recv() => {
+                    match activation {
+                        Ok(activation) => self.finish_activation(activation, &events),
                         Err(_) => break,
                     }
                 }
@@ -128,11 +146,12 @@ impl MenuService {
         command: Command,
         events: &Sender<Event>,
         completions: &Sender<Completion>,
+        activations: &Sender<Activation>,
     ) {
         match command {
             Command::MenuOpen(id) => self.open(id, events, completions),
             Command::MenuQuery { id, query } => self.query(id, query, events, completions),
-            Command::MenuActivate { id, index } => self.activate(id, index, events),
+            Command::MenuActivate { id, index } => self.activate(id, index, events, activations),
             Command::MenuReload(id) => self.reload(id, events, completions),
             Command::MenuClose(id) => self.close(id, events),
             _ => {}
@@ -342,7 +361,13 @@ impl MenuService {
         ));
     }
 
-    fn activate(&mut self, id: String, index: usize, events: &Sender<Event>) {
+    fn activate(
+        &mut self,
+        id: String,
+        index: usize,
+        events: &Sender<Event>,
+        activations: &Sender<Activation>,
+    ) {
         let Some(session) = self.sessions.get(&id) else {
             return;
         };
@@ -384,18 +409,51 @@ impl MenuService {
         } else {
             action.after
         };
-        match spawn_detached(&argv) {
+
+        // A launch can block for a moment while a wrapper reports a setup
+        // error, so it runs on its own thread and posts the outcome back here.
+        let sender = activations.clone();
+        let launch = action.launch;
+        let source = session.source.clone();
+        std::thread::spawn(move || {
+            let result = spawn_action(&argv, launch);
+            let _ = sender.send_blocking(Activation {
+                id,
+                after,
+                item,
+                source,
+                result,
+            });
+        });
+    }
+
+    fn finish_activation(&mut self, activation: Activation, events: &Sender<Event>) {
+        let open = self.sessions.contains_key(&activation.id);
+
+        match activation.result {
             Ok(()) => {
-                session.source.record_use(&item);
-                emit(events, MenuEvent::ActionDone { id, after })
+                activation.source.record_use(&activation.item);
+                if open {
+                    emit(
+                        events,
+                        MenuEvent::ActionDone {
+                            id: activation.id,
+                            after: activation.after,
+                        },
+                    )
+                }
             }
-            Err(error) => emit(
-                events,
-                MenuEvent::ActionFailed {
-                    id,
-                    message: error.to_string(),
-                },
-            ),
+            Err(error) => {
+                if open {
+                    emit(
+                        events,
+                        MenuEvent::ActionFailed {
+                            id: activation.id,
+                            message: error.to_string(),
+                        },
+                    )
+                }
+            }
         }
     }
 

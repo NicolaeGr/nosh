@@ -12,6 +12,10 @@ let
     partOf = [ "graphical-session.target" ];
     wantedBy = cfg.wantedBy;
 
+    # Keep the session PATH that UWSM imported. The unit generator otherwise
+    # writes Environment="PATH=coreutils:...".
+    enableDefaultPath = false;
+
     unitConfig.ConditionEnvironment = "HYPRLAND_INSTANCE_SIGNATURE";
 
     serviceConfig = {
@@ -21,6 +25,22 @@ let
       RestartSec = 5;
     };
   };
+
+  mkHomeManagerUnit = cfg: {
+    Unit = {
+      Description = "nosh - Hyprland shell";
+      After = cfg.startAfter;
+      PartOf = [ "graphical-session.target" ];
+      ConditionEnvironment = "HYPRLAND_INSTANCE_SIGNATURE";
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = "${cfg.package}/bin/nosh";
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+    Install.WantedBy = cfg.wantedBy;
+  };
 in
 {
   flake =
@@ -29,6 +49,7 @@ in
         {
           config,
           lib,
+          options,
           pkgs,
           ...
         }:
@@ -38,27 +59,23 @@ in
             mkDefault
             mkEnableOption
             mkIf
+            mkMerge
             mkOption
+            optionalAttrs
             types
             ;
+
+          enabled = cfg.withHM || cfg.withHJEM;
         in
         {
           options.services.nosh = {
-            enable = mkEnableOption "nosh, a Hyprland shell";
+            withHM = mkEnableOption "the nosh Home Manager module";
+            withHJEM = mkEnableOption "the nosh hjem module";
 
             package = mkOption {
               type = types.package;
               default = defaultPackage pkgs;
               description = "The nosh package to use.";
-            };
-
-            systemd.enable = mkOption {
-              type = types.bool;
-              default = true;
-              description = ''
-                Install a systemd user unit for every user. The unit starts only
-                when the user is in a Hyprland session.
-              '';
             };
 
             startAfter = mkOption {
@@ -74,25 +91,50 @@ in
             };
           };
 
-          config = mkIf cfg.enable {
-            environment.systemPackages = [ cfg.package ];
+          config = mkMerge [
+            (mkIf enabled {
+              services.upower.enable = mkDefault true;
 
-            services.upower.enable = mkDefault true;
+              security.pam.services.nosh-auth = { };
 
-            # The power menu asks PAM for the user's password. Register the
-            # service stack so nosh-auth exists instead of the login fallback.
-            security.pam.services.nosh-auth = { };
+              hardware.i2c.enable = mkDefault true;
+              services.udev.packages = [
+                pkgs.brightnessctl
+                pkgs.ddcutil
+              ];
 
-            # DDC/CI backlights need i2c device nodes. brightnessctl and ddcutil
-            # both ship udev rules that grant the active session access.
-            hardware.i2c.enable = mkDefault true;
-            services.udev.packages = [
-              pkgs.brightnessctl
-              pkgs.ddcutil
-            ];
-
-            systemd.user.services.nosh = mkIf cfg.systemd.enable (mkUnit cfg);
-          };
+              assertions = [
+                {
+                  assertion = !(cfg.withHM && cfg.withHJEM);
+                  message = "services.nosh: enable either withHM or withHJEM, not both";
+                }
+                {
+                  assertion = !cfg.withHM || options ? home-manager;
+                  message = "services.nosh.withHM needs the Home Manager NixOS module";
+                }
+                {
+                  assertion = !cfg.withHJEM || options ? hjem;
+                  message = "services.nosh.withHJEM needs the hjem NixOS module";
+                }
+              ];
+            })
+            (optionalAttrs (options ? home-manager) {
+              home-manager.sharedModules = mkIf cfg.withHM [
+                {
+                  home.packages = [ cfg.package ];
+                  systemd.user.services.nosh = mkHomeManagerUnit cfg;
+                }
+              ];
+            })
+            (optionalAttrs (options ? hjem) {
+              hjem.extraModules = mkIf cfg.withHJEM [
+                {
+                  packages = [ cfg.package ];
+                  systemd.services.nosh = mkUnit cfg;
+                }
+              ];
+            })
+          ];
         };
 
       homeManager =
@@ -136,7 +178,7 @@ in
 
           config = mkIf cfg.enable {
             home.packages = [ cfg.package ];
-            systemd.user.services.nosh = mkUnit cfg;
+            systemd.user.services.nosh = mkHomeManagerUnit cfg;
           };
         };
 

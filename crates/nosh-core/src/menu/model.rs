@@ -211,6 +211,23 @@ pub struct ActionDef {
     pub keep_open: bool,
     #[serde(default)]
     pub after: After,
+    #[serde(default)]
+    pub launch: LaunchMode,
+}
+
+/// How the action process is started.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchMode {
+    /// UWSM or a systemd scope, then a direct spawn.
+    #[default]
+    Auto,
+    /// UWSM, then a direct spawn.
+    Uwsm,
+    /// A systemd user scope, then a direct spawn.
+    SystemdRun,
+    /// A direct spawn.
+    Detached,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -442,6 +459,7 @@ fn action_from_json(value: &serde_json::Value) -> Result<ActionDef, ItemError> {
                 command,
                 keep_open: false,
                 after: After::default(),
+                launch: LaunchMode::default(),
             })
         }
         serde_json::Value::Object(_) => serde_json::from_value(value.clone())
@@ -716,6 +734,17 @@ mod tests {
     }
 
     #[test]
+    fn an_action_can_pick_its_launcher() {
+        let action: ActionDef =
+            serde_json::from_str(r#"{"command": ["notify-send", "hello"], "launch": "detached"}"#)
+                .unwrap();
+        assert_eq!(action.launch, LaunchMode::Detached);
+
+        let action: ActionDef = serde_json::from_str(r#"{"command": ["notify-send"]}"#).unwrap();
+        assert_eq!(action.launch, LaunchMode::Auto);
+    }
+
+    #[test]
     fn template_maps_ids_and_previews_from_custom_fields() {
         let template = Template {
             id: Some("uuid".to_string()),
@@ -767,6 +796,7 @@ mod tests {
                 command: vec!["notify-send".to_string(), "{item.title}".to_string()],
                 keep_open: false,
                 after: After::Close,
+                launch: LaunchMode::Auto,
             })
         );
     }

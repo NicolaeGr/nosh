@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use super::{MenuSource, SourceEnv, SourceError};
-use crate::menu::model::{ActionDef, ItemState, MenuIcon, MenuItem};
+use crate::menu::model::{ActionDef, ItemState, LaunchMode, MenuIcon, MenuItem};
 use crate::menu::query::filter_and_sort_with;
 use crate::menu::usage::{self, Usage};
 
@@ -171,6 +171,7 @@ fn custom_entries(env: &SourceEnv) -> Vec<MenuItem> {
                     command,
                     keep_open: false,
                     after: crate::menu::model::After::Close,
+                    launch: LaunchMode::Auto,
                 });
             }
             item.keywords = vec![entry.exec];
@@ -323,6 +324,7 @@ fn parse_desktop_entry(text: &str, path: &Path, id: &str) -> Option<MenuItem> {
             command,
             keep_open: false,
             after: crate::menu::model::After::Close,
+            launch: LaunchMode::Auto,
         });
     }
 

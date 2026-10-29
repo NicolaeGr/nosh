@@ -74,10 +74,10 @@ pub use media::{
 };
 pub use menu::{
     default_menus, expand_argv, load_menu_config, load_menus, menu_source, parse_menus,
-    spawn_detached, ActionDef, After, ItemLayout, ItemState, MenuConfig, MenuConfigError, MenuDef,
-    MenuEvent, MenuIcon, MenuItem, MenuPreview, MenuService, MenuServiceConfig, MenuSource,
-    MenuValue, SearchMode, SourceDef, SourceEnv, SourceError, SourceKind, Template, ViewDef,
-    ViewKind, WindowDef,
+    spawn_action, spawn_detached, ActionDef, After, ItemLayout, ItemState, LaunchMode, MenuConfig,
+    MenuConfigError, MenuDef, MenuEvent, MenuIcon, MenuItem, MenuPreview, MenuService,
+    MenuServiceConfig, MenuSource, MenuValue, SearchMode, SourceDef, SourceEnv, SourceError,
+    SourceKind, Template, ViewDef, ViewKind, WindowDef,
 };
 pub use monitors::{
     extend, mirror, panning, preset_layout, resolve_target, score, select_monitor, single, Corner,

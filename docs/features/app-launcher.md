@@ -341,7 +341,9 @@ Launch targets:
 - `LaunchTarget::Command`: call `spawn_detached` with `sh -c <command>` only because the user explicitly configured a shell command.
 - `LaunchTarget::Builtin(RestartNosh)`: run `systemctl --user restart nosh`, fallback to spawning the current executable through `spawn_detached`.
 
-Do not use Hyprland `exec_cmd` by default. If a user wants compositor-side spawning for environment reasons, add `spawn_via = "detached" | "hyprland"` to the launcher config, defaulting to `detached`. The Hyprland path uses the provider-aware dispatcher from `features/workspaces.md`.
+Do not use Hyprland `exec_cmd`, and do not add a `spawn_via` switch. Spawn through the session manager instead, so the app leaves nosh's service cgroup and picks up the session environment.
+
+The core tries `uwsm app -t service -- <argv>` in a UWSM session, then `systemd-run --user --scope --quiet -- <argv>`, then the detached spawn above. UWSM gets a short probe, so a setup failure falls through to the next step. `systemd-run --scope` runs in the foreground for the app's lifetime, so only a spawn failure falls through. A menu action can force a step with `launch = "uwsm"`, `"systemd-run"`, or `"detached"`. Desktop entries use `auto`.
 
 This removes the compositor dependency, the shell quoting bug, and the child lifetime problem.
 

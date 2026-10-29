@@ -12,15 +12,15 @@ pub mod service;
 pub mod source;
 pub mod usage;
 
-pub use action::{expand_argv, spawn_detached};
+pub use action::{expand_argv, spawn_action, spawn_detached};
 pub use config::{
     default_menus, load_menu_config, load_menus, parse_menus, MenuConfig, MenuConfigError,
 };
 pub use model::{
     dedupe_ids, ActionDef, After, Anchor, IconKind, IconRef, ItemError, ItemLayout, ItemState,
-    ItemViewDef, Keyboard, Layer, MenuBind, MenuDef, MenuIcon, MenuItem, MenuPreview, MenuValue,
-    PreviewKind, PreviewRef, SearchMode, SourceDef, SourceKind, Template, ViewDef, ViewKind,
-    WindowDef, DEFAULT_DEBOUNCE_MS, DEFAULT_LIMIT, DEFAULT_TIMEOUT_MS, MAX_LINE_BYTES,
+    ItemViewDef, Keyboard, LaunchMode, Layer, MenuBind, MenuDef, MenuIcon, MenuItem, MenuPreview,
+    MenuValue, PreviewKind, PreviewRef, SearchMode, SourceDef, SourceKind, Template, ViewDef,
+    ViewKind, WindowDef, DEFAULT_DEBOUNCE_MS, DEFAULT_LIMIT, DEFAULT_TIMEOUT_MS, MAX_LINE_BYTES,
     MAX_OUTPUT_BYTES, SCHEMA_VERSION,
 };
 pub use query::{filter_and_sort, fuzzy_score};

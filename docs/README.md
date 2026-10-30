@@ -75,7 +75,7 @@ These values appear in compositor rules, keybinds, user configs, or the public c
 | App launcher namespace     | `nosh-app-launcher`                                                                                                                                   |
 | Change indicator namespace | `nosh-change-indicator`                                                                                                                               |
 | App usage history          | `~/.local/share/nosh/app_usage.json`                                                                                                                  |
-| App launcher config        | `~/.config/nosh/app_launcher.toml`                                                                                                                    |
+| App launcher entries       | `~/.config/nosh/apps.d/`                                                                                                                              |
 | Menu config                | `~/.config/nosh/menus.toml`                                                                                                                           |
 | CLI commands               | `volume-up`, `volume-down`, `brightness-up`, `brightness-down`, `brightness-dim`, `brightness-restore`, `menu <id>`, `monitor-cycle`, `power-profile` |
 

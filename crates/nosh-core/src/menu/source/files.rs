@@ -240,6 +240,7 @@ mod tests {
             home: home.to_path_buf(),
             config_dir: home.join(".config/nosh"),
             data_dirs: vec![home.join(".local/share")],
+            menus: Arc::new(std::collections::BTreeMap::new()),
             usage: Arc::new(crate::menu::usage::Usage::empty()),
         })
     }

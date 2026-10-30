@@ -197,22 +197,27 @@ ON CONFLICT(desktop_id) DO UPDATE SET
 
 ### TOML config
 
-Path `~/.config/nosh/app_launcher.toml`.
-
-On first run, create the directory and an example file. The first line is `# EXAMPLE_CONFIG`. If the file starts with that line, the parser returns without loading entries.
+Path `~/.config/nosh/apps.d/`. Each `*.toml` file holds one entry as
+root-level fields, or one or more entries under `[[entry]]`.
 
 The file format:
 
 ```toml
-[[entry]]
 name = "App Name"
 icon = "icon-name"
 exec = "command"
 ```
 
-The current parser reads lines, starts a new entry on `[[entry]]`, and reads `name`, `icon`, and `exec` by splitting on the first `=`. It strips matching single or double quotes. It does not support inline comments or escapes.
+A file may also use the `[[entry]]` table, which allows several entries per
+file. Unknown keys and sections are ignored so provider and applet keys do not
+break the app reader.
 
-The example file includes a custom script and a Firefox profile example.
+Entry ids come from the name. A duplicate name in another file gets the file
+name as a prefix, a duplicate inside one file gets its occurrence count, and
+anything still clashing gets a numeric suffix. Every entry loads either way.
+
+A file that fails to parse or read is logged with its path and skipped, so the
+remaining files still load.
 
 ### Plugins
 

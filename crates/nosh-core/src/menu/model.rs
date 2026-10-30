@@ -411,12 +411,7 @@ impl Template {
                     },
                 ),
             },
-            None => (
-                None,
-                ItemState::Disabled {
-                    reason: "no action".to_string(),
-                },
-            ),
+            None => (None, ItemState::Normal),
         };
 
         Ok(MenuItem {
@@ -636,6 +631,16 @@ pub struct TerminalDef {
 pub struct MenuDef {
     pub title: String,
     #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub icon: Option<MenuIcon>,
+    /// Skipped by the `menus` builtin. The menu stays reachable by id.
+    #[serde(default)]
+    pub hidden: bool,
+    /// Listed by the `apps` builtin as a launcher entry.
+    #[serde(default)]
+    pub show_in_apps: bool,
+    #[serde(default)]
     pub window: WindowDef,
     #[serde(default)]
     pub view: ViewDef,
@@ -748,12 +753,8 @@ mod tests {
             ))
         );
         assert_eq!(item.fields.get("width"), Some(&MenuValue::Number(3840.0)));
-        assert_eq!(
-            item.state,
-            ItemState::Disabled {
-                reason: "no action".to_string()
-            }
-        );
+        assert!(item.action.is_none());
+        assert_eq!(item.state, ItemState::Normal);
     }
 
     #[test]
@@ -935,6 +936,10 @@ command = ["kitty", "--"]
             keys: BTreeMap::new(),
             placeholder: None,
             bind: None,
+            description: None,
+            icon: None,
+            hidden: false,
+            show_in_apps: false,
         };
 
         assert_eq!(menu.width(), 560);

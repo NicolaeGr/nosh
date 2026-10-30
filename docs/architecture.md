@@ -306,7 +306,7 @@ In a dev build, the current Vala code stops `nosh.service`, starts the dev insta
 
 | Path                                     | Purpose                                                             |
 | ---------------------------------------- | ------------------------------------------------------------------- |
-| `~/.config/nosh/app_launcher.toml`       | custom launcher entries and script providers                        |
+| `~/.config/nosh/apps.d/`                 | custom launcher entries, one or more per `*.toml` file              |
 | `~/.config/nosh/menus.toml`              | menu definitions, sources, views, and actions                       |
 | `~/.config/nosh/menus.d/`                | drop-in menu files (`*.toml`) and per-menu stylesheets (`<id>.css`) |
 | `~/.config/nosh/style.css`               | user stylesheet, loaded above the built-in sheet                    |
@@ -333,7 +333,7 @@ Settings inventory:
 | Brightness            | `step`, `dim-value`, `backend`, `ddc-backend`                                                                                              | `config.toml`               |
 | Auth                  | `service`, `lockout-attempts`, `lockout-seconds`                                                                                           | `config.toml`               |
 | Monitor layout        | `apply-on-start`, presets, per-connector layout                                                                                            | `monitors.toml`             |
-| App launcher          | `[[entry]]`, `[[provider]]`, `[[applet]]`                                                                                                  | `app_launcher.toml`         |
+| App launcher          | `[[entry]]`, `[[provider]]`, `[[applet]]`                                                                                                  | `apps.d/*.toml`             |
 | Menus                 | per-menu window, view, source, template, and actions                                                                                       | `menus.toml`                |
 | Notification payloads | persisted notifications                                                                                                                    | `notifications.json`        |
 | Brightness snapshot   | saved values before dim                                                                                                                    | `brightness/snapshot.json`  |

@@ -11,13 +11,48 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{ChildStdout, Command};
 
 use super::model::{
-    dedupe_ids, MenuItem, SourceDef, SourceKind, Template, MAX_LINE_BYTES, MAX_OUTPUT_BYTES,
+    dedupe_ids, ActionDef, After, ItemState, LaunchMode, MenuDef, MenuIcon, MenuItem, MenuValue,
+    SourceDef, SourceKind, Template, MAX_LINE_BYTES, MAX_OUTPUT_BYTES,
 };
 use super::usage::{self, Usage};
 
 pub mod apps;
 pub mod files;
+pub mod menus;
 pub mod static_source;
+
+/// Used for a launcher entry whose menu does not set an icon.
+pub(crate) const MENU_ICON: &str = "view-app-grid-symbolic";
+
+/// Builds the item that opens a menu by id. The `menus` builtin and the
+/// `apps` builtin share it so both paths record usage under the same id.
+pub(crate) fn menu_entry_item(id: &str, def: &MenuDef) -> MenuItem {
+    let mut item = MenuItem::new(format!("menu-{id}"), def.title.clone());
+    item.description = def.description.clone().or_else(|| Some(id.to_string()));
+    item.icon = Some(
+        def.icon
+            .clone()
+            .unwrap_or_else(|| MenuIcon::Named(MENU_ICON.to_string())),
+    );
+    item.fields
+        .insert("menu".to_string(), MenuValue::String(id.to_string()));
+    item.action = Some(ActionDef {
+        command: vec![executable(), "menu".to_string(), id.to_string()],
+        keep_open: false,
+        after: After::Close,
+        // The helper only forwards a command to the running instance, so a
+        // session-manager wrapper would add a hop for nothing.
+        launch: LaunchMode::Detached,
+        terminal: false,
+    });
+    item
+}
+
+fn executable() -> String {
+    std::env::current_exe()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| "nosh".to_string())
+}
 
 /// The environment a builtin source reads.
 #[derive(Debug, Clone)]
@@ -25,6 +60,7 @@ pub struct SourceEnv {
     pub home: PathBuf,
     pub config_dir: PathBuf,
     pub data_dirs: Vec<PathBuf>,
+    pub menus: Arc<std::collections::BTreeMap<String, MenuDef>>,
     pub usage: Arc<Usage>,
 }
 
@@ -61,6 +97,7 @@ impl SourceEnv {
             home,
             config_dir,
             data_dirs,
+            menus: Arc::new(std::collections::BTreeMap::new()),
             usage: Arc::new(Usage::load(usage_path, usage::now())),
         }
     }
@@ -96,6 +133,7 @@ pub trait MenuSource: Send + Sync {
 pub fn menu_source(
     def: &SourceDef,
     template: Template,
+    has_default_action: bool,
     env: Arc<SourceEnv>,
 ) -> Result<Arc<dyn MenuSource>, SourceError> {
     match def.kind {
@@ -107,6 +145,7 @@ pub fn menu_source(
         SourceKind::External => Ok(Arc::new(ExternalSource {
             def: def.clone(),
             template,
+            has_default_action,
         })),
     }
 }
@@ -118,6 +157,7 @@ pub fn builtin_source(
 ) -> Result<Box<dyn MenuSource>, SourceError> {
     match name {
         "apps" => Ok(Box::new(apps::AppsSource::new(env))),
+        "menus" => Ok(Box::new(menus::MenusSource::new(env))),
         "files" => Ok(Box::new(files::FilesSource::from_options(options, env)?)),
         "static" => Ok(Box::new(static_source::StaticSource::from_options(
             options,
@@ -129,12 +169,13 @@ pub fn builtin_source(
 struct ExternalSource {
     def: SourceDef,
     template: Template,
+    has_default_action: bool,
 }
 
 #[async_trait]
 impl MenuSource for ExternalSource {
     async fn query(&self, query: &str) -> Result<Vec<MenuItem>, SourceError> {
-        run_external(&self.def, query, &self.template).await
+        run_external(&self.def, query, &self.template, self.has_default_action).await
     }
 }
 
@@ -142,10 +183,14 @@ impl MenuSource for ExternalSource {
 ///
 /// The query is appended as the final argument after the configured command
 /// words, so `["python", "list.py"]` becomes `python list.py <query>`.
+///
+/// An item that has no action of its own stays enabled when the menu defines a
+/// default action, and is marked disabled otherwise.
 pub async fn run_external(
     def: &SourceDef,
     query: &str,
     template: &Template,
+    has_default_action: bool,
 ) -> Result<Vec<MenuItem>, SourceError> {
     let argv = def
         .command
@@ -176,7 +221,11 @@ pub async fn run_external(
     let limit = def.resolved_limit();
     let timeout = Duration::from_millis(def.resolved_timeout_ms());
 
-    let result = tokio::time::timeout(timeout, read_output(stdout, template, limit)).await;
+    let result = tokio::time::timeout(
+        timeout,
+        read_output(stdout, template, limit, has_default_action),
+    )
+    .await;
 
     match result {
         Ok(Ok((mut items, over_limit))) => {
@@ -214,6 +263,7 @@ async fn read_output(
     stdout: ChildStdout,
     template: &Template,
     limit: usize,
+    has_default_action: bool,
 ) -> Result<(Vec<MenuItem>, bool), SourceError> {
     let mut reader = BufReader::new(stdout);
     let mut line = Vec::new();
@@ -271,7 +321,12 @@ async fn read_output(
 
         for value in values {
             match template.apply(&value) {
-                Ok(item) => {
+                Ok(mut item) => {
+                    if item.action.is_none() && !has_default_action {
+                        item.state = ItemState::Disabled {
+                            reason: "no action".to_string(),
+                        };
+                    }
                     items.push(item);
                     if items.len() >= limit {
                         over_limit = true;
@@ -339,7 +394,7 @@ mod tests {
             2000,
         );
 
-        let items = run_external(&def, "query", &Template::default_fields())
+        let items = run_external(&def, "query", &Template::default_fields(), false)
             .await
             .unwrap();
 
@@ -360,7 +415,7 @@ mod tests {
             2000,
         );
 
-        let items = run_external(&def, "", &Template::default_fields())
+        let items = run_external(&def, "", &Template::default_fields(), false)
             .await
             .unwrap();
 
@@ -371,9 +426,42 @@ mod tests {
     #[tokio::test]
     async fn external_source_times_out() {
         let def = external(vec!["sh", "-c", "sleep 5", "sh"], 20);
-        let error = run_external(&def, "", &Template::default_fields())
+        let error = run_external(&def, "", &Template::default_fields(), false)
             .await
             .unwrap_err();
         assert!(matches!(error, SourceError::Timeout));
+    }
+
+    #[tokio::test]
+    async fn items_without_an_action_use_the_menu_default() {
+        let def = external(
+            vec!["sh", "-c", "printf '%s\\n' '{\"name\":\"One\"}'", "sh"],
+            2000,
+        );
+
+        let items = run_external(&def, "", &Template::default_fields(), true)
+            .await
+            .unwrap();
+
+        assert_eq!(items[0].state, ItemState::Normal);
+    }
+
+    #[tokio::test]
+    async fn items_without_an_action_are_disabled_without_a_default() {
+        let def = external(
+            vec!["sh", "-c", "printf '%s\\n' '{\"name\":\"One\"}'", "sh"],
+            2000,
+        );
+
+        let items = run_external(&def, "", &Template::default_fields(), false)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            items[0].state,
+            ItemState::Disabled {
+                reason: "no action".to_string()
+            }
+        );
     }
 }

@@ -2,7 +2,7 @@
 
 A menu is one view plus one source. A source is a function of the query. Everything renders inside the nosh shell process, not in rofi or another external tool. The app launcher, a wallpaper picker, a clipboard history, and a power menu all use this engine.
 
-Menus live in `~/.config/nosh/menus.toml`, keyed by id under `[menu.<id>]`. Additional menus can live in `~/.config/nosh/menus.d/*.toml`. `app_launcher.toml` keeps app entries and applets only. The `apps` builtin reads it, so custom app entries still work.
+Menus live in `~/.config/nosh/menus.toml`, keyed by id under `[menu.<id>]`. Additional menus can live in `~/.config/nosh/menus.d/*.toml`. Custom app entries live in `~/.config/nosh/apps.d/*.toml`. The `apps` builtin reads them, so custom app entries still work.
 
 ## Configuration
 
@@ -12,7 +12,7 @@ The file requires `schema = 1` at the top.
 
 On first start, when `~/.config/nosh/menus.toml` is missing, nosh writes a template there and creates `~/.config/nosh/menus.d/`. The template defines the `apps` menu explicitly, so the running configuration is visible rather than implicit.
 
-Every `*.toml` file under `menus.d/` is loaded in file name order. Each drop-in is a complete menu file with its own `schema = 1` line and one or more `[menu.<id>]` tables. Duplicate ids across files are an error, because a silent override would make the result depend on file order. Files with other extensions, such as `<id>.css`, are ignored by the menu loader.
+Every `*.toml` file under `menus.d/` is loaded in file name order. Each drop-in is a complete menu file with its own `schema = 1` line and one or more `[menu.<id>]` tables. A drop-in that repeats an id is skipped as a whole and logged, so the files after it still load. Files with other extensions, such as `<id>.css`, are ignored by the menu loader.
 
 Menu ids may contain ASCII letters, digits, dashes, and underscores. The id is used in the layer-shell namespace, the CSS class, and the per-menu stylesheet name, so path separators are rejected.
 
@@ -63,6 +63,15 @@ after = "close"
 
 Every menu has `title` and `source`. The other sections are optional.
 
+| Key            | Default | Meaning                                                                                  |
+| -------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `description`  | none    | subtitle shown by the `menus` and `apps` builtins                                        |
+| `icon`         | none    | icon name or `{ image = "path" }`, used by the `menus` and `apps` builtins               |
+| `hidden`       | false   | omitted from the `menus` builtin; the menu is still reachable by id, bind, or apps entry |
+| `show_in_apps` | false   | listed in the `apps` builtin as a launcher entry                                         |
+
+Generated entries for a menu without an icon use `view-app-grid-symbolic`, so they never look like an executable.
+
 ### Window
 
 | Key         | Default          | Meaning                                           |
@@ -111,13 +120,14 @@ search = "source"
 
 An external source receives the debounced query as its last argument. With `command = ["python", "list.py"]`, the process runs `python list.py <query>`. Output is NDJSON on stdout. Each line is one JSON object, or a JSON array of objects.
 
-The builtins are `apps`, `files`, and `static`.
+The builtins are `apps`, `files`, `menus`, and `static`.
 
-| Builtin  | Options                                                                                             |
-| -------- | --------------------------------------------------------------------------------------------------- |
-| `apps`   | none. Reads XDG desktop entries and app entries from `app_launcher.toml`. Orders by launch history. |
-| `files`  | `path` (required), `extensions`, `recursive`, `hidden`                                              |
-| `static` | `items`, an array of item objects                                                                   |
+| Builtin  | Options                                                                                                    |
+| -------- | ---------------------------------------------------------------------------------------------------------- |
+| `apps`   | none. Reads XDG desktop entries, `apps.d/*.toml`, and menus with `show_in_apps`. Orders by launch history. |
+| `files`  | `path` (required), `extensions`, `recursive`, `hidden`                                                     |
+| `menus`  | none. Lists every menu without `hidden = true`.                                                            |
+| `static` | `items`, an array of item objects                                                                          |
 
 A `static` source holds its items in the config:
 
@@ -214,7 +224,7 @@ action = "command"
 
 `preview.kind` is `image` or `text`. `icon.kind` is `named` or `image`.
 
-The `action` field may name an object with a `command` array, or an array of strings. A per-item action overrides the menu action. If neither exists, the item is disabled and its reason is shown.
+The `action` field may name an object with a `command` array, or an array of strings. A per-item action overrides the menu action, and a missing field falls back to the menu action. If neither exists, the item is disabled and its reason is shown.
 
 ### Actions
 
@@ -265,7 +275,7 @@ command = ["nvim", "{item.path}"]
 terminal = true
 ```
 
-A menu that has actions with `terminal = true` must also define `terminal.command`, otherwise the action fails with an error footer. Custom entries in `app_launcher.toml` accept `terminal = true` as well.
+A menu that has actions with `terminal = true` must also define `terminal.command`, otherwise the action fails with an error footer. Custom entries in `apps.d/*.toml` accept `terminal = true` as well.
 
 `launch` decides how the process starts:
 
@@ -285,15 +295,16 @@ Do not interpolate item data into the shell string.
 
 ## Failure behavior
 
-| Failure                           | Behavior                                        |
-| --------------------------------- | ----------------------------------------------- |
-| name missing or not a string      | skip the item, log once per query               |
-| invalid JSON line                 | skip the line, keep the rest                    |
-| missing image                     | keep the item, show a placeholder               |
-| action field missing              | disable the item, show the reason               |
-| duplicate id                      | suffix the id with `-2`, `-3`, and log          |
-| source exits nonzero or times out | keep the previous results, show an error footer |
-| output over the limit             | kill the process, keep the first N items        |
+| Failure                           | Behavior                                         |
+| --------------------------------- | ------------------------------------------------ |
+| name missing or not a string      | skip the item, log once per query                |
+| invalid JSON line                 | skip the line, keep the rest                     |
+| invalid menu drop-in              | log the file path, skip that file, keep the rest |
+| missing image                     | keep the item, show a placeholder                |
+| action field missing              | use the menu default, otherwise disable the item |
+| duplicate id                      | suffix the id with `-2`, `-3`, and log           |
+| source exits nonzero or times out | keep the previous results, show an error footer  |
+| output over the limit             | kill the process, keep the first N items         |
 
 Limits are 64 KiB per line, 4 MiB total output, and 300 items per query.
 
@@ -312,9 +323,9 @@ The search bar has focus by default.
 
 ## Reloading
 
-Each new invocation re-reads `menus.toml` and `menus.d/*.toml`. An open menu keeps the definition it started with, so a change cannot interrupt a search. A changed definition appears the next time the menu is opened. A parse error logs a warning and keeps the previous menus.
+Each new invocation re-reads `menus.toml` and `menus.d/*.toml`. An open menu keeps the definition it started with, so a change cannot interrupt a search. A changed definition appears the next time the menu is opened. A broken drop-in is logged with its path and skipped. A broken `menus.toml` logs a warning and keeps the previous menus.
 
-The `apps` builtin reads `app_launcher.toml` each time a menu is opened, because `MenuService::open` creates a new source per invocation.
+The `apps` builtin reads `apps.d/*.toml` each time a menu is opened, because `MenuService::open` creates a new source per invocation.
 
 `style.css` and `menus.d/<id>.css` are re-read on each menu open. The previous rules are replaced, not stacked. A per-menu stylesheet that has been deleted removes its provider.
 

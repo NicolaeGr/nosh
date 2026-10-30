@@ -46,6 +46,30 @@ search = "source"
 [menu.apps.bind]
 chord = "SUPER, X"
 
+# A selector for the other menus. hidden keeps it out of its own list;
+# show_in_apps puts it in the launcher.
+[menu.menus]
+title = "Menus"
+placeholder = "Search menus"
+icon = "view-app-grid-symbolic"
+hidden = true
+show_in_apps = true
+
+[menu.menus.window]
+width = 560
+height = 380
+
+[menu.menus.view]
+type = "list"
+
+[menu.menus.source]
+type = "builtin"
+name = "menus"
+search = "client"
+
+[menu.menus.bind]
+chord = "SUPER, SHIFT, M"
+
 # Wallpaper picker example. Uncomment and adjust the path.
 #
 # [menu.wallpapers]

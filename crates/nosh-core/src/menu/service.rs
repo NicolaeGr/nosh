@@ -98,17 +98,19 @@ struct Activation {
 impl MenuService {
     pub fn new(config: MenuServiceConfig) -> Self {
         let config_dir = config.paths.as_ref().map(|paths| paths.config_dir.clone());
-        let mut env = SourceEnv::from_env();
-        if let Some(paths) = &config.paths {
-            env.config_dir = paths.config_dir.clone();
-            env.usage = Arc::new(Usage::load(paths.app_usage(), usage::now()));
-        }
 
         let menus = if config.menus.is_empty() {
             default_menus().menus
         } else {
             config.menus
         };
+
+        let mut env = SourceEnv::from_env();
+        if let Some(paths) = &config.paths {
+            env.config_dir = paths.config_dir.clone();
+            env.usage = Arc::new(Usage::load(paths.app_usage(), usage::now()));
+        }
+        env.menus = Arc::new(menus.clone());
 
         Self {
             menus,
@@ -129,6 +131,7 @@ impl MenuService {
             Ok(config) => {
                 if self.menus != config.menus {
                     self.menus = config.menus;
+                    Arc::make_mut(&mut self.env).menus = Arc::new(self.menus.clone());
                 }
             }
             Err(error) => tracing::warn!(
@@ -201,8 +204,12 @@ impl MenuService {
             return;
         };
 
-        let source = match menu_source(&def.source, def.resolved_template(), Arc::clone(&self.env))
-        {
+        let source = match menu_source(
+            &def.source,
+            def.resolved_template(),
+            def.action.is_some(),
+            Arc::clone(&self.env),
+        ) {
             Ok(source) => source,
             Err(error) => {
                 emit(

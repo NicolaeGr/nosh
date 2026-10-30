@@ -1,13 +1,13 @@
 //! The `apps` builtin. It reads XDG desktop entries and searches them.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use super::{MenuSource, SourceEnv, SourceError};
+use super::{menu_entry_item, MenuSource, SourceEnv, SourceError};
 use crate::menu::model::{ActionDef, ItemState, LaunchMode, MenuIcon, MenuItem};
 use crate::menu::query::filter_and_sort_with;
 use crate::menu::usage::{self, Usage};
@@ -99,6 +99,7 @@ async fn load_entries(env: &SourceEnv) -> Vec<MenuItem> {
     }
 
     items.extend(custom_entries(env));
+    items.extend(menu_entries(env));
 
     items.sort_by(|left, right| {
         left.name
@@ -126,65 +127,159 @@ struct CustomEntry {
     terminal: bool,
 }
 
-/// Custom entries stay in `app_launcher.toml`. Unknown sections are ignored so
-/// provider and applet keys do not break this reader.
+/// Custom entries live in `apps.d/*.toml`. A file may use root-level fields or
+/// the `[[entry]]` wrapper, so a multi-entry file still loads. Unknown sections
+/// are ignored so provider and applet keys do not break this reader.
 fn custom_entries(env: &SourceEnv) -> Vec<MenuItem> {
-    let path = env.config_dir.join("app_launcher.toml");
-    let Ok(text) = std::fs::read_to_string(&path) else {
+    let directory = env.config_dir.join("apps.d");
+    let Ok(entries) = std::fs::read_dir(&directory) else {
         return Vec::new();
     };
-    let config: LauncherConfig = match toml::from_str(&text) {
-        Ok(config) => config,
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("toml"))
+        .collect();
+    files.sort();
+
+    let mut seen = BTreeSet::new();
+    let mut items = Vec::new();
+    for path in files {
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    path = %path.display(),
+                    "ignoring custom app entry: cannot read the file"
+                );
+                continue;
+            }
+        };
+        let stem = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("entry");
+        let mut local = BTreeMap::new();
+        for entry in parse_custom_entries(&text, &path) {
+            if let Some(item) = custom_item(entry, stem, &mut local, &mut seen) {
+                items.push(item);
+            }
+        }
+    }
+    items
+}
+
+fn parse_custom_entries(text: &str, path: &Path) -> Vec<CustomEntry> {
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
+
+    let parsed = match toml::from_str::<LauncherConfig>(text) {
+        Ok(config) if !config.entry.is_empty() => Ok(config.entry),
+        Ok(_) => toml::from_str::<CustomEntry>(text).map(|entry| vec![entry]),
+        Err(error) => Err(error),
+    };
+
+    match parsed {
+        Ok(entries) => entries,
         Err(error) => {
-            tracing::warn!(%error, path = %path.display(), "ignoring custom app entries: app_launcher.toml is invalid");
-            return Vec::new();
+            tracing::warn!(%error, path = %path.display(), "ignoring custom app entry: file is invalid");
+            Vec::new()
+        }
+    }
+}
+
+/// Menus opt into the launcher with `show_in_apps`.
+fn menu_entries(env: &SourceEnv) -> Vec<MenuItem> {
+    env.menus
+        .iter()
+        .filter(|(_, def)| def.show_in_apps)
+        .map(|(id, def)| menu_entry_item(id, def))
+        .collect()
+}
+
+/// A duplicate name from another file gets the file stem. A duplicate within
+/// one file gets its occurrence count. Anything still clashing gets a numeric
+/// suffix, so a messy directory still loads.
+fn unique_id(
+    name: &str,
+    stem: &str,
+    local: &mut BTreeMap<String, usize>,
+    seen: &mut BTreeSet<String>,
+) -> String {
+    let slug_name = slug(name);
+    let count = {
+        let count = local.entry(slug_name.clone()).or_insert(0);
+        *count += 1;
+        *count
+    };
+
+    let mut id = if count > 1 {
+        format!("custom-{count}-{slug_name}")
+    } else {
+        let id = format!("custom-{slug_name}");
+        if seen.contains(&id) {
+            format!("custom-{}-{slug_name}", slug(stem))
+        } else {
+            id
         }
     };
 
-    config
-        .entry
-        .into_iter()
-        .filter_map(|entry| {
-            let name = entry.name.trim().to_string();
-            if name.is_empty() {
-                return None;
-            }
-            let mut item = MenuItem::new(format!("custom-{}", slug(&name)), name);
-            item.icon = entry.icon.and_then(|icon| {
-                let icon = icon.trim();
-                if icon.is_empty() {
-                    None
-                } else if icon.contains('/') {
-                    Some(MenuIcon::Image {
-                        image: PathBuf::from(icon),
-                    })
-                } else {
-                    Some(MenuIcon::Named(icon.to_string()))
-                }
-            });
+    let base = id.clone();
+    let mut suffix = 2;
+    while !seen.insert(id.clone()) {
+        id = format!("{base}-{suffix}");
+        suffix += 1;
+    }
+    id
+}
 
-            let command = split_exec(&entry.exec);
-            if command.is_empty() {
-                item.state = ItemState::Disabled {
-                    reason: "the custom entry has no exec".to_string(),
-                };
-            } else {
-                item.action = Some(ActionDef {
-                    command,
-                    keep_open: false,
-                    after: crate::menu::model::After::Close,
-                    launch: LaunchMode::Auto,
-                    terminal: entry.terminal,
-                });
-            }
-            item.keywords = vec![entry.exec];
-            item.fields.insert(
-                "custom".to_string(),
-                crate::menu::model::MenuValue::Bool(true),
-            );
-            Some(item)
-        })
-        .collect()
+fn custom_item(
+    entry: CustomEntry,
+    stem: &str,
+    local: &mut BTreeMap<String, usize>,
+    seen: &mut BTreeSet<String>,
+) -> Option<MenuItem> {
+    let name = entry.name.trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let id = unique_id(&name, stem, local, seen);
+    let mut item = MenuItem::new(id, name);
+    item.icon = entry.icon.and_then(|icon| {
+        let icon = icon.trim();
+        if icon.is_empty() {
+            None
+        } else if icon.contains('/') {
+            Some(MenuIcon::Image {
+                image: PathBuf::from(icon),
+            })
+        } else {
+            Some(MenuIcon::Named(icon.to_string()))
+        }
+    });
+
+    let command = split_exec(&entry.exec);
+    if command.is_empty() {
+        item.state = ItemState::Disabled {
+            reason: "the custom entry has no exec".to_string(),
+        };
+    } else {
+        item.action = Some(ActionDef {
+            command,
+            keep_open: false,
+            after: crate::menu::model::After::Close,
+            launch: LaunchMode::Auto,
+            terminal: entry.terminal,
+        });
+    }
+    item.keywords = vec![entry.exec];
+    item.fields.insert(
+        "custom".to_string(),
+        crate::menu::model::MenuValue::Bool(true),
+    );
+    Some(item)
 }
 
 fn slug(name: &str) -> String {
@@ -532,20 +627,30 @@ Terminal=false
     }
 
     #[test]
-    fn reads_custom_entries_from_app_launcher_config() {
+    fn reads_custom_entries_from_apps_dir() {
         let directory = tempfile::tempdir().unwrap();
         let config_dir = directory.path().join("nosh");
-        std::fs::create_dir_all(&config_dir).unwrap();
+        let apps_dir = config_dir.join("apps.d");
+        std::fs::create_dir_all(&apps_dir).unwrap();
         std::fs::write(
-            config_dir.join("app_launcher.toml"),
+            apps_dir.join("browser.toml"),
             r#"
-[[entry]]
 name = "My Browser"
 icon = "firefox"
 exec = "firefox --new-window"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            apps_dir.join("work.toml"),
+            r#"
+[[entry]]
+name = "My Browser"
+exec = "firefox -P work"
 
-[[provider]]
-command = ["ignored"]
+[[entry]]
+name = "My Browser"
+exec = "firefox -P home"
 "#,
         )
         .unwrap();
@@ -554,12 +659,20 @@ command = ["ignored"]
             home: directory.path().to_path_buf(),
             config_dir,
             data_dirs: Vec::new(),
+            menus: Arc::new(BTreeMap::new()),
             usage: Arc::new(Usage::empty()),
         };
         let items = custom_entries(&env);
 
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].id, "custom-my-browser");
+        let ids: Vec<&str> = items.iter().map(|item| item.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "custom-my-browser",
+                "custom-work-my-browser",
+                "custom-2-my-browser"
+            ]
+        );
         assert_eq!(
             items[0].action.as_ref().unwrap().command,
             vec!["firefox", "--new-window"]
@@ -571,11 +684,11 @@ command = ["ignored"]
     fn a_custom_entry_can_ask_for_a_terminal() {
         let directory = tempfile::tempdir().unwrap();
         let config_dir = directory.path().join("nosh");
-        std::fs::create_dir_all(&config_dir).unwrap();
+        let apps_dir = config_dir.join("apps.d");
+        std::fs::create_dir_all(&apps_dir).unwrap();
         std::fs::write(
-            config_dir.join("app_launcher.toml"),
+            apps_dir.join("nvim.toml"),
             r#"
-[[entry]]
 name = "Edit"
 exec = "nvim"
 terminal = true
@@ -587,10 +700,53 @@ terminal = true
             home: directory.path().to_path_buf(),
             config_dir,
             data_dirs: Vec::new(),
+            menus: Arc::new(BTreeMap::new()),
             usage: Arc::new(Usage::empty()),
         };
         let items = custom_entries(&env);
 
         assert!(items[0].action.as_ref().unwrap().terminal);
+    }
+
+    #[test]
+    fn menus_opt_into_the_launcher() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = crate::menu::config::parse_menus(
+            r#"
+            schema = 1
+
+            [menu.themes]
+            title = "Themes"
+            show_in_apps = true
+
+            [menu.themes.source]
+            type = "builtin"
+            name = "static"
+
+            [menu.power]
+            title = "Power"
+
+            [menu.power.source]
+            type = "builtin"
+            name = "static"
+            "#,
+        )
+        .unwrap();
+
+        let env = SourceEnv {
+            home: directory.path().to_path_buf(),
+            config_dir: directory.path().join("nosh"),
+            data_dirs: Vec::new(),
+            menus: Arc::new(config.menus),
+            usage: Arc::new(Usage::empty()),
+        };
+        let items = menu_entries(&env);
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, "menu-themes");
+        assert_eq!(
+            items[0].icon,
+            Some(MenuIcon::Named(crate::menu::source::MENU_ICON.to_string()))
+        );
     }
 }

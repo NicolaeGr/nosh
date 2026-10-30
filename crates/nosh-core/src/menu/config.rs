@@ -27,12 +27,8 @@ pub enum MenuConfigError {
     Schema { found: u32, expected: u32 },
     #[error("menu {id:?} is invalid: {message}")]
     InvalidMenu { id: String, message: String },
-    #[error("menu {id:?} is defined in both {first} and {second}")]
-    DuplicateMenu {
-        id: String,
-        first: String,
-        second: String,
-    },
+    #[error("{path}: {message}")]
+    File { path: String, message: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,7 +42,7 @@ struct MenusFile {
 /// Loads one menu file. A missing file yields the built-in template.
 pub fn load_menus(path: &Path) -> Result<MenuConfig, MenuConfigError> {
     match std::fs::read_to_string(path) {
-        Ok(text) => parse_menus(&text),
+        Ok(text) => parse_menus(&text).map_err(|error| with_path(path, error)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(default_menus()),
         Err(error) => Err(io_error(path, error)),
     }
@@ -55,8 +51,10 @@ pub fn load_menus(path: &Path) -> Result<MenuConfig, MenuConfigError> {
 /// Loads `menus.toml`, creating it from the template when it is missing, then
 /// merges every `*.toml` file under `menus.d/` in file name order.
 ///
-/// Duplicate menu ids across files are an error. A drop-in that redefines an
-/// existing menu would make the effective configuration depend on file order.
+/// A broken drop-in is logged with its path and skipped, so the files after it
+/// still load. A drop-in that repeats a menu id is skipped as a whole, so half
+/// of it is never applied. Only `menus.toml` itself is fatal, because it is the
+/// base every drop-in merges into.
 pub fn load_menu_config(config_dir: &Path) -> Result<MenuConfig, MenuConfigError> {
     let main_path = config_dir.join("menus.toml");
     let text = match std::fs::read_to_string(&main_path) {
@@ -78,7 +76,12 @@ pub fn load_menu_config(config_dir: &Path) -> Result<MenuConfig, MenuConfigError
         Err(error) => return Err(io_error(&main_path, error)),
     };
 
-    let mut config = parse_menus(&text)?;
+    let mut config = parse_menus(&text).map_err(|error| with_path(&main_path, error))?;
+    let mut origins: BTreeMap<String, String> = config
+        .menus
+        .keys()
+        .map(|id| (id.clone(), main_path.display().to_string()))
+        .collect();
     let drop_in_dir = config_dir.join("menus.d");
     if let Err(error) = std::fs::create_dir_all(&drop_in_dir) {
         tracing::warn!(%error, path = %drop_in_dir.display(), "cannot create the menus.d directory");
@@ -102,21 +105,62 @@ pub fn load_menu_config(config_dir: &Path) -> Result<MenuConfig, MenuConfigError
     files.sort();
 
     for path in files {
-        let text = std::fs::read_to_string(&path).map_err(|error| io_error(&path, error))?;
-        let drop_in = parse_menus(&text)?;
-        for (id, menu) in drop_in.menus {
-            if config.menus.contains_key(&id) {
-                return Err(MenuConfigError::DuplicateMenu {
-                    id,
-                    first: main_path.display().to_string(),
-                    second: path.display().to_string(),
-                });
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    path = %path.display(),
+                    "ignoring menu drop-in: cannot read the file"
+                );
+                continue;
             }
+        };
+        let drop_in = match parse_menus(&text) {
+            Ok(config) => config,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    path = %path.display(),
+                    "ignoring menu drop-in: the file is invalid"
+                );
+                continue;
+            }
+        };
+
+        let conflict = drop_in
+            .menus
+            .keys()
+            .find_map(|id| origins.get(id).map(|first| (id.clone(), first.clone())));
+        if let Some((id, first)) = conflict {
+            tracing::warn!(
+                path = %path.display(),
+                first = %first,
+                menu = %id,
+                "ignoring menu drop-in: the menu id is already defined"
+            );
+            continue;
+        }
+
+        for (id, menu) in drop_in.menus {
+            origins.insert(id.clone(), path.display().to_string());
             config.menus.insert(id, menu);
         }
     }
 
     Ok(config)
+}
+
+/// Prefixes an error with the file it came from. An I/O error already names
+/// the file.
+fn with_path(path: &Path, error: MenuConfigError) -> MenuConfigError {
+    match error {
+        MenuConfigError::Io { .. } => error,
+        other => MenuConfigError::File {
+            path: path.display().to_string(),
+            message: other.to_string(),
+        },
+    }
 }
 
 fn io_error(path: &Path, error: std::io::Error) -> MenuConfigError {
@@ -666,23 +710,50 @@ path = "/tmp"
     }
 
     #[test]
-    fn duplicate_ids_across_files_are_rejected() {
+    fn a_broken_drop_in_is_skipped_and_later_files_still_load() {
         let directory = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(directory.path().join("menus.d")).unwrap();
         std::fs::write(
-            directory.path().join("menus.d/apps.toml"),
-            r#"
-schema = 1
+            directory.path().join("menus.toml"),
+            r#"schema = 1
 
-[menu.apps]
-title = "Apps again"
+[menu.base]
+title = "Base"
 
-[menu.apps.source]
+[menu.base.source]
 type = "builtin"
-name = "apps"
+name = "static"
 "#,
         )
         .unwrap();
+        std::fs::write(
+            directory.path().join("menus.d/10-broken.toml"),
+            "this is not toml",
+        )
+        .unwrap();
+        std::fs::write(
+            directory.path().join("menus.d/20-good.toml"),
+            r#"schema = 1
+
+[menu.good]
+title = "Good"
+
+[menu.good.source]
+type = "builtin"
+name = "static"
+"#,
+        )
+        .unwrap();
+
+        let config = load_menu_config(directory.path()).unwrap();
+        assert!(config.menus.contains_key("base"));
+        assert!(config.menus.contains_key("good"));
+    }
+
+    #[test]
+    fn a_duplicate_menu_id_skips_only_that_drop_in() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(directory.path().join("menus.d")).unwrap();
         std::fs::write(
             directory.path().join("menus.toml"),
             r#"schema = 1
@@ -696,9 +767,58 @@ name = "apps"
 "#,
         )
         .unwrap();
+        std::fs::write(
+            directory.path().join("menus.d/10-wallpapers.toml"),
+            r#"schema = 1
+
+[menu.wallpapers]
+title = "Wallpapers"
+
+[menu.wallpapers.source]
+type = "builtin"
+name = "files"
+
+[menu.wallpapers.source.options]
+path = "/tmp"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            directory.path().join("menus.d/20-extra.toml"),
+            r#"schema = 1
+
+[menu.apps]
+title = "Apps again"
+
+[menu.apps.source]
+type = "builtin"
+name = "apps"
+
+[menu.power]
+title = "Power"
+
+[menu.power.source]
+type = "builtin"
+name = "static"
+"#,
+        )
+        .unwrap();
+
+        let config = load_menu_config(directory.path()).unwrap();
+        assert_eq!(config.menus.get("apps").unwrap().title, "Apps");
+        assert!(config.menus.contains_key("wallpapers"));
+        assert!(!config.menus.contains_key("power"));
+    }
+
+    #[test]
+    fn a_broken_main_file_names_itself() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("menus.toml"), "this is not toml").unwrap();
 
         let error = load_menu_config(directory.path()).unwrap_err();
-        assert!(matches!(error, MenuConfigError::DuplicateMenu { id, .. } if id == "apps"));
+        let message = error.to_string();
+        assert!(message.contains("menus.toml"), "{message}");
+        assert!(message.contains("cannot parse"), "{message}");
     }
 
     #[test]

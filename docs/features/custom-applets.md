@@ -4,7 +4,7 @@ Current state: the app launcher supports custom TOML entries and two built-in se
 
 ## Current behavior
 
-`ConfigManager` reads `~/.config/nosh/app_launcher.toml`:
+The Vala `ConfigManager` reads `~/.config/nosh/app_launcher.toml`; the rewrite reads `~/.config/nosh/apps.d/*.toml`:
 
 ```toml
 [[entry]]
@@ -37,18 +37,18 @@ env = ["MOZ_ENABLE_WAYLAND=1"]
 
 Fields:
 
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `name` | yes | display name |
-| `exec` | yes | command to run |
-| `icon` | no | icon name or path, default `application-x-executable` |
-| `description` | no | searchable and shown in a tooltip |
-| `keywords` | no | extra search terms |
-| `terminal` | no | wrap in the default terminal |
-| `working_dir` | no | child working directory |
-| `env` | no | extra environment variables |
+| Field         | Required | Meaning                                               |
+| ------------- | -------- | ----------------------------------------------------- |
+| `name`        | yes      | display name                                          |
+| `exec`        | yes      | command to run                                        |
+| `icon`        | no       | icon name or path, default `application-x-executable` |
+| `description` | no       | searchable and shown in a tooltip                     |
+| `keywords`    | no       | extra search terms                                    |
+| `terminal`    | no       | wrap in the default terminal                          |
+| `working_dir` | no       | child working directory                               |
+| `env`         | no       | extra environment variables                           |
 
-Keep `$HOME` expansion and the `# EXAMPLE_CONFIG` sentinel. Parse with a real TOML parser. A malformed file logs an error and keeps the previous entries.
+Entries live in `~/.config/nosh/apps.d/*.toml`. Each file may use root-level fields or the `[[entry]]` table. Keep `$HOME` expansion. Parse with a real TOML parser. A malformed file logs an error and keeps the other files' entries.
 
 Launch uses the detached spawn helper described in `app-launcher.md`. If `terminal = true`, wrap with the configured terminal command, default `kitty -e`.
 
@@ -75,7 +75,12 @@ Protocol:
 Each line:
 
 ```json
-{"name":"GitHub","icon":"web-browser","description":"work account","exec":"pass show github | wl-copy"}
+{
+  "name": "GitHub",
+  "icon": "web-browser",
+  "description": "work account",
+  "exec": "pass show github | wl-copy"
+}
 ```
 
 The core maps each result to an `AppEntry` with `LaunchTarget::Command`. The name, icon, description, and exec are the only required fields. `keywords` is optional.
@@ -109,16 +114,16 @@ on_click = "foot -e curl 'wttr.in'"
 
 Fields:
 
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `name` | yes | identifier and fallback label |
-| `command` | yes | command whose stdout is displayed |
-| `interval_ms` | no | run interval, 0 means once at startup |
-| `icon` | no | icon name |
-| `format` | no | template around `{output}`, default `{output}` |
-| `tooltip_command` | no | command for the tooltip, run on hover or on the same interval |
-| `on_click` | no | command to run on left click |
-| `max_chars` | no | truncate the output |
+| Field             | Required | Meaning                                                       |
+| ----------------- | -------- | ------------------------------------------------------------- |
+| `name`            | yes      | identifier and fallback label                                 |
+| `command`         | yes      | command whose stdout is displayed                             |
+| `interval_ms`     | no       | run interval, 0 means once at startup                         |
+| `icon`            | no       | icon name                                                     |
+| `format`          | no       | template around `{output}`, default `{output}`                |
+| `tooltip_command` | no       | command for the tooltip, run on hover or on the same interval |
+| `on_click`        | no       | command to run on left click                                  |
+| `max_chars`       | no       | truncate the output                                           |
 
 Rules:
 

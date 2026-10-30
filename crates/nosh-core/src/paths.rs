@@ -40,8 +40,8 @@ impl NoshPaths {
         })
     }
 
-    pub fn app_launcher_config(&self) -> PathBuf {
-        self.config_dir.join("app_launcher.toml")
+    pub fn apps_dir(&self) -> PathBuf {
+        self.config_dir.join("apps.d")
     }
 
     pub fn config(&self) -> PathBuf {
@@ -211,8 +211,8 @@ mod tests {
         let paths = NoshPaths::from_lookup(lookup(&[("HOME", "/home/nicolae")])).unwrap();
 
         assert_eq!(
-            paths.app_launcher_config(),
-            PathBuf::from("/home/nicolae/.config/nosh/app_launcher.toml")
+            paths.apps_dir(),
+            PathBuf::from("/home/nicolae/.config/nosh/apps.d")
         );
         assert_eq!(
             paths.app_usage(),

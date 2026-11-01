@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Read;
 use std::net::Ipv4Addr;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -19,8 +20,8 @@ use async_channel::Sender;
 use async_trait::async_trait;
 use tokio::sync::OnceCell;
 use zbus::message::Type;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 use zbus::MatchRule;
+use zbus::{OwnedObjectPath, OwnedVariant, Variant};
 
 use crate::error::BackendError;
 use crate::network::backend::{NetworkBackend, NetworkBackendEvent};
@@ -59,9 +60,9 @@ const DEVICE_TYPE_WWAN: u32 = 8;
 /// `NM_ACTIVATION_STATE_FLAG_EXTERNAL` from `nm-dbus-interface.h`.
 const ACTIVE_CONNECTION_EXTERNAL: u32 = 0x80;
 
-type Interfaces = HashMap<String, HashMap<String, OwnedValue>>;
+type Interfaces = HashMap<String, HashMap<String, OwnedVariant>>;
 type ManagedObjects = HashMap<OwnedObjectPath, Interfaces>;
-type SettingsMap = HashMap<String, HashMap<String, OwnedValue>>;
+type SettingsMap = HashMap<String, HashMap<String, OwnedVariant>>;
 
 /// Reads and writes network state over the system bus.
 pub struct NetworkManagerBackend {
@@ -86,7 +87,7 @@ struct ConnectionProfile {
 }
 
 impl ConnectionProfile {
-    fn connection(&self) -> Option<&HashMap<String, OwnedValue>> {
+    fn connection(&self) -> Option<&HashMap<String, OwnedVariant>> {
         self.settings.get("connection")
     }
 
@@ -167,7 +168,7 @@ impl NetworkManagerBackend {
     async fn nm_properties(
         &self,
         connection: &zbus::Connection,
-    ) -> Result<HashMap<String, OwnedValue>, BackendError> {
+    ) -> Result<HashMap<String, OwnedVariant>, BackendError> {
         let proxy = zbus::Proxy::new(connection, NM_SERVICE, NM_PATH, PROPERTIES_INTERFACE)
             .await
             .map_err(dbus_error)?;
@@ -218,7 +219,7 @@ impl NetworkManagerBackend {
     fn model(
         &self,
         managed: &ManagedObjects,
-        values: &HashMap<String, OwnedValue>,
+        values: &HashMap<String, OwnedVariant>,
         profiles: &[ConnectionProfile],
         details: bool,
     ) -> NetworkModel {
@@ -398,7 +399,7 @@ impl NetworkManagerBackend {
         connection: &zbus::Connection,
         iface: &str,
         name: &str,
-        value: Value<'static>,
+        value: Variant<'static>,
     ) -> Result<(), BackendError> {
         let proxy = zbus::Proxy::new(connection, NM_SERVICE, NM_PATH, PROPERTIES_INTERFACE)
             .await
@@ -504,7 +505,7 @@ impl NetworkBackend for NetworkManagerBackend {
             connection,
             NM_INTERFACE,
             "WirelessEnabled",
-            Value::from(enabled),
+            Variant::from(enabled),
         )
         .await
     }
@@ -520,7 +521,7 @@ impl NetworkBackend for NetworkManagerBackend {
         )
         .await
         .map_err(dbus_error)?;
-        let options: HashMap<String, OwnedValue> = HashMap::new();
+        let options: HashMap<String, OwnedVariant> = HashMap::new();
         proxy
             .call::<_, _, ()>("RequestScan", &(options,))
             .await
@@ -708,12 +709,17 @@ impl NetworkBackend for NetworkManagerBackend {
                 connection,
                 NM_INTERFACE,
                 "WirelessEnabled",
-                Value::from(false),
+                Variant::from(false),
             )
             .await?;
             if get_bool(&values, "WwanEnabled").is_some() {
                 if let Err(error) = self
-                    .set_nm_property(connection, NM_INTERFACE, "WwanEnabled", Value::from(false))
+                    .set_nm_property(
+                        connection,
+                        NM_INTERFACE,
+                        "WwanEnabled",
+                        Variant::from(false),
+                    )
                     .await
                 {
                     tracing::debug!(%error, "disabling the mobile radio failed");
@@ -739,7 +745,7 @@ impl NetworkBackend for NetworkManagerBackend {
                         connection,
                         NM_INTERFACE,
                         "WirelessEnabled",
-                        Value::from(saved.wireless_enabled),
+                        Variant::from(saved.wireless_enabled),
                     )
                     .await
                 {
@@ -747,7 +753,12 @@ impl NetworkBackend for NetworkManagerBackend {
                 }
                 if let Some(wwan) = saved.wwan_enabled {
                     if let Err(error) = self
-                        .set_nm_property(connection, NM_INTERFACE, "WwanEnabled", Value::from(wwan))
+                        .set_nm_property(
+                            connection,
+                            NM_INTERFACE,
+                            "WwanEnabled",
+                            Variant::from(wwan),
+                        )
                         .await
                     {
                         tracing::debug!(%error, "restoring the mobile radio failed");
@@ -783,11 +794,12 @@ impl NetworkBackend for NetworkManagerBackend {
         let rule = MatchRule::builder()
             .msg_type(Type::Signal)
             .path_namespace(NM_PATH)
-            .map_err(dbus_error)?
-            .build();
-        let mut signals = zbus::MessageStream::for_match_rule(rule, connection, Some(64))
-            .await
+            .build()
             .map_err(dbus_error)?;
+        let mut signals =
+            zbus::MessageStream::for_match_rule(rule, connection, NonZeroUsize::new(64))
+                .await
+                .map_err(dbus_error)?;
 
         let dbus = zbus::Proxy::new(connection, DBUS_SERVICE, DBUS_PATH, DBUS_INTERFACE)
             .await
@@ -1012,12 +1024,12 @@ fn vpn_model(
     }
 }
 
-fn ip4_address(managed: &ManagedObjects, device: &HashMap<String, OwnedValue>) -> Option<String> {
+fn ip4_address(managed: &ManagedObjects, device: &HashMap<String, OwnedVariant>) -> Option<String> {
     let config = get_object(device, "Ip4Config")?;
     let config = managed.get(&config)?.get(NM_IP4_INTERFACE)?;
 
     if let Some(data) = config.get("AddressData") {
-        if let Ok(entries) = Vec::<HashMap<String, OwnedValue>>::try_from(data.clone()) {
+        if let Ok(entries) = Vec::<HashMap<String, OwnedVariant>>::try_from(data.clone()) {
             if let Some(address) = entries
                 .first()
                 .and_then(|entry| get_string(entry, "address"))
@@ -1185,39 +1197,39 @@ fn dbus_error(error: zbus::Error) -> BackendError {
     BackendError::Unavailable(error.to_string())
 }
 
-fn value<T: Into<Value<'static>>>(value: T) -> OwnedValue {
-    OwnedValue::try_from(value.into()).expect("a plain value converts to OwnedValue")
+fn value<T: Into<Variant<'static>>>(value: T) -> OwnedVariant {
+    OwnedVariant::try_from(value.into()).expect("a plain value converts to OwnedVariant")
 }
 
-fn get_value<'a>(map: &'a HashMap<String, OwnedValue>, key: &str) -> Option<&'a OwnedValue> {
+fn get_value<'a>(map: &'a HashMap<String, OwnedVariant>, key: &str) -> Option<&'a OwnedVariant> {
     map.get(key)
 }
 
-fn get_string(map: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
+fn get_string(map: &HashMap<String, OwnedVariant>, key: &str) -> Option<String> {
     get_value(map, key).and_then(|value| String::try_from(value.clone()).ok())
 }
 
-fn get_u32(map: &HashMap<String, OwnedValue>, key: &str) -> Option<u32> {
+fn get_u32(map: &HashMap<String, OwnedVariant>, key: &str) -> Option<u32> {
     get_value(map, key).and_then(|value| u32::try_from(value.clone()).ok())
 }
 
-fn get_u8(map: &HashMap<String, OwnedValue>, key: &str) -> Option<u8> {
+fn get_u8(map: &HashMap<String, OwnedVariant>, key: &str) -> Option<u8> {
     get_value(map, key).and_then(|value| u8::try_from(value.clone()).ok())
 }
 
-fn get_bool(map: &HashMap<String, OwnedValue>, key: &str) -> Option<bool> {
+fn get_bool(map: &HashMap<String, OwnedVariant>, key: &str) -> Option<bool> {
     get_value(map, key).and_then(|value| bool::try_from(value.clone()).ok())
 }
 
-fn get_object(map: &HashMap<String, OwnedValue>, key: &str) -> Option<OwnedObjectPath> {
+fn get_object(map: &HashMap<String, OwnedVariant>, key: &str) -> Option<OwnedObjectPath> {
     get_value(map, key).and_then(|value| OwnedObjectPath::try_from(value.clone()).ok())
 }
 
-fn get_objects(map: &HashMap<String, OwnedValue>, key: &str) -> Option<Vec<OwnedObjectPath>> {
+fn get_objects(map: &HashMap<String, OwnedVariant>, key: &str) -> Option<Vec<OwnedObjectPath>> {
     get_value(map, key).and_then(|value| Vec::<OwnedObjectPath>::try_from(value.clone()).ok())
 }
 
-fn get_bytes(map: &HashMap<String, OwnedValue>, key: &str) -> Option<Vec<u8>> {
+fn get_bytes(map: &HashMap<String, OwnedVariant>, key: &str) -> Option<Vec<u8>> {
     get_value(map, key).and_then(|value| Vec::<u8>::try_from(value.clone()).ok())
 }
 

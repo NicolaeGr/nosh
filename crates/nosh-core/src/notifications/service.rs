@@ -926,7 +926,7 @@ mod tests {
         let mut hints = HashMap::new();
         hints.insert(
             crate::notifications::model::HINT_RESIDENT.to_string(),
-            zbus::zvariant::OwnedValue::from(true),
+            zbus::OwnedVariant::from(true),
         );
         harness
             .requests

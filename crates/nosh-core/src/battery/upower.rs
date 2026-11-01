@@ -10,7 +10,7 @@ use async_channel::Sender;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use tokio::sync::OnceCell;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+use zbus::{OwnedObjectPath, OwnedVariant};
 
 use crate::battery::backend::{BatteryBackend, BatteryBackendEvent};
 use crate::battery::model::{BatteryProperties, TYPE_BATTERY};
@@ -129,7 +129,7 @@ impl BatteryBackend for UpowerBackend {
                     };
                     let body = message.body();
                     let Ok((interface, _, _)) =
-                        body.deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+                        body.deserialize::<(String, HashMap<String, OwnedVariant>, Vec<String>)>()
                     else {
                         continue;
                     };
@@ -178,7 +178,7 @@ async fn read_properties(
     let proxy = zbus::Proxy::new(connection, UPOWER_SERVICE, path, PROPERTIES_INTERFACE)
         .await
         .map_err(dbus_error)?;
-    let values: HashMap<String, OwnedValue> = proxy
+    let values: HashMap<String, OwnedVariant> = proxy
         .call("GetAll", &(DEVICE_INTERFACE,))
         .await
         .map_err(dbus_error)?;
@@ -186,7 +186,7 @@ async fn read_properties(
     Ok(properties_from_map(&values))
 }
 
-fn properties_from_map(values: &HashMap<String, OwnedValue>) -> BatteryProperties {
+fn properties_from_map(values: &HashMap<String, OwnedVariant>) -> BatteryProperties {
     BatteryProperties {
         kind: get::<u32>(values, "Type").unwrap_or_default(),
         percentage: get::<f64>(values, "Percentage").unwrap_or_default(),
@@ -198,9 +198,9 @@ fn properties_from_map(values: &HashMap<String, OwnedValue>) -> BatteryPropertie
     }
 }
 
-fn get<T>(values: &HashMap<String, OwnedValue>, key: &str) -> Option<T>
+fn get<T>(values: &HashMap<String, OwnedVariant>, key: &str) -> Option<T>
 where
-    for<'a> T: TryFrom<&'a OwnedValue>,
+    for<'a> T: TryFrom<&'a OwnedVariant>,
 {
     values.get(key).and_then(|value| T::try_from(value).ok())
 }
@@ -209,15 +209,15 @@ where
 mod tests {
     use super::*;
 
-    fn map(entries: &[(&str, OwnedValue)]) -> HashMap<String, OwnedValue> {
+    fn map(entries: &[(&str, OwnedVariant)]) -> HashMap<String, OwnedVariant> {
         entries
             .iter()
             .map(|(key, value)| (key.to_string(), value.clone()))
             .collect()
     }
 
-    fn value<T: Into<zbus::zvariant::Value<'static>>>(value: T) -> OwnedValue {
-        OwnedValue::try_from(value.into()).unwrap()
+    fn value<T: Into<zbus::Variant<'static>>>(value: T) -> OwnedVariant {
+        OwnedVariant::try_from(value.into()).unwrap()
     }
 
     #[test]

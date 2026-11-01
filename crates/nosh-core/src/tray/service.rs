@@ -14,8 +14,7 @@ use futures_util::stream::{select_all, SelectAll};
 use futures_util::StreamExt;
 use zbus::proxy::OwnerChangedStream;
 use zbus::proxy::SignalStream;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
-use zbus::{Connection, Proxy};
+use zbus::{Connection, OwnedObjectPath, OwnedVariant, Proxy};
 
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
@@ -894,7 +893,7 @@ async fn handle_menu_message(
         }
         "ItemsPropertiesUpdated" => {
             let Ok((updated, removed)) = message.body().deserialize::<(
-                Vec<(i32, HashMap<String, OwnedValue>)>,
+                Vec<(i32, HashMap<String, OwnedVariant>)>,
                 Vec<(i32, Vec<String>)>,
             )>() else {
                 return;
@@ -943,7 +942,7 @@ async fn read_model(
         .await
         .map_err(unavailable)?;
 
-        let values: HashMap<String, OwnedValue> = properties
+        let values: HashMap<String, OwnedVariant> = properties
             .call("GetAll", &(ITEM_INTERFACE,))
             .await
             .map_err(unavailable)?;
@@ -999,7 +998,7 @@ async fn connection_pid(connection: &Connection, bus_name: &str, timeout: Durati
 
 fn model_from_properties(
     registration: &Registration,
-    values: &HashMap<String, OwnedValue>,
+    values: &HashMap<String, OwnedVariant>,
     icons: &IconCache,
 ) -> TrayItemModel {
     let id = get::<String>(values, "Id").unwrap_or_default();
@@ -1161,7 +1160,7 @@ fn unavailable(error: impl std::fmt::Display) -> BackendError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zbus::zvariant::Value;
+    use zbus::Variant;
 
     fn registration() -> Registration {
         Registration {
@@ -1170,11 +1169,11 @@ mod tests {
         }
     }
 
-    fn value<T: Into<Value<'static>>>(value: T) -> OwnedValue {
-        OwnedValue::try_from(value.into()).unwrap()
+    fn value<T: Into<Variant<'static>>>(value: T) -> OwnedVariant {
+        OwnedVariant::try_from(value.into()).unwrap()
     }
 
-    fn values(entries: &[(&str, OwnedValue)]) -> HashMap<String, OwnedValue> {
+    fn values(entries: &[(&str, OwnedVariant)]) -> HashMap<String, OwnedVariant> {
         entries
             .iter()
             .map(|(key, value)| (key.to_string(), value.clone()))

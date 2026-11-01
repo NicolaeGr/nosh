@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
-use zbus::zvariant::{OwnedValue, Structure, Type, Value};
+use zbus::{OwnedVariant, Structure, Type, Variant};
 
 use crate::error::BackendError;
 use crate::tray::model::{item_from_properties, TrayMenu, TrayMenuItem};
@@ -42,8 +42,8 @@ pub const MENU_TIMEOUT: Duration = Duration::from_secs(2);
 #[derive(Debug, Clone, Deserialize, Type)]
 pub(crate) struct RawLayoutNode {
     pub id: i32,
-    pub properties: HashMap<String, OwnedValue>,
-    pub children: Vec<OwnedValue>,
+    pub properties: HashMap<String, OwnedVariant>,
+    pub children: Vec<OwnedVariant>,
 }
 
 /// A client for one item's `com.canonical.dbusmenu` object.
@@ -112,7 +112,7 @@ impl DbusMenuClient {
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_secs() as u32)
             .unwrap_or(0);
-        let data = Value::from("");
+        let data = Variant::from("");
         let body = (menu_id, event, data, timestamp);
         let call = self.proxy.call_method("Event", &body);
 
@@ -137,11 +137,11 @@ pub(crate) fn menu_from_root(revision: u32, root: RawLayoutNode) -> TrayMenu {
     TrayMenu { revision, items }
 }
 
-fn node_from_variant(value: OwnedValue) -> Option<RawLayoutNode> {
+fn node_from_variant(value: OwnedVariant) -> Option<RawLayoutNode> {
     // A child arrives as a variant that wraps the layout structure. Unwrap the
     // nested variants before reading the fields.
-    let mut value = Value::from(value);
-    while let Value::Value(inner) = value {
+    let mut value = Variant::from(value);
+    while let Variant::Variant(inner) = value {
         value = *inner;
     }
 
@@ -153,8 +153,8 @@ fn node_from_variant(value: OwnedValue) -> Option<RawLayoutNode> {
 
     let id = i32::try_from(fields[0].try_clone().ok()?).ok()?;
     let properties =
-        HashMap::<String, OwnedValue>::try_from(OwnedValue::try_from(&fields[1]).ok()?).ok()?;
-    let children = Vec::<OwnedValue>::try_from(OwnedValue::try_from(&fields[2]).ok()?).ok()?;
+        HashMap::<String, OwnedVariant>::try_from(OwnedVariant::try_from(&fields[1]).ok()?).ok()?;
+    let children = Vec::<OwnedVariant>::try_from(OwnedVariant::try_from(&fields[2]).ok()?).ok()?;
 
     Some(RawLayoutNode {
         id,
@@ -191,11 +191,11 @@ mod tests {
     use super::*;
     use crate::tray::model::{TrayMenuItemKind, TrayToggleState, TrayToggleType};
 
-    fn value<T: Into<Value<'static>>>(value: T) -> OwnedValue {
-        OwnedValue::try_from(value.into()).unwrap()
+    fn value<T: Into<Variant<'static>>>(value: T) -> OwnedVariant {
+        OwnedVariant::try_from(value.into()).unwrap()
     }
 
-    fn properties(entries: &[(&str, OwnedValue)]) -> HashMap<String, OwnedValue> {
+    fn properties(entries: &[(&str, OwnedVariant)]) -> HashMap<String, OwnedVariant> {
         entries
             .iter()
             .map(|(key, value)| (key.to_string(), value.clone()))
@@ -332,23 +332,24 @@ mod tests {
 
     #[test]
     fn a_layout_reply_with_nested_children_deserializes() {
-        use zbus::zvariant::{serialized::Context, to_bytes, LE};
+        use zbus::wire::{serialized::Context, to_bytes, LE};
 
         let leaf = (
             1i32,
             properties(&[("label", value("Quit"))]),
-            Vec::<OwnedValue>::new(),
+            Vec::<OwnedVariant>::new(),
         );
         let leaf_variant =
-            OwnedValue::try_from(Value::new(Value::Structure(Structure::from(leaf)))).unwrap();
+            OwnedVariant::try_from(Variant::new(Variant::Structure(Structure::from(leaf))))
+                .unwrap();
         let root = (
             0i32,
-            HashMap::<String, OwnedValue>::new(),
+            HashMap::<String, OwnedVariant>::new(),
             vec![leaf_variant],
         );
 
         let body = (12u32, root);
-        let bytes = to_bytes(Context::new_dbus(LE, 0), &body).unwrap();
+        let bytes = to_bytes(Context::new(LE, 0), &body).unwrap();
         let (decoded, _): ((u32, RawLayoutNode), usize) = bytes.deserialize().unwrap();
         let (revision, root) = decoded;
 

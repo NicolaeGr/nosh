@@ -7,7 +7,7 @@
 use async_channel::Sender;
 use futures_util::StreamExt;
 use tokio::sync::OnceCell;
-use zbus::zvariant::OwnedObjectPath;
+use zbus::OwnedObjectPath;
 
 use crate::error::BackendError;
 use crate::event::SessionLockEvent;

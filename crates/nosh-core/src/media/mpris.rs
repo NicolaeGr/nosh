@@ -6,6 +6,7 @@
 //! the shell starts before any music app does.
 
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use async_channel::Sender;
@@ -14,8 +15,7 @@ use futures_util::TryStreamExt;
 use tokio::sync::OnceCell;
 use zbus::message::Type;
 use zbus::names::OwnedBusName;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
-use zbus::{Connection, MatchRule, MessageStream, Proxy};
+use zbus::{Connection, MatchRule, MessageStream, OwnedObjectPath, OwnedVariant, Proxy, Variant};
 
 use crate::error::BackendError;
 use crate::media::backend::{MediaBackend, MediaBackendEvent};
@@ -125,34 +125,33 @@ impl MediaBackend for MprisBackend {
         let name_rule = MatchRule::builder()
             .msg_type(Type::Signal)
             .interface("org.freedesktop.DBus")
-            .map_err(dbus_error)?
             .member("NameOwnerChanged")
-            .map_err(dbus_error)?
-            .build();
+            .build()
+            .map_err(dbus_error)?;
         let property_rule = MatchRule::builder()
             .msg_type(Type::Signal)
             .interface(PROPERTIES_INTERFACE)
-            .map_err(dbus_error)?
             .member("PropertiesChanged")
-            .map_err(dbus_error)?
-            .build();
+            .build()
+            .map_err(dbus_error)?;
         let seek_rule = MatchRule::builder()
             .msg_type(Type::Signal)
             .interface(PLAYER_INTERFACE)
-            .map_err(dbus_error)?
             .member("Seeked")
-            .map_err(dbus_error)?
-            .build();
+            .build()
+            .map_err(dbus_error)?;
 
-        let mut names = MessageStream::for_match_rule(name_rule, connection, Some(64))
+        let mut names = MessageStream::for_match_rule(name_rule, connection, NonZeroUsize::new(64))
             .await
             .map_err(dbus_error)?;
-        let mut properties = MessageStream::for_match_rule(property_rule, connection, Some(256))
-            .await
-            .map_err(dbus_error)?;
-        let mut seeked = MessageStream::for_match_rule(seek_rule, connection, Some(64))
-            .await
-            .map_err(dbus_error)?;
+        let mut properties =
+            MessageStream::for_match_rule(property_rule, connection, NonZeroUsize::new(256))
+                .await
+                .map_err(dbus_error)?;
+        let mut seeked =
+            MessageStream::for_match_rule(seek_rule, connection, NonZeroUsize::new(64))
+                .await
+                .map_err(dbus_error)?;
 
         loop {
             tokio::select! {
@@ -177,7 +176,7 @@ impl MediaBackend for MprisBackend {
                     }
                     let Ok((interface, _, _)) = message
                         .body()
-                        .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+                        .deserialize::<(String, HashMap<String, OwnedVariant>, Vec<String>)>()
                     else {
                         continue;
                     };
@@ -256,7 +255,7 @@ impl MediaBackend for MprisBackend {
                 &(
                     PLAYER_INTERFACE,
                     "Volume",
-                    Value::from(volume.clamp(0.0, 1.0)),
+                    Variant::from(volume.clamp(0.0, 1.0)),
                 ),
             )
             .await
@@ -276,7 +275,7 @@ async fn get_all(
     connection: &Connection,
     player: &str,
     interface: &str,
-) -> Result<HashMap<String, OwnedValue>, BackendError> {
+) -> Result<HashMap<String, OwnedVariant>, BackendError> {
     let proxy = Proxy::new_owned(
         connection.clone(),
         player.to_string(),
@@ -294,12 +293,12 @@ async fn get_all(
 /// Turns the MPRIS property maps into the shared model.
 pub fn model_from(
     player: &str,
-    root: &HashMap<String, OwnedValue>,
-    values: &HashMap<String, OwnedValue>,
+    root: &HashMap<String, OwnedVariant>,
+    values: &HashMap<String, OwnedVariant>,
 ) -> MediaModel {
     let metadata = values
         .get("Metadata")
-        .and_then(|value| HashMap::<String, OwnedValue>::try_from(value.clone()).ok())
+        .and_then(|value| HashMap::<String, OwnedVariant>::try_from(value.clone()).ok())
         .unwrap_or_default();
 
     MediaModel {
@@ -329,7 +328,7 @@ pub fn model_from(
     }
 }
 
-fn string(values: &HashMap<String, OwnedValue>, key: &str) -> String {
+fn string(values: &HashMap<String, OwnedVariant>, key: &str) -> String {
     values
         .get(key)
         .and_then(|value| String::try_from(value.clone()).ok())
@@ -337,7 +336,7 @@ fn string(values: &HashMap<String, OwnedValue>, key: &str) -> String {
 }
 
 /// `xesam:artist` is a list, but some players send a single string anyway.
-fn metadata_string(values: &HashMap<String, OwnedValue>, key: &str) -> String {
+fn metadata_string(values: &HashMap<String, OwnedVariant>, key: &str) -> String {
     let Some(value) = values.get(key).cloned() else {
         return String::new();
     };
@@ -353,7 +352,7 @@ fn metadata_string(values: &HashMap<String, OwnedValue>, key: &str) -> String {
     String::new()
 }
 
-fn duration(values: &HashMap<String, OwnedValue>, key: &str) -> Duration {
+fn duration(values: &HashMap<String, OwnedVariant>, key: &str) -> Duration {
     let micros = values
         .get(key)
         .and_then(|value| i64::try_from(value.clone()).ok())
@@ -361,12 +360,12 @@ fn duration(values: &HashMap<String, OwnedValue>, key: &str) -> Duration {
     Duration::from_micros(micros.max(0) as u64)
 }
 
-fn metadata_duration(values: &HashMap<String, OwnedValue>, key: &str) -> Option<Duration> {
+fn metadata_duration(values: &HashMap<String, OwnedVariant>, key: &str) -> Option<Duration> {
     let micros = i64::try_from(values.get(key).cloned()?).ok()?;
     (micros > 0).then(|| Duration::from_micros(micros as u64))
 }
 
-fn boolean(values: &HashMap<String, OwnedValue>, key: &str) -> bool {
+fn boolean(values: &HashMap<String, OwnedVariant>, key: &str) -> bool {
     values
         .get(key)
         .and_then(|value| bool::try_from(value.clone()).ok())
@@ -388,11 +387,11 @@ fn dbus_error(error: zbus::Error) -> BackendError {
 mod tests {
     use super::*;
 
-    fn value<T: Into<Value<'static>>>(value: T) -> OwnedValue {
-        OwnedValue::try_from(value.into()).unwrap()
+    fn value<T: Into<Variant<'static>>>(value: T) -> OwnedVariant {
+        OwnedVariant::try_from(value.into()).unwrap()
     }
 
-    fn player_values() -> HashMap<String, OwnedValue> {
+    fn player_values() -> HashMap<String, OwnedVariant> {
         let metadata = HashMap::from([
             ("xesam:title".to_string(), value("Midnight City")),
             (
@@ -404,7 +403,7 @@ mod tests {
             ("mpris:length".to_string(), value(238_000_000i64)),
             (
                 "mpris:trackid".to_string(),
-                value(zbus::zvariant::ObjectPath::try_from("/track/1").unwrap()),
+                value(zbus::ObjectPath::try_from("/track/1").unwrap()),
             ),
         ]);
 

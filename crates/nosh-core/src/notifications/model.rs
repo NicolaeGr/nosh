@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use zbus::zvariant::OwnedValue;
+use zbus::OwnedVariant;
 
 use crate::monitors::Corner;
 use crate::monitors::MonitorPolicy;
@@ -62,7 +62,7 @@ pub struct Notification {
     pub summary: String,
     pub body: String,
     pub actions: Vec<NotificationAction>,
-    pub hints: HashMap<String, OwnedValue>,
+    pub hints: HashMap<String, OwnedVariant>,
     /// Milliseconds. `-1` means the server default.
     pub expire_timeout: i32,
     /// Unix seconds.
@@ -177,7 +177,7 @@ impl Urgency {
         }
     }
 
-    pub fn from_hints(hints: &HashMap<String, OwnedValue>) -> Self {
+    pub fn from_hints(hints: &HashMap<String, OwnedVariant>) -> Self {
         match hint_u8(hints, HINT_URGENCY) {
             Some(0) => Self::Low,
             Some(2) => Self::Critical,
@@ -299,11 +299,11 @@ pub fn sanitize_body(value: &str) -> String {
     out
 }
 
-pub fn hint_bool(hints: &HashMap<String, OwnedValue>, key: &str) -> Option<bool> {
+pub fn hint_bool(hints: &HashMap<String, OwnedVariant>, key: &str) -> Option<bool> {
     hints.get(key).and_then(|value| bool::try_from(value).ok())
 }
 
-pub fn hint_u8(hints: &HashMap<String, OwnedValue>, key: &str) -> Option<u8> {
+pub fn hint_u8(hints: &HashMap<String, OwnedVariant>, key: &str) -> Option<u8> {
     let value = hints.get(key)?;
     if let Ok(value) = u8::try_from(value) {
         return Some(value);
@@ -323,7 +323,7 @@ pub fn hint_u8(hints: &HashMap<String, OwnedValue>, key: &str) -> Option<u8> {
     None
 }
 
-pub fn hint_i32(hints: &HashMap<String, OwnedValue>, key: &str) -> Option<i32> {
+pub fn hint_i32(hints: &HashMap<String, OwnedVariant>, key: &str) -> Option<i32> {
     let value = hints.get(key)?;
     if let Ok(value) = i32::try_from(value) {
         return Some(value);
@@ -340,7 +340,7 @@ pub fn hint_i32(hints: &HashMap<String, OwnedValue>, key: &str) -> Option<i32> {
     None
 }
 
-pub fn hint_string(hints: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
+pub fn hint_string(hints: &HashMap<String, OwnedVariant>, key: &str) -> Option<String> {
     let value = hints.get(key)?;
     String::try_from(value.clone()).ok()
 }
@@ -348,10 +348,10 @@ pub fn hint_string(hints: &HashMap<String, OwnedValue>, key: &str) -> Option<Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zbus::zvariant::Value;
+    use zbus::Variant;
 
-    fn value<T: Into<Value<'static>>>(value: T) -> OwnedValue {
-        OwnedValue::try_from(value.into()).unwrap()
+    fn value<T: Into<Variant<'static>>>(value: T) -> OwnedVariant {
+        OwnedVariant::try_from(value.into()).unwrap()
     }
 
     #[test]

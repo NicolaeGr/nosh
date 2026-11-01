@@ -9,7 +9,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use zbus::zvariant::{OwnedValue, Value};
+use zbus::{OwnedVariant, Variant};
 
 use crate::error::NotificationError;
 use crate::notifications::model::{Notification, NotificationAction, NotificationState};
@@ -145,41 +145,41 @@ pub fn save(path: &Path, store: &NotificationStore) -> Result<(), NotificationEr
     Ok(())
 }
 
-fn hints_to_json(hints: &HashMap<String, OwnedValue>) -> HashMap<String, Json> {
+fn hints_to_json(hints: &HashMap<String, OwnedVariant>) -> HashMap<String, Json> {
     hints
         .iter()
         .map(|(key, value)| (key.clone(), hint_to_json(value)))
         .collect()
 }
 
-fn hint_to_json(value: &OwnedValue) -> Json {
+fn hint_to_json(value: &OwnedVariant) -> Json {
     match &**value {
-        Value::Bool(value) => Json::Bool(*value),
-        Value::U8(value) => Json::from(*value),
-        Value::I16(value) => Json::from(*value),
-        Value::U16(value) => Json::from(*value),
-        Value::I32(value) => Json::from(*value),
-        Value::U32(value) => Json::from(*value),
-        Value::I64(value) => Json::from(*value),
-        Value::U64(value) => Json::from(*value),
-        Value::F64(value) => Json::from(*value),
-        Value::Str(value) => Json::String(value.as_str().to_string()),
-        Value::Signature(value) => Json::String(value.to_string()),
-        Value::ObjectPath(value) => Json::String(value.as_str().to_string()),
-        Value::Array(_) => {
+        Variant::Bool(value) => Json::Bool(*value),
+        Variant::U8(value) => Json::from(*value),
+        Variant::I16(value) => Json::from(*value),
+        Variant::U16(value) => Json::from(*value),
+        Variant::I32(value) => Json::from(*value),
+        Variant::U32(value) => Json::from(*value),
+        Variant::I64(value) => Json::from(*value),
+        Variant::U64(value) => Json::from(*value),
+        Variant::F64(value) => Json::from(*value),
+        Variant::Str(value) => Json::String(value.as_str().to_string()),
+        Variant::Signature(value) => Json::String(value.to_string()),
+        Variant::ObjectPath(value) => Json::String(value.as_str().to_string()),
+        Variant::Array(_) => {
             if let Ok(values) = Vec::<String>::try_from(value.clone()) {
                 return Json::Array(values.into_iter().map(Json::String).collect());
             }
             if let Ok(values) = Vec::<u8>::try_from(value.clone()) {
                 return Json::Array(values.into_iter().map(Json::from).collect());
             }
-            if let Ok(values) = Vec::<OwnedValue>::try_from(value.clone()) {
+            if let Ok(values) = Vec::<OwnedVariant>::try_from(value.clone()) {
                 return Json::Array(values.iter().map(hint_to_json).collect());
             }
             Json::String(format!("{value:?}"))
         }
-        Value::Dict(_) => {
-            if let Ok(values) = HashMap::<String, OwnedValue>::try_from(value.clone()) {
+        Variant::Dict(_) => {
+            if let Ok(values) = HashMap::<String, OwnedVariant>::try_from(value.clone()) {
                 let mut object = serde_json::Map::new();
                 for (key, entry) in values {
                     object.insert(key, hint_to_json(&entry));
@@ -193,23 +193,23 @@ fn hint_to_json(value: &OwnedValue) -> Json {
     }
 }
 
-fn json_to_hints(hints: HashMap<String, Json>) -> HashMap<String, OwnedValue> {
+fn json_to_hints(hints: HashMap<String, Json>) -> HashMap<String, OwnedVariant> {
     hints
         .into_iter()
         .filter_map(|(key, value)| json_to_hint(&value).map(|value| (key, value)))
         .collect()
 }
 
-fn json_to_hint(value: &Json) -> Option<OwnedValue> {
+fn json_to_hint(value: &Json) -> Option<OwnedVariant> {
     match value {
-        Json::Bool(value) => Some(OwnedValue::from(*value)),
+        Json::Bool(value) => Some(OwnedVariant::from(*value)),
         Json::Number(value) => {
             if let Some(value) = value.as_i64() {
-                Some(OwnedValue::from(value))
+                Some(OwnedVariant::from(value))
             } else if let Some(value) = value.as_u64() {
-                Some(OwnedValue::from(value))
+                Some(OwnedVariant::from(value))
             } else {
-                value.as_f64().map(OwnedValue::from)
+                value.as_f64().map(OwnedVariant::from)
             }
         }
         Json::String(value) => owned_string(value.clone()),
@@ -219,10 +219,10 @@ fn json_to_hint(value: &Json) -> Option<OwnedValue> {
                     .iter()
                     .filter_map(|value| value.as_str().map(str::to_string))
                     .collect();
-                return OwnedValue::try_from(Value::from(strings)).ok();
+                return OwnedVariant::try_from(Variant::from(strings)).ok();
             }
-            let owned: Vec<OwnedValue> = values.iter().filter_map(json_to_hint).collect();
-            OwnedValue::try_from(Value::from(owned)).ok()
+            let owned: Vec<OwnedVariant> = values.iter().filter_map(json_to_hint).collect();
+            OwnedVariant::try_from(Variant::from(owned)).ok()
         }
         Json::Object(values) => {
             let mut object = HashMap::new();
@@ -231,14 +231,14 @@ fn json_to_hint(value: &Json) -> Option<OwnedValue> {
                     object.insert(key.clone(), value);
                 }
             }
-            OwnedValue::try_from(Value::from(object)).ok()
+            OwnedVariant::try_from(Variant::from(object)).ok()
         }
         Json::Null => None,
     }
 }
 
-fn owned_string(value: String) -> Option<OwnedValue> {
-    OwnedValue::try_from(Value::from(value)).ok()
+fn owned_string(value: String) -> Option<OwnedVariant> {
+    OwnedVariant::try_from(Variant::from(value)).ok()
 }
 
 /// Restores a store from persisted state. Transient entries are skipped.
@@ -260,7 +260,7 @@ mod tests {
 
     fn notification(id: u32, transient: bool) -> Notification {
         let mut hints = HashMap::new();
-        hints.insert(HINT_URGENCY.to_string(), OwnedValue::from(2u8));
+        hints.insert(HINT_URGENCY.to_string(), OwnedVariant::from(2u8));
         hints.insert(
             HINT_IMAGE_PATH.to_string(),
             owned_string("/tmp/notification.png".to_string()).unwrap(),
@@ -269,9 +269,9 @@ mod tests {
             "desktop-entry".to_string(),
             owned_string("app".to_string()).unwrap(),
         );
-        hints.insert("unknown-flag".to_string(), OwnedValue::from(true));
+        hints.insert("unknown-flag".to_string(), OwnedVariant::from(true));
         if transient {
-            hints.insert("transient".to_string(), OwnedValue::from(true));
+            hints.insert("transient".to_string(), OwnedVariant::from(true));
         }
 
         Notification {
@@ -382,13 +382,13 @@ mod tests {
         let mut hints = HashMap::new();
         hints.insert(
             "strings".to_string(),
-            OwnedValue::try_from(Value::from(vec!["a".to_string(), "b".to_string()])).unwrap(),
+            OwnedVariant::try_from(Variant::from(vec!["a".to_string(), "b".to_string()])).unwrap(),
         );
         hints.insert(
             "map".to_string(),
-            OwnedValue::try_from(Value::from(HashMap::from([(
+            OwnedVariant::try_from(Variant::from(HashMap::from([(
                 "key".to_string(),
-                OwnedValue::from(3u8),
+                OwnedVariant::from(3u8),
             )])))
             .unwrap(),
         );

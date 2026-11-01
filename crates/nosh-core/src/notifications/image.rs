@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
-use zbus::zvariant::{OwnedValue, Value};
+use zbus::{OwnedVariant, Variant};
 
 use crate::notifications::model::{HINT_IMAGE_DATA, HINT_IMAGE_PATH};
 
@@ -22,7 +22,7 @@ type RawImageData = (i32, i32, i32, bool, i32, i32, Vec<u8>);
 /// Replaces `image-data` and the deprecated `image_data` hint with an
 /// `image-path`. Returns the cached path when one was written.
 pub fn normalize_image_hints(
-    hints: &mut HashMap<String, OwnedValue>,
+    hints: &mut HashMap<String, OwnedVariant>,
     cache_dir: &Path,
 ) -> Option<PathBuf> {
     let raw = hints
@@ -35,9 +35,10 @@ pub fn normalize_image_hints(
         Ok(Some(path)) => {
             hints.insert(
                 HINT_IMAGE_PATH.to_string(),
-                OwnedValue::try_from(Value::from(path.to_string_lossy().into_owned()))
+                OwnedVariant::try_from(Variant::from(path.to_string_lossy().into_owned()))
                     .unwrap_or_else(|_| {
-                        OwnedValue::try_from(Value::from(String::new())).expect("a string is valid")
+                        OwnedVariant::try_from(Variant::from(String::new()))
+                            .expect("a string is valid")
                     }),
             );
             Some(path)
@@ -52,7 +53,10 @@ pub fn normalize_image_hints(
 
 /// Converts one `image-data` value to a cached PNG. Returns `Ok(None)` when the
 /// value is not a well-formed image structure.
-pub fn cache_image_value(value: &OwnedValue, cache_dir: &Path) -> Result<Option<PathBuf>, String> {
+pub fn cache_image_value(
+    value: &OwnedVariant,
+    cache_dir: &Path,
+) -> Result<Option<PathBuf>, String> {
     let (width, height, rowstride, _has_alpha, bits_per_sample, channels, data) =
         RawImageData::try_from(value.clone()).map_err(|error| error.to_string())?;
 
@@ -145,7 +149,7 @@ mod tests {
         bits: i32,
         channels: i32,
         data: Vec<u8>,
-    ) -> OwnedValue {
+    ) -> OwnedVariant {
         let structure: (i32, i32, i32, bool, i32, i32, Vec<u8>) = (
             width,
             height,
@@ -155,7 +159,7 @@ mod tests {
             channels,
             data,
         );
-        OwnedValue::try_from(Value::from(structure)).unwrap()
+        OwnedVariant::try_from(Variant::from(structure)).unwrap()
     }
 
     #[test]
@@ -241,8 +245,8 @@ mod tests {
     fn the_deprecated_hints_are_removed() {
         let directory = tempfile::tempdir().unwrap();
         let mut hints = HashMap::new();
-        hints.insert("image_data".to_string(), OwnedValue::from(1u8));
-        hints.insert("icon_data".to_string(), OwnedValue::from(2u8));
+        hints.insert("image_data".to_string(), OwnedVariant::from(1u8));
+        hints.insert("icon_data".to_string(), OwnedVariant::from(2u8));
 
         assert!(normalize_image_hints(&mut hints, directory.path()).is_none());
         assert!(hints.is_empty());

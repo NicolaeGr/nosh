@@ -14,7 +14,7 @@ use nosh_core::notifications::{NOTIFICATION_INTERFACE, NOTIFICATION_PATH, NOTIFI
 use nosh_core::{
     Command, Event, NoshPaths, NotificationEvent, NotificationService, NotificationServiceConfig,
 };
-use zbus::zvariant::OwnedValue;
+use zbus::OwnedVariant;
 
 #[tokio::test]
 #[ignore = "requires a private session bus"]
@@ -79,7 +79,7 @@ async fn the_daemon_answers_the_freedesktop_interface() {
                 "hello from the daemon test",
                 "<b>body</b>",
                 vec!["default".to_string(), "Open".to_string()],
-                HashMap::<String, OwnedValue>::new(),
+                HashMap::<String, OwnedVariant>::new(),
                 0i32,
             ),
         )

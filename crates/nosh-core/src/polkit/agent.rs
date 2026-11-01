@@ -12,8 +12,7 @@ use async_trait::async_trait;
 use tokio::sync::OnceCell;
 use zbus::fdo::DBusProxy;
 use zbus::message::Header;
-use zbus::zvariant::{OwnedValue, Value};
-use zbus::{interface, Proxy};
+use zbus::{interface, OwnedVariant, Proxy, Variant};
 
 use crate::auth::model::Secret;
 use crate::error::BackendError;
@@ -91,7 +90,7 @@ impl PolkitBackend for PolkitAgentBackend {
             )
             .await
             .map_err(dbus_error)?;
-        if !exported {
+        if exported.is_some() {
             return Err(BackendError::Unavailable(
                 "the polkit agent object is already exported".to_string(),
             ));
@@ -131,7 +130,7 @@ impl PolkitBackend for PolkitAgentBackend {
 /// A session subject covers every process in the user's session, which is where
 /// `systemctl`, `pkexec`, and graphical applications live. When the session id
 /// is missing the process subject is the only fallback.
-fn subject() -> (String, HashMap<String, OwnedValue>) {
+fn subject() -> (String, HashMap<String, OwnedVariant>) {
     let mut details = HashMap::new();
     if let Ok(session) = std::env::var("XDG_SESSION_ID") {
         if !session.is_empty() {
@@ -140,12 +139,12 @@ fn subject() -> (String, HashMap<String, OwnedValue>) {
         }
     }
 
-    details.insert("pid".to_string(), OwnedValue::from(std::process::id()));
+    details.insert("pid".to_string(), OwnedVariant::from(std::process::id()));
     ("unix-process".to_string(), details)
 }
 
-fn string_value(value: String) -> OwnedValue {
-    OwnedValue::try_from(Value::from(value)).expect("a string is a valid variant")
+fn string_value(value: String) -> OwnedVariant {
+    OwnedVariant::try_from(Variant::from(value)).expect("a string is a valid variant")
 }
 
 struct AuthenticationAgentInterface {
@@ -164,7 +163,7 @@ impl AuthenticationAgentInterface {
         icon_name: String,
         details: HashMap<String, String>,
         cookie: String,
-        identities: Vec<(String, HashMap<String, OwnedValue>)>,
+        identities: Vec<(String, HashMap<String, OwnedVariant>)>,
         #[zbus(header)] header: Header<'_>,
     ) {
         // Only polkitd may ask for a password. Without this check any process

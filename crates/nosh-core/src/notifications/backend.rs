@@ -16,8 +16,7 @@ use tokio::sync::RwLock;
 use zbus::fdo::{DBusProxy, RequestNameFlags, RequestNameReply};
 use zbus::names::WellKnownName;
 use zbus::object_server::SignalEmitter;
-use zbus::zvariant::OwnedValue;
-use zbus::{interface, Connection, Proxy};
+use zbus::{interface, Connection, OwnedVariant, Proxy};
 
 use crate::error::BackendError;
 use crate::notifications::model::{
@@ -39,7 +38,7 @@ pub struct NotifyRequest {
     pub summary: String,
     pub body: String,
     pub actions: Vec<String>,
-    pub hints: HashMap<String, OwnedValue>,
+    pub hints: HashMap<String, OwnedVariant>,
     pub expire_timeout: i32,
     pub reply: oneshot::Sender<u32>,
 }
@@ -168,7 +167,7 @@ impl NotificationBackend for OwnDaemonBackend {
         let dbus = DBusProxy::new(&connection).await.map_err(unavailable)?;
         let name = WellKnownName::try_from(NOTIFICATION_SERVICE).map_err(invalid_name)?;
         let reply = dbus
-            .request_name(name, RequestNameFlags::DoNotQueue.into())
+            .request_name(name, RequestNameFlags::DO_NOT_QUEUE)
             .await
             .map_err(unavailable)?;
 
@@ -186,11 +185,12 @@ impl NotificationBackend for OwnDaemonBackend {
             requests: requests_tx,
             capabilities: Arc::clone(&self.capabilities),
         };
-        if !connection
+        if connection
             .object_server()
             .at(NOTIFICATION_PATH, interface)
             .await
             .map_err(unavailable)?
+            .is_some()
         {
             return Err(BackendError::Unavailable(
                 "the notification object path is already exported".to_string(),
@@ -364,7 +364,7 @@ impl NotificationsInterface {
         summary: String,
         body: String,
         actions: Vec<String>,
-        hints: HashMap<String, OwnedValue>,
+        hints: HashMap<String, OwnedVariant>,
         expire_timeout: i32,
     ) -> u32 {
         let (reply, response) = oneshot::channel();

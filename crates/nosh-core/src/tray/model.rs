@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use zbus::zvariant::OwnedValue;
+use zbus::OwnedVariant;
 
 /// The `Status` property of a StatusNotifierItem.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -201,7 +201,7 @@ impl TrayMenu {
 
     /// Applies an `ItemsPropertiesUpdated` payload and reports whether a
     /// rendered field changed.
-    pub fn apply_updates(&mut self, updates: &[(i32, HashMap<String, OwnedValue>)]) -> bool {
+    pub fn apply_updates(&mut self, updates: &[(i32, HashMap<String, OwnedVariant>)]) -> bool {
         let mut changed = false;
         for (id, properties) in updates {
             if let Some(item) = self.find_mut(*id) {
@@ -251,7 +251,7 @@ fn find_item_mut(items: &mut [TrayMenuItem], id: i32) -> Option<&mut TrayMenuIte
 /// Builds one menu entry from the raw DBusMenu property map.
 pub(crate) fn item_from_properties(
     id: i32,
-    properties: &HashMap<String, OwnedValue>,
+    properties: &HashMap<String, OwnedVariant>,
     children: Vec<TrayMenuItem>,
 ) -> TrayMenuItem {
     let mut item = TrayMenuItem {
@@ -274,7 +274,7 @@ pub(crate) fn item_from_properties(
 /// field changed.
 pub(crate) fn apply_properties(
     item: &mut TrayMenuItem,
-    properties: &HashMap<String, OwnedValue>,
+    properties: &HashMap<String, OwnedVariant>,
 ) -> bool {
     let before = item.clone();
 
@@ -314,19 +314,19 @@ pub(crate) fn apply_properties(
     *item != before
 }
 
-fn get_string(values: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
+fn get_string(values: &HashMap<String, OwnedVariant>, key: &str) -> Option<String> {
     get::<String>(values, key)
 }
 
-fn get_bool(values: &HashMap<String, OwnedValue>, key: &str) -> Option<bool> {
+fn get_bool(values: &HashMap<String, OwnedVariant>, key: &str) -> Option<bool> {
     get::<bool>(values, key)
 }
 
-fn get_i32(values: &HashMap<String, OwnedValue>, key: &str) -> Option<i32> {
+fn get_i32(values: &HashMap<String, OwnedVariant>, key: &str) -> Option<i32> {
     get::<i32>(values, key)
 }
 
-fn get_strings(values: &HashMap<String, OwnedValue>, key: &str) -> Option<Vec<String>> {
+fn get_strings(values: &HashMap<String, OwnedVariant>, key: &str) -> Option<Vec<String>> {
     get::<Vec<String>>(values, key)
 }
 
@@ -352,9 +352,9 @@ fn remove_properties(item: &mut TrayMenuItem, properties: &[String]) -> bool {
     *item != before
 }
 
-pub(crate) fn get<T>(values: &HashMap<String, OwnedValue>, key: &str) -> Option<T>
+pub(crate) fn get<T>(values: &HashMap<String, OwnedVariant>, key: &str) -> Option<T>
 where
-    T: TryFrom<OwnedValue>,
+    T: TryFrom<OwnedVariant>,
 {
     let value = values.get(key)?.try_clone().ok()?;
     T::try_from(value).ok()

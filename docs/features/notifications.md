@@ -149,7 +149,7 @@ pub struct Notification {
     pub summary: String,
     pub body: String,
     pub actions: Vec<NotificationAction>,
-    pub hints: HashMap<String, zvariant::OwnedValue>,
+    pub hints: HashMap<String, zbus::OwnedVariant>,
     pub expire_timeout: i32, // milliseconds, -1 means server default
     pub time: i64,           // Unix seconds
     pub state: NotificationState,

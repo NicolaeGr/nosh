@@ -116,7 +116,7 @@ impl WatcherBackend for OwnWatcherBackend {
         let dbus = DBusProxy::new(&connection).await.map_err(unavailable)?;
         let name = WellKnownName::try_from(WATCHER_SERVICE).map_err(invalid_name)?;
         let reply = dbus
-            .request_name(name, RequestNameFlags::DoNotQueue.into())
+            .request_name(name, RequestNameFlags::DO_NOT_QUEUE)
             .await
             .map_err(unavailable)?;
 
@@ -136,11 +136,12 @@ impl WatcherBackend for OwnWatcherBackend {
             changes: changes_tx.clone(),
         };
 
-        if !connection
+        if connection
             .object_server()
             .at(WATCHER_PATH, interface)
             .await
             .map_err(unavailable)?
+            .is_some()
         {
             return Err(BackendError::Unavailable(
                 "the tray watcher path is already exported".to_string(),

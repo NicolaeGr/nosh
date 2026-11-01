@@ -9,7 +9,7 @@ use async_channel::Sender;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use tokio::sync::OnceCell;
-use zbus::zvariant::OwnedValue;
+use zbus::OwnedVariant;
 
 use crate::error::BackendError;
 use crate::power_profiles::backend::{PowerProfilesBackend, PowerProfilesBackendEvent};
@@ -45,7 +45,7 @@ impl DbusPowerProfilesBackend {
     async fn properties(
         &self,
         connection: &zbus::Connection,
-    ) -> Result<HashMap<String, OwnedValue>, BackendError> {
+    ) -> Result<HashMap<String, OwnedVariant>, BackendError> {
         let proxy = zbus::Proxy::new(
             connection,
             POWER_PROFILES_SERVICE,
@@ -97,7 +97,7 @@ impl PowerProfilesBackend for DbusPowerProfilesBackend {
         )
         .await
         .map_err(dbus_error)?;
-        let value = zbus::zvariant::Value::from(profile.as_str());
+        let value = zbus::Variant::from(profile.as_str());
         let result = properties
             .call::<_, _, ()>("Set", &(POWER_PROFILES_INTERFACE, "ActiveProfile", value))
             .await;
@@ -151,7 +151,7 @@ impl PowerProfilesBackend for DbusPowerProfilesBackend {
                     };
                     let Ok((interface, _, _)) = message
                         .body()
-                        .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
+                        .deserialize::<(String, HashMap<String, OwnedVariant>, Vec<String>)>()
                     else {
                         continue;
                     };
@@ -210,7 +210,7 @@ fn missing_property_setter(error: &zbus::Error) -> bool {
     )
 }
 
-fn model_from_map(values: &HashMap<String, OwnedValue>) -> PowerProfilesModel {
+fn model_from_map(values: &HashMap<String, OwnedVariant>) -> PowerProfilesModel {
     let active = get_string(values, "ActiveProfile")
         .map(|value| PowerProfile::parse(&value))
         .unwrap_or_default();
@@ -224,11 +224,11 @@ fn model_from_map(values: &HashMap<String, OwnedValue>) -> PowerProfilesModel {
     }
 }
 
-fn profiles_from_map(values: &HashMap<String, OwnedValue>) -> Vec<PowerProfile> {
+fn profiles_from_map(values: &HashMap<String, OwnedVariant>) -> Vec<PowerProfile> {
     let Some(value) = values.get("Profiles") else {
         return default_profiles();
     };
-    let Ok(entries) = Vec::<HashMap<String, OwnedValue>>::try_from(value.clone()) else {
+    let Ok(entries) = Vec::<HashMap<String, OwnedVariant>>::try_from(value.clone()) else {
         return default_profiles();
     };
 
@@ -243,7 +243,7 @@ fn profiles_from_map(values: &HashMap<String, OwnedValue>) -> Vec<PowerProfile> 
     }
 }
 
-fn get_string(values: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
+fn get_string(values: &HashMap<String, OwnedVariant>, key: &str) -> Option<String> {
     values
         .get(key)
         .and_then(|value| String::try_from(value.clone()).ok())
@@ -251,7 +251,7 @@ fn get_string(values: &HashMap<String, OwnedValue>, key: &str) -> Option<String>
 
 /// The entry key is `Profile` in current daemons. Accept the lower-case name
 /// too so older dictionaries parse.
-fn profile_name(entry: &HashMap<String, OwnedValue>) -> Option<String> {
+fn profile_name(entry: &HashMap<String, OwnedVariant>) -> Option<String> {
     get_string(entry, "Profile").or_else(|| get_string(entry, "profile"))
 }
 
@@ -259,18 +259,18 @@ fn profile_name(entry: &HashMap<String, OwnedValue>) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn map(entries: &[(&str, OwnedValue)]) -> HashMap<String, OwnedValue> {
+    fn map(entries: &[(&str, OwnedVariant)]) -> HashMap<String, OwnedVariant> {
         entries
             .iter()
             .map(|(key, value)| (key.to_string(), value.clone()))
             .collect()
     }
 
-    fn value<T: Into<zbus::zvariant::Value<'static>>>(value: T) -> OwnedValue {
-        OwnedValue::try_from(value.into()).unwrap()
+    fn value<T: Into<zbus::Variant<'static>>>(value: T) -> OwnedVariant {
+        OwnedVariant::try_from(value.into()).unwrap()
     }
 
-    fn profile_entry(name: &str) -> HashMap<String, OwnedValue> {
+    fn profile_entry(name: &str) -> HashMap<String, OwnedVariant> {
         map(&[("Profile", value(name.to_string()))])
     }
 

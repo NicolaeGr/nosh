@@ -120,6 +120,10 @@ impl MediaService {
             // playing position changes on every read and would otherwise keep
             // the fast interval forever.
             let mut settle = SETTLE_POLLS;
+            // The service polls only while a media view is on screen. When the
+            // panel is closed the watch keeps the model current, and the
+            // position is not shown anyway.
+            let mut visible = false;
 
             loop {
                 tokio::select! {
@@ -127,6 +131,24 @@ impl MediaService {
                         let Ok(command) = result else {
                             watch.abort();
                             return;
+                        };
+                        let command = match command {
+                            Command::MediaSetVisible(shown) => {
+                                if shown != visible {
+                                    visible = shown;
+                                    settle = SETTLE_POLLS;
+                                    if shown
+                                        && refresh(&self.backend, &mut state, &events)
+                                            .await
+                                            .is_err()
+                                    {
+                                        watch.abort();
+                                        return;
+                                    }
+                                }
+                                continue;
+                            }
+                            command => command,
                         };
                         settle = SETTLE_POLLS;
                         if handle_command(&self.backend, command, &state, &events)
@@ -153,7 +175,7 @@ impl MediaService {
                             Err(_) => break,
                         }
                     }
-                    _ = poll_sleep(poll_delay(&state, self.config.poll, settle)) => {
+                    _ = poll_sleep(poll_delay(&state, self.config.poll, settle, visible)) => {
                         settle = settle.saturating_sub(1);
                         if refresh(&self.backend, &mut state, &events).await.is_err() {
                             watch.abort();
@@ -306,12 +328,16 @@ fn seed() -> u64 {
         .unwrap_or(0)
 }
 
-/// How often to re-read the player without a signal. A change is followed by
-/// a burst of fast polls because players stage their metadata, and the steady
-/// state is slow because the panel advances the position itself. A paused
-/// player only needs an occasional safety net, and a player that is not there
-/// needs nothing: the watch reports it appearing or changing.
-fn poll_delay(state: &MediaModel, active: Duration, settle: u8) -> Option<Duration> {
+/// How often to re-read the player without a signal, or `None` to not poll.
+/// The service polls only while a media view is on screen. A change is
+/// followed by a burst of fast polls because players stage their metadata, and
+/// the steady state is slow because the panel advances the position itself. A
+/// paused player only needs an occasional safety net, and a player that is not
+/// there needs nothing: the watch reports it appearing or changing.
+fn poll_delay(state: &MediaModel, active: Duration, settle: u8, visible: bool) -> Option<Duration> {
+    if !visible {
+        return None;
+    }
     if state.status.is_playing() {
         if settle > 0 {
             Some(active)
@@ -465,8 +491,9 @@ mod tests {
                 poll: Duration::from_millis(20),
             },
         );
-        let (_commands, events) = start(service);
+        let (commands, events) = start(service);
         backend.wait_until_watching().await;
+        commands.send(Command::MediaSetVisible(true)).await.unwrap();
 
         // A player may add a field such as the cover art URL without sending
         // another change signal. The poll still has to pick it up.
@@ -476,6 +503,31 @@ mod tests {
             next_media(&events).await,
             MediaEvent::Changed(track("Second"))
         );
+    }
+
+    #[tokio::test]
+    async fn a_hidden_media_view_does_not_poll() {
+        let backend = FakeMediaBackend::new("fake", track("First")).arc();
+        let service = MediaService::with_backend(
+            Arc::clone(&backend) as MediaBackendRef,
+            MediaServiceConfig {
+                retry: RetryPolicy {
+                    initial: Duration::from_millis(10),
+                    max: Duration::from_millis(20),
+                    jitter: false,
+                },
+                stable_connection: Duration::from_millis(10),
+                poll: Duration::from_millis(20),
+            },
+        );
+        let (_commands, events) = start(service);
+        backend.wait_until_watching().await;
+
+        // No media view is on screen, so the service must not read the player.
+        // The watch reports changes on its own.
+        backend.set_model(track("Second")).await;
+        let quiet = tokio::time::timeout(Duration::from_millis(100), next_media(&events)).await;
+        assert!(quiet.is_err(), "the hidden service polled the player");
     }
 
     #[tokio::test]

@@ -495,6 +495,7 @@ fn close_window(inner: &Rc<Inner>) {
             inner.window.set_visible(false);
             inner.state.set(State::Closed);
             inner.hover_close.set(false);
+            inner.media_view.set_visible(false);
             let restore = inner.restore.borrow_mut().take();
             if let Some(restore) = restore {
                 restore();
@@ -575,6 +576,8 @@ fn show_tab(inner: &Rc<Inner>, tab: Tab) {
             button.remove_css_class("is-active");
         }
     }
+
+    inner.media_view.set_visible(tab == Tab::Media);
 
     if !changed {
         return;
@@ -1536,6 +1539,13 @@ impl MediaView {
 
     fn widget(&self) -> &gtk::Box {
         &self.root
+    }
+
+    /// Tells the core whether the media view is on screen. The service polls
+    /// the playback position only when it is. The bar's title arrives over the
+    /// watch.
+    fn set_visible(&self, visible: bool) {
+        self.core.send(Command::MediaSetVisible(visible));
     }
 
     /// Shows the player the core picked.

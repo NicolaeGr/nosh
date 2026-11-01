@@ -113,6 +113,10 @@ pub enum Command {
     /// Seek the current track to an absolute position in milliseconds.
     MediaSeek(u64),
     MediaSetVolume(f64),
+    /// Whether the media view is on screen. The service polls the playback
+    /// position only while it is. When hidden, the D-Bus watch still reports
+    /// metadata changes and the bar keeps the title current.
+    MediaSetVisible(bool),
     TrayActivate {
         item_id: String,
         x: i32,
@@ -209,6 +213,7 @@ impl Command {
                 | Self::MediaPrevious
                 | Self::MediaSeek(_)
                 | Self::MediaSetVolume(_)
+                | Self::MediaSetVisible(_)
         )
     }
 
@@ -309,6 +314,7 @@ mod tests {
         assert!(Command::MediaPrevious.is_media());
         assert!(Command::MediaSeek(1_000).is_media());
         assert!(Command::MediaSetVolume(0.4).is_media());
+        assert!(Command::MediaSetVisible(true).is_media());
 
         assert!(!Command::AudioSetVolume(0.5).is_media());
         assert!(!Command::NotificationDismiss(3).is_media());

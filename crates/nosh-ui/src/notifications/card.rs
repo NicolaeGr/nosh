@@ -13,7 +13,6 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::{Command, Core, Notification, Urgency};
 
-const TICK: Duration = Duration::from_millis(100);
 const DISMISS: Duration = Duration::from_millis(250);
 const FALLBACK_ICONS: [&str; 3] = [
     "preferences-system-notifications-symbolic",
@@ -32,8 +31,11 @@ pub struct NotificationCard {
     dismissal: RefCell<Option<glib::SourceId>>,
     dismissed: Cell<bool>,
     hovered: Cell<bool>,
+    /// Microseconds the card may still stay on screen.
     remaining: Cell<i64>,
-    last_tick: Cell<i64>,
+    /// Monotonic time the expiry timer was armed at.
+    armed_at: Cell<i64>,
+    timer: RefCell<Option<glib::SourceId>>,
     /// Set when the card should not expire on its own.
     persistent: bool,
 }
@@ -206,14 +208,15 @@ impl NotificationCard {
                 dismissal: RefCell::new(None),
                 dismissed: Cell::new(false),
                 hovered: Cell::new(false),
-                remaining: Cell::new(0),
-                last_tick: Cell::new(0),
+                remaining: Cell::new(timeout_ms.max(0) * 1000),
+                armed_at: Cell::new(0),
+                timer: RefCell::new(None),
                 persistent: notification.urgency() == Urgency::Critical || timeout_ms <= 0,
             }
         });
 
         if !card.persistent {
-            card.start_timer(timeout_ms, &card);
+            card.arm();
         }
 
         card
@@ -242,6 +245,7 @@ impl NotificationCard {
         if self.dismissed.replace(true) {
             return;
         }
+        self.cancel_timer();
         self.root.add_css_class("notification-card-dismiss");
 
         let id = self.id;
@@ -254,54 +258,63 @@ impl NotificationCard {
     /// when the overlay drops the card for another reason.
     pub fn stop(&self) {
         self.dismissed.set(true);
+        self.cancel_timer();
         if let Some(source) = self.dismissal.borrow_mut().take() {
             source.remove();
         }
     }
 
-    fn start_timer(&self, timeout_ms: i64, rc: &Rc<Self>) {
-        self.remaining.set(timeout_ms * 1000);
-        self.last_tick.set(glib::monotonic_time());
-
-        let weak = Rc::downgrade(rc);
-        glib::timeout_add_local(TICK, move || {
+    /// Arms the expiry timer for whatever time is left. One shot: nothing has
+    /// to run while the card waits, and a card that is hovered or already
+    /// dismissed does not arm at all.
+    fn arm(self: &Rc<Self>) {
+        self.cancel_timer();
+        if self.dismissed.get() || self.hovered.get() || self.persistent {
+            return;
+        }
+        self.armed_at.set(glib::monotonic_time());
+        let left = self.remaining.get().max(0) as u64;
+        let weak = Rc::downgrade(self);
+        let source = glib::timeout_add_local_once(Duration::from_micros(left), move || {
             let Some(card) = weak.upgrade() else {
-                return glib::ControlFlow::Break;
+                return;
             };
-            if card.dismissed.get() {
-                return glib::ControlFlow::Break;
+            *card.timer.borrow_mut() = None;
+            if card.dismissed.get() || card.hovered.get() {
+                return;
             }
-
-            let now = glib::monotonic_time();
-            let elapsed = now.saturating_sub(card.last_tick.get());
-            card.last_tick.set(now);
-
-            if !card.hovered.get() {
-                let remaining = card.remaining.get() - elapsed;
-                card.remaining.set(remaining);
-                if remaining <= 0 {
-                    card.expire();
-                    return glib::ControlFlow::Break;
-                }
-            }
-
-            glib::ControlFlow::Continue
+            card.remaining.set(0);
+            card.expire();
         });
+        *self.timer.borrow_mut() = Some(source);
     }
 
-    fn set_hovered(&self, hovered: bool) {
-        let now = glib::monotonic_time();
-        if hovered && !self.hovered.get() {
-            let elapsed = now.saturating_sub(self.last_tick.get());
-            self.last_tick.set(now);
-            if !self.persistent {
-                self.remaining
-                    .set(self.remaining.get().saturating_sub(elapsed));
-            }
-        } else if !hovered && self.hovered.get() {
-            self.last_tick.set(now);
+    fn cancel_timer(&self) {
+        if let Some(source) = self.timer.borrow_mut().take() {
+            source.remove();
+        }
+    }
+
+    /// Folds the time the timer has been running into `remaining` and stops it.
+    fn pause_timer(&self) {
+        if self.timer.borrow().is_some() {
+            let elapsed = glib::monotonic_time().saturating_sub(self.armed_at.get());
+            self.remaining.set((self.remaining.get() - elapsed).max(0));
+            self.cancel_timer();
+        }
+    }
+
+    fn set_hovered(self: &Rc<Self>, hovered: bool) {
+        if hovered == self.hovered.get() {
+            return;
+        }
+        if hovered {
+            self.pause_timer();
         }
         self.hovered.set(hovered);
+        if !hovered {
+            self.arm();
+        }
     }
 }
 

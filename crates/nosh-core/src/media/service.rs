@@ -114,9 +114,11 @@ impl MediaService {
             let backend = Arc::clone(&self.backend);
             let mut watch = tokio::spawn(async move { backend.watch(watch_tx).await });
             let connected_at = Instant::now();
-            // Players publish metadata in stages right after a change, so poll
-            // quickly for a while and then back off. The position does not need
-            // a fast poll: the panel advances it locally between reads.
+            // Players publish metadata in stages right after a change, so the
+            // watch and command paths are followed by a burst of fast polls
+            // before the interval backs off. Only those paths reset it: a
+            // playing position changes on every read and would otherwise keep
+            // the fast interval forever.
             let mut settle = SETTLE_POLLS;
 
             loop {
@@ -126,6 +128,7 @@ impl MediaService {
                             watch.abort();
                             return;
                         };
+                        settle = SETTLE_POLLS;
                         if handle_command(&self.backend, command, &state, &events)
                             .await
                             .is_err()
@@ -141,13 +144,10 @@ impl MediaService {
                     event = watch_rx.recv() => {
                         match event {
                             Ok(_) => {
-                                match refresh(&self.backend, &mut state, &events).await {
-                                    Ok(false) => {}
-                                    Ok(true) => settle = SETTLE_POLLS,
-                                    Err(()) => {
-                                        watch.abort();
-                                        return;
-                                    }
+                                settle = SETTLE_POLLS;
+                                if refresh(&self.backend, &mut state, &events).await.is_err() {
+                                    watch.abort();
+                                    return;
                                 }
                             }
                             Err(_) => break,
@@ -155,13 +155,9 @@ impl MediaService {
                     }
                     _ = poll_sleep(poll_delay(&state, self.config.poll, settle)) => {
                         settle = settle.saturating_sub(1);
-                        match refresh(&self.backend, &mut state, &events).await {
-                            Ok(false) => {}
-                            Ok(true) => settle = SETTLE_POLLS,
-                            Err(()) => {
-                                watch.abort();
-                                return;
-                            }
+                        if refresh(&self.backend, &mut state, &events).await.is_err() {
+                            watch.abort();
+                            return;
                         }
                     }
                     result = &mut watch => {
@@ -251,7 +247,7 @@ async fn refresh(
     backend: &MediaBackendRef,
     state: &mut MediaModel,
     events: &Sender<Event>,
-) -> Result<bool, ()> {
+) -> Result<(), ()> {
     let next = match backend.read().await {
         Ok(model) => model,
         Err(error) => {
@@ -260,19 +256,18 @@ async fn refresh(
                 %error,
                 "a media read after a change failed"
             );
-            return Ok(false);
+            return Ok(());
         }
     };
 
     if next == *state {
-        return Ok(false);
+        return Ok(());
     }
     *state = next.clone();
     events
         .send(Event::Media(MediaEvent::Changed(next)))
         .await
-        .map_err(|_| ())?;
-    Ok(true)
+        .map_err(|_| ())
 }
 
 async fn emit_snapshot(

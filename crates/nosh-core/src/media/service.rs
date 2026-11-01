@@ -107,10 +107,6 @@ impl MediaService {
             let backend = Arc::clone(&self.backend);
             let mut watch = tokio::spawn(async move { backend.watch(watch_tx).await });
             let connected_at = Instant::now();
-            let mut poll = tokio::time::interval(self.config.poll);
-            poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            // The initial read above already covered the first tick.
-            poll.tick().await;
 
             loop {
                 tokio::select! {
@@ -142,7 +138,7 @@ impl MediaService {
                             Err(_) => break,
                         }
                     }
-                    _ = poll.tick() => {
+                    _ = poll_sleep(poll_delay(&state, self.config.poll)) => {
                         if refresh(&self.backend, &mut state, &events).await.is_err() {
                             watch.abort();
                             return;
@@ -292,6 +288,27 @@ fn seed() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos() as u64)
         .unwrap_or(0)
+}
+
+/// How long until the next unsolicited read. A playing player advances its
+/// position and staged metadata arrives late, so keep reading while there is
+/// something to show. Without a player the watch signals are enough to notice
+/// one appearing, so the interval stops entirely.
+fn poll_delay(state: &MediaModel, active: Duration) -> Option<Duration> {
+    if state.status.is_playing() {
+        Some(active)
+    } else if state.is_active() {
+        Some(active.max(Duration::from_secs(5)))
+    } else {
+        None
+    }
+}
+
+async fn poll_sleep(delay: Option<Duration>) {
+    match delay {
+        Some(delay) => tokio::time::sleep(delay).await,
+        None => std::future::pending().await,
+    }
 }
 
 #[cfg(test)]

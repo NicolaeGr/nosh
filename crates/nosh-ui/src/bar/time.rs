@@ -24,15 +24,7 @@ impl Clock {
         label.set_hexpand(true);
         button.set_child(Some(&label));
         update(&label);
-
-        let weak_label = label.downgrade();
-        glib::timeout_add_seconds_local(1, move || match weak_label.upgrade() {
-            Some(label) => {
-                update(&label);
-                glib::ControlFlow::Continue
-            }
-            None => glib::ControlFlow::Break,
-        });
+        arm(label.downgrade());
 
         Self { button, label }
     }
@@ -54,15 +46,35 @@ pub fn now_text() -> String {
         .unwrap_or_default()
 }
 
+/// Waits until the next minute boundary instead of ticking every second. The
+/// label only shows minutes, and a timer that fires while the shell is idle is
+/// the main reason an otherwise quiet desktop logs wakeups.
+fn arm(weak: glib::WeakRef<gtk::Label>) {
+    let seconds = glib::DateTime::now_local()
+        .map(|now| now.second().clamp(0, 59))
+        .unwrap_or(0);
+    glib::timeout_add_seconds_local_once((60 - seconds) as u32, move || {
+        let Some(label) = weak.upgrade() else {
+            return;
+        };
+        update(&label);
+        arm(label.downgrade());
+    });
+}
+
 fn update(label: &gtk::Label) {
     let Ok(now) = glib::DateTime::now_local() else {
         return;
     };
 
     if let Ok(time) = now.format(TIME_FORMAT) {
-        label.set_label(&time);
+        if label.text().as_str() != time.as_str() {
+            label.set_label(&time);
+        }
     }
     if let Ok(date) = now.format(DATE_FORMAT) {
-        label.set_tooltip_text(Some(&date));
+        if label.tooltip_text().as_deref() != Some(date.as_str()) {
+            label.set_tooltip_text(Some(&date));
+        }
     }
 }

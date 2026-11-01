@@ -6,6 +6,10 @@
 //! notification. The service performs the re-read.
 
 use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::os::fd::{AsRawFd, RawFd};
+use std::os::raw::{c_int, c_ulong, c_void};
+use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc as std_mpsc;
 use std::sync::{Arc, Mutex};
@@ -76,10 +80,11 @@ impl PulseBackend {
     ) -> Result<(), BackendError> {
         let connection = self.connection().await?;
         let (reply, response) = tokio::sync::oneshot::channel();
-        connection
-            .commands
-            .send(make(reply))
-            .map_err(|_| BackendError::Unavailable("Pulse worker is gone".to_string()))?;
+        if !connection.send(make(reply)) {
+            return Err(BackendError::Unavailable(
+                "Pulse worker is gone".to_string(),
+            ));
+        }
 
         match tokio::time::timeout(REQUEST_TIMEOUT, response).await {
             Ok(Ok(Ok(()))) => Ok(()),
@@ -119,10 +124,11 @@ impl AudioBackend for PulseBackend {
     async fn read(&self) -> Result<AudioModel, BackendError> {
         let connection = self.connection().await?;
         let (reply, response) = tokio::sync::oneshot::channel();
-        connection
-            .commands
-            .send(PulseCommand::Read(reply))
-            .map_err(|_| BackendError::Unavailable("Pulse worker is gone".to_string()))?;
+        if !connection.send(PulseCommand::Read(reply)) {
+            return Err(BackendError::Unavailable(
+                "Pulse worker is gone".to_string(),
+            ));
+        }
 
         match tokio::time::timeout(REQUEST_TIMEOUT, response).await {
             Ok(Ok(Ok(model))) => Ok(model),
@@ -219,6 +225,8 @@ enum PulseCommand {
 
 struct PulseConnection {
     commands: tokio::sync::mpsc::UnboundedSender<PulseCommand>,
+    /// Written whenever a command is queued, so the worker's `poll` wakes up.
+    wake: UnixStream,
     changes: Mutex<Option<async_channel::Receiver<()>>>,
     alive: Arc<AtomicBool>,
     thread: Mutex<Option<thread::JoinHandle<()>>>,
@@ -231,11 +239,25 @@ impl PulseConnection {
         let (ready_sender, ready) = std_mpsc::sync_channel(1);
         let alive = Arc::new(AtomicBool::new(false));
         let worker_alive = alive.clone();
+        let (wake, wake_writer) = UnixStream::pair().map_err(|error| {
+            BackendError::Unavailable(format!("cannot create the Pulse wake pipe: {error}"))
+        })?;
+        for stream in [&wake, &wake_writer] {
+            stream.set_nonblocking(true).map_err(|error| {
+                BackendError::Unavailable(format!("cannot configure the Pulse wake pipe: {error}"))
+            })?;
+        }
 
         let thread = thread::Builder::new()
             .name("nosh-pulse".to_string())
             .spawn(move || {
-                pulse_worker(command_receiver, change_sender, ready_sender, worker_alive);
+                pulse_worker(
+                    command_receiver,
+                    change_sender,
+                    ready_sender,
+                    worker_alive,
+                    wake,
+                );
             })
             .map_err(|error| {
                 BackendError::Unavailable(format!("cannot start the Pulse worker: {error}"))
@@ -244,6 +266,7 @@ impl PulseConnection {
         match ready.recv_timeout(CONNECT_TIMEOUT) {
             Ok(Ok(())) => Ok(Self {
                 commands,
+                wake: wake_writer,
                 changes: Mutex::new(Some(changes)),
                 alive,
                 thread: Mutex::new(Some(thread)),
@@ -254,13 +277,79 @@ impl PulseConnection {
             )),
         }
     }
+
+    /// Queues a command and wakes the worker. Returns false when it is gone.
+    fn send(&self, command: PulseCommand) -> bool {
+        if self.commands.send(command).is_err() {
+            return false;
+        }
+        self.wake_command();
+        true
+    }
+
+    fn wake_command(&self) {
+        // A full pipe already wakes the worker, so a failed write is fine.
+        let _ = (&self.wake).write(&[1]);
+    }
 }
 
 impl Drop for PulseConnection {
     fn drop(&mut self) {
-        let _ = self.commands.send(PulseCommand::Shutdown);
+        let _ = self.send(PulseCommand::Shutdown);
         if let Some(thread) = self.thread.lock().expect("pulse mutex poisoned").take() {
             let _ = thread.join();
+        }
+    }
+}
+
+/// The command wake pipe belongs in libpulse's poll, so the worker blocks until
+/// either the server or a command needs attention. Polling the main loop from a
+/// timer instead would wake this thread hundreds of times per second while idle.
+struct WakeFd(RawFd);
+
+extern "C" fn poll_with_wake(
+    fds: *mut libc::pollfd,
+    count: c_ulong,
+    timeout: c_int,
+    userdata: *mut c_void,
+) -> c_int {
+    let wake = unsafe { (*(userdata as *const WakeFd)).0 };
+    let len = count as usize;
+    let mut all = Vec::with_capacity(len + 1);
+    // Safety: libpulse passes `count` valid entries and `userdata` points at
+    // the `WakeFd` that outlives the main loop.
+    unsafe {
+        all.extend_from_slice(std::slice::from_raw_parts(fds, len));
+    }
+    all.push(libc::pollfd {
+        fd: wake,
+        events: libc::POLLIN,
+        revents: 0,
+    });
+
+    loop {
+        let result = unsafe { libc::poll(all.as_mut_ptr(), all.len() as libc::nfds_t, timeout) };
+        if result < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+            continue;
+        }
+        if result >= 0 {
+            // Only libpulse's entries are written back; ours is drained below.
+            unsafe {
+                std::ptr::copy_nonoverlapping(all.as_ptr(), fds, len);
+            }
+        }
+        return result;
+    }
+}
+
+fn drain_wake(stream: &mut UnixStream) {
+    let mut buffer = [0u8; 64];
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(_) => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
         }
     }
 }
@@ -270,7 +359,9 @@ fn pulse_worker(
     changes: async_channel::Sender<()>,
     ready: std_mpsc::SyncSender<Result<(), String>>,
     alive: Arc<AtomicBool>,
+    mut wake: UnixStream,
 ) {
+    let wake_fd = WakeFd(wake.as_raw_fd());
     let Some(mut mainloop) = Mainloop::new() else {
         let _ = ready.send(Err("cannot create the Pulse main loop".to_string()));
         return;
@@ -327,6 +418,7 @@ fn pulse_worker(
     }
 
     let mut cache = PulseCache::default();
+    mainloop.set_poll_func((poll_with_wake, &wake_fd as *const WakeFd as *mut c_void));
 
     loop {
         while let Ok(command) = commands.try_recv() {
@@ -372,7 +464,10 @@ fn pulse_worker(
             return;
         }
 
-        if let Err(message) = iterate(&mut mainloop, &context) {
+        // The wake byte is stale once the commands above are drained.
+        drain_wake(&mut wake);
+
+        if let Err(message) = pump(&mut mainloop, &context) {
             tracing::debug!(%message, "the Pulse connection ended");
             break;
         }
@@ -380,8 +475,6 @@ fn pulse_worker(
             pulse::context::State::Failed | pulse::context::State::Terminated => break,
             _ => {}
         }
-
-        thread::sleep(Duration::from_millis(5));
     }
 
     alive.store(false, Ordering::SeqCst);
@@ -394,6 +487,25 @@ fn iterate(mainloop: &mut Mainloop, context: &Context) -> Result<(), String> {
         IterateResult::Err(error) => return Err(format!("the Pulse main loop failed: {error}")),
     }
 
+    match context.get_state() {
+        pulse::context::State::Failed | pulse::context::State::Terminated => {
+            Err("the Pulse connection failed".to_string())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Blocks until the server or the command wake pipe has work, then dispatches.
+fn pump(mainloop: &mut Mainloop, context: &Context) -> Result<(), String> {
+    if let Err(error) = mainloop.prepare(None) {
+        return Err(format!("the Pulse main loop failed: {error}"));
+    }
+    if let Err(error) = mainloop.poll() {
+        return Err(format!("the Pulse main loop failed: {error}"));
+    }
+    if let Err(error) = mainloop.dispatch() {
+        return Err(format!("the Pulse main loop failed: {error}"));
+    }
     match context.get_state() {
         pulse::context::State::Failed | pulse::context::State::Terminated => {
             Err("the Pulse connection failed".to_string())

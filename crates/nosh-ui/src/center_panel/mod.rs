@@ -276,7 +276,15 @@ impl CenterPanelWindow {
             if inner.clock_label.parent().is_none() {
                 return glib::ControlFlow::Break;
             }
-            inner.clock_label.set_text(&crate::bar::time::now_text());
+            // Nothing behind the panel changes while it is closed, and the bar
+            // carries its own clock.
+            if inner.state.get() == State::Closed {
+                return glib::ControlFlow::Continue;
+            }
+            let text = crate::bar::time::now_text();
+            if inner.clock_label.text().as_str() != text {
+                inner.clock_label.set_text(&text);
+            }
             inner.media_view.advance();
             glib::ControlFlow::Continue
         });
@@ -1625,20 +1633,32 @@ impl MediaView {
     /// backend model carries the position at the moment of its last read, so
     /// the time since then is added without changing the stored base.
     fn advance(&self) {
-        self.refresh_art(true);
-
-        let model = self.model.borrow();
-        if !model.status.is_playing() || !model.is_active() {
+        let (active, playing, length, position) = {
+            let model = self.model.borrow();
+            (
+                model.is_active(),
+                model.status.is_playing(),
+                model.length,
+                model.position,
+            )
+        };
+        if !active {
             return;
         }
-        let Some(length) = model.length else {
+
+        self.refresh_art(true);
+
+        if !playing {
+            return;
+        }
+        let Some(length) = length else {
             return;
         };
         if length.is_zero() {
             return;
         }
 
-        let position = (model.position + self.updated.get().elapsed()).min(length);
+        let position = (position + self.updated.get().elapsed()).min(length);
         self.elapsed.set_text(&format_duration(position));
         if !self.seek.has_focus() {
             self.seek

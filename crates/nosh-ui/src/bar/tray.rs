@@ -30,13 +30,63 @@ struct TrayEntry {
     item_id: String,
     button: gtk::Button,
     image: gtk::Image,
-    group: gio::SimpleActionGroup,
-    model: gio::Menu,
+    menu: Rc<MenuState>,
     popover: gtk::PopoverMenu,
     menu_available: Rc<Cell<bool>>,
     rendered_icon: Option<TrayIcon>,
     rendered_tooltip: String,
-    rendered_menu: Option<TrayMenu>,
+}
+
+/// The popover's menu model. Items republish their menu whenever their state
+/// changes, which some panel applets do several times a second, so the model
+/// is rebuilt only when the popover is about to open. Rebuilding a menu that
+/// nobody is looking at costs CPU and retains the objects GTK creates for it.
+struct MenuState {
+    model: gio::Menu,
+    group: gio::SimpleActionGroup,
+    core: Rc<Core>,
+    item_id: String,
+    pending: RefCell<Option<TrayMenu>>,
+    rendered: RefCell<Option<TrayMenu>>,
+}
+
+impl MenuState {
+    fn new(core: Rc<Core>, item_id: &str) -> Self {
+        Self {
+            model: gio::Menu::new(),
+            group: gio::SimpleActionGroup::new(),
+            core,
+            item_id: item_id.to_string(),
+            pending: RefCell::new(None),
+            rendered: RefCell::new(None),
+        }
+    }
+
+    fn set(&self, menu: Option<&TrayMenu>) {
+        *self.pending.borrow_mut() = menu.cloned();
+    }
+
+    fn sync(&self) {
+        let pending = self.pending.borrow();
+        if *self.rendered.borrow() == *pending {
+            return;
+        }
+
+        self.model.remove_all();
+        for name in self.group.list_actions() {
+            self.group.remove_action(&name);
+        }
+        if let Some(menu) = pending.as_ref() {
+            build_menu(
+                &self.model,
+                &menu.items,
+                &self.group,
+                &self.core,
+                &self.item_id,
+            );
+        }
+        *self.rendered.borrow_mut() = pending.clone();
+    }
 }
 
 impl Drop for TrayEntry {
@@ -47,7 +97,7 @@ impl Drop for TrayEntry {
 }
 
 impl TrayEntry {
-    fn update(&mut self, item: &TrayItemModel, menu: Option<&TrayMenu>, core: &Rc<Core>) {
+    fn update(&mut self, item: &TrayItemModel, menu: Option<&TrayMenu>) {
         let icon = item.icon();
         if self.rendered_icon != icon {
             set_icon(&self.image, icon.as_ref());
@@ -61,22 +111,13 @@ impl TrayEntry {
             self.rendered_tooltip = tooltip;
         }
 
-        let item_id = item.item_id.as_str();
         self.menu_available
             .set(item.menu_path.is_some() || menu.is_some());
 
-        if self.rendered_menu.as_ref() == menu {
-            return;
+        self.menu.set(menu);
+        if self.popover.is_visible() {
+            self.menu.sync();
         }
-
-        self.model.remove_all();
-        for name in self.group.list_actions() {
-            self.group.remove_action(&name);
-        }
-        if let Some(menu) = menu {
-            build_menu(&self.model, &menu.items, &self.group, core, item_id);
-        }
-        self.rendered_menu = menu.cloned();
     }
 }
 
@@ -114,7 +155,7 @@ impl Tray {
                 .iter()
                 .position(|entry| entry.item_id == item.item_id)
             {
-                entries[position].update(item, menu, &self.core);
+                entries[position].update(item, menu);
             } else {
                 let entry = self.create(item, menu);
                 self.container.append(&entry.button);
@@ -133,25 +174,21 @@ impl Tray {
         button.set_focus_on_click(false);
         button.set_child(Some(&image));
 
-        let group = gio::SimpleActionGroup::new();
-        button.insert_action_group("dbusmenu", Some(&group));
+        let menu_state = Rc::new(MenuState::new(Rc::clone(&self.core), &item.item_id));
+        menu_state.set(menu);
+        button.insert_action_group("dbusmenu", Some(&menu_state.group));
 
-        let model = gio::Menu::new();
-        let popover = gtk::PopoverMenu::from_model(Some(&model));
+        let popover = gtk::PopoverMenu::from_model(Some(&menu_state.model));
         popover.set_has_arrow(false);
         popover.set_autohide(true);
         popover.set_parent(&button);
-        popover.insert_action_group("dbusmenu", Some(&group));
+        popover.insert_action_group("dbusmenu", Some(&menu_state.group));
 
         let icon = item.icon();
         set_icon(&image, icon.as_ref());
 
         let tooltip = item.tooltip_markup();
         button.set_tooltip_markup((!tooltip.is_empty()).then_some(tooltip.as_str()));
-
-        if let Some(menu) = menu {
-            build_menu(&model, &menu.items, &group, &self.core, &item.item_id);
-        }
 
         let menu_available = Rc::new(Cell::new(item.menu_path.is_some() || menu.is_some()));
         install_input(
@@ -160,6 +197,7 @@ impl Tray {
             &self.core,
             &item.item_id,
             Rc::clone(&menu_available),
+            Rc::clone(&menu_state),
         );
         install_scroll(&button, &self.core, &item.item_id);
 
@@ -167,13 +205,11 @@ impl Tray {
             item_id: item.item_id.clone(),
             button,
             image,
-            group,
-            model,
+            menu: menu_state,
             popover,
             menu_available,
             rendered_icon: icon,
             rendered_tooltip: tooltip,
-            rendered_menu: menu.cloned(),
         }
     }
 }
@@ -188,6 +224,7 @@ fn install_input(
     core: &Rc<Core>,
     item_id: &str,
     menu_available: Rc<Cell<bool>>,
+    menu: Rc<MenuState>,
 ) {
     let click = gtk::GestureClick::new();
     // The default listens for button 1 only, so widen it to any button.
@@ -214,6 +251,9 @@ fn install_input(
             }
             gdk::BUTTON_SECONDARY => {
                 if menu_available.get() {
+                    // The item may have published a new menu since the last
+                    // time this popover was shown.
+                    menu.sync();
                     let rect = gdk::Rectangle::new(
                         0,
                         0,

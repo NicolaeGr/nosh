@@ -6,16 +6,16 @@
 //! persisted: a process restart starts inactive.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::{Command, IdleInhibitCommand};
-use crate::event::{Event, IdleInhibitEvent, Snapshot};
+use crate::event::{Event, IdleInhibitEvent};
 use crate::idle_inhibit::backend::{IdleInhibitBackend, InhibitBackendEvent};
-use crate::idle_inhibit::model::IdleInhibitState;
 use crate::idle_inhibit::wayland::WaylandBackend;
+use crate::service::seed;
 
 #[derive(Debug, Clone)]
 pub struct IdleInhibitServiceConfig {
@@ -132,10 +132,7 @@ impl IdleInhibitService {
                                 active = connected_active;
                                 desired_active = connected_active;
                                 if available {
-                                    if emit_available(&events, backend.name(), active)
-                                        .await
-                                        .is_err()
-                                    {
+                                    if emit_available(&events, active).await.is_err() {
                                         return;
                                     }
                                 } else if report_unavailable(&events).await.is_err() {
@@ -144,10 +141,7 @@ impl IdleInhibitService {
                             }
                             Ok(InhibitBackendEvent::Availability(true)) => {
                                 available = true;
-                                if emit_available(&events, backend.name(), active)
-                                    .await
-                                    .is_err()
-                                {
+                                if emit_available(&events, active).await.is_err() {
                                     return;
                                 }
                             }
@@ -199,30 +193,14 @@ impl IdleInhibitService {
     }
 }
 
-async fn emit_available(
-    events: &Sender<Event>,
-    backend: &'static str,
-    active: bool,
-) -> Result<(), ()> {
-    if events
+async fn emit_available(events: &Sender<Event>, active: bool) -> Result<(), ()> {
+    events
         .send(Event::IdleInhibit(IdleInhibitEvent::Snapshot {
             available: true,
             active,
         }))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    let snapshot = Snapshot {
-        idle_inhibit: Some(IdleInhibitState::new(true, active)),
-        idle_inhibit_backend: Some(backend),
-        ..Snapshot::default()
-    };
-    if events.send(Event::Snapshot(snapshot)).await.is_err() {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
@@ -246,7 +224,7 @@ async fn wait_or_closed(
                 match result {
                     Err(_) => return true,
                     Ok(command) => {
-                        if command.is_idle_inhibit() {
+                        if command.idle_inhibit().is_some() {
                             tracing::warn!("the idle inhibitor is unavailable");
                             if events
                                 .send(Event::IdleInhibit(IdleInhibitEvent::Unavailable))
@@ -261,13 +239,6 @@ async fn wait_or_closed(
             }
         }
     }
-}
-
-fn seed() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -416,18 +387,6 @@ mod tests {
         }
     }
 
-    async fn expect_snapshot(events: &Receiver<Event>, available: bool, active: bool) {
-        match next_event(events).await {
-            Event::Snapshot(snapshot) => {
-                let state = snapshot.idle_inhibit.expect("the state was not merged");
-                assert_eq!(state.available, available);
-                assert_eq!(state.active, active);
-                assert_eq!(snapshot.idle_inhibit_backend, Some("fake"));
-            }
-            other => panic!("expected a snapshot, got {other:?}"),
-        }
-    }
-
     async fn consume_startup(events: &Receiver<Event>, available: bool) {
         assert_eq!(
             next_idle_event(events).await,
@@ -436,7 +395,6 @@ mod tests {
                 active: false,
             }
         );
-        expect_snapshot(events, available, false).await;
     }
 
     async fn wait_for_connects(backend: &FakeBackend, count: usize) {
@@ -524,7 +482,6 @@ mod tests {
                 active: true,
             }
         );
-        expect_snapshot(&events, true, true).await;
         assert_eq!(backend.initial_states(), vec![false, true]);
     }
 
@@ -548,7 +505,6 @@ mod tests {
                 active: false,
             }
         );
-        expect_snapshot(&events, true, false).await;
 
         commands.send(Command::IdleInhibitToggle).await.unwrap();
         assert_eq!(

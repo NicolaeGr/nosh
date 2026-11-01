@@ -6,7 +6,7 @@
 use async_channel::{Receiver, Sender};
 
 use crate::command::Command;
-use crate::event::{Event, PowerEvent, Snapshot};
+use crate::event::{Event, PowerEvent};
 use crate::power::backend::PowerBackendRef;
 use crate::power::logind::LogindBackend;
 
@@ -52,18 +52,11 @@ impl PowerService {
         if available {
             match self.backend.read().await {
                 Ok(model) => {
-                    let snapshot = Snapshot {
-                        power: Some(model.clone()),
-                        ..Snapshot::default()
-                    };
                     if events
                         .send(Event::Power(PowerEvent::Snapshot(model)))
                         .await
                         .is_err()
                     {
-                        return;
-                    }
-                    if events.send(Event::Snapshot(snapshot)).await.is_err() {
                         return;
                     }
                 }

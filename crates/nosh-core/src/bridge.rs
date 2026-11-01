@@ -2,20 +2,14 @@ use std::thread;
 
 use async_channel::{Receiver, Sender};
 
-use crate::audio::model::{volume_icon, AudioEndpoint, AudioModel, EndpointKind};
 use crate::audio::service::{AudioService, AudioServiceConfig};
 use crate::auth::service::{AuthService, AuthServiceConfig};
 use crate::battery::service::{BatteryService, BatteryServiceConfig};
 use crate::brightness::service::{BrightnessService, BrightnessServiceConfig};
-use crate::command::Command;
+use crate::command::{Command, Service};
 use crate::error::CoreError;
-use crate::event::{
-    AudioEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MediaEvent, MonitorEvent,
-    NetworkEvent, NotificationEvent, PowerProfilesEvent, Snapshot, SystemStatsEvent, TrayEvent,
-    WorkspaceEvent,
-};
+use crate::event::Event;
 use crate::hyprland::{binds, Hyprland};
-use crate::idle_inhibit::model::IdleInhibitState;
 use crate::idle_inhibit::service::{IdleInhibitService, IdleInhibitServiceConfig};
 use crate::media::service::{MediaService, MediaServiceConfig};
 use crate::menu::service::{MenuService, MenuServiceConfig};
@@ -96,8 +90,7 @@ impl Core {
         let (commands, public_commands) = async_channel::bounded(COMMAND_CAPACITY);
         // Events stay unbounded because several services use `try_send` for
         // them and would silently drop state updates under load.
-        let (event_sender, events) = async_channel::unbounded();
-        let (service_events, service_event_receiver) = async_channel::unbounded();
+        let (service_events, events) = async_channel::unbounded();
         let (workspace_commands, workspace_receiver) = async_channel::bounded(COMMAND_CAPACITY);
         let (monitor_commands, monitor_receiver) = async_channel::bounded(COMMAND_CAPACITY);
         let (audio_commands, audio_receiver) = async_channel::bounded(COMMAND_CAPACITY);
@@ -125,26 +118,25 @@ impl Core {
                     let router = tokio::spawn(route_commands(
                         public_commands,
                         ServiceSenders {
-                            workspaces: workspace_commands,
-                            monitors: monitor_commands,
-                            audio: audio_commands,
-                            brightness: brightness_commands,
-                            _battery: battery_commands,
-                            _stats: stats_commands,
-                            idle_inhibit: idle_inhibit_commands,
-                            power_profiles: power_profiles_commands,
-                            network: network_commands,
-                            tray: tray_commands,
-                            media: media_commands,
-                            menu: menu_commands,
-                            notifications: notification_commands,
-                            auth: auth_commands,
-                            polkit: polkit_commands,
-                            power: power_commands,
+                            by_service: [
+                                workspace_commands,
+                                monitor_commands,
+                                audio_commands,
+                                brightness_commands,
+                                idle_inhibit_commands,
+                                power_profiles_commands,
+                                network_commands,
+                                tray_commands,
+                                media_commands,
+                                menu_commands,
+                                notification_commands,
+                                auth_commands,
+                                polkit_commands,
+                                power_commands,
+                            ],
+                            _passive: vec![battery_commands, stats_commands],
                         },
                     ));
-                    let merger = tokio::spawn(merge_events(service_event_receiver, event_sender));
-
                     let bind_sync = Hyprland::detect()
                         .ok()
                         .flatten()
@@ -184,8 +176,8 @@ impl Core {
                     let power = PowerService::from_env_with(settings.power)
                         .run(power_receiver, service_events.clone());
                     let session_lock = SessionLockService::from_env().run(service_events.clone());
-                    // The services own a clone. Dropping the original lets the
-                    // merger finish once every service returns.
+                    // The services own a clone. Dropping the original closes the
+                    // bus when every service returns; no forwarding task is needed.
                     drop(service_events);
 
                     tokio::join!(
@@ -213,7 +205,6 @@ impl Core {
                         bind_sync.abort();
                         let _ = bind_sync.await;
                     }
-                    let _ = merger.await;
                 });
             })?;
 
@@ -256,427 +247,21 @@ impl Drop for Core {
 /// Routes each public command to the service that handles it.
 ///
 /// Each service needs exclusive access to its command receiver, so the public
-/// channel fans out to one service channel per service. The battery and stats
-/// services take no commands; their senders are held here so that their
-/// receivers close when the public channel closes.
+/// channel fans out to one service channel per service. The array is indexed by
+/// [`Service`], so the order matches the enum. The battery and stats services
+/// take no commands; their senders are held so their receivers stay open.
 struct ServiceSenders {
-    workspaces: Sender<Command>,
-    monitors: Sender<Command>,
-    audio: Sender<Command>,
-    brightness: Sender<Command>,
-    _battery: Sender<Command>,
-    _stats: Sender<Command>,
-    idle_inhibit: Sender<Command>,
-    power_profiles: Sender<Command>,
-    network: Sender<Command>,
-    tray: Sender<Command>,
-    media: Sender<Command>,
-    menu: Sender<Command>,
-    notifications: Sender<Command>,
-    auth: Sender<Command>,
-    polkit: Sender<Command>,
-    power: Sender<Command>,
+    by_service: [Sender<Command>; Service::COUNT],
+    _passive: Vec<Sender<Command>>,
 }
 
 async fn route_commands(commands: Receiver<Command>, senders: ServiceSenders) {
     while let Ok(command) = commands.recv().await {
-        let sender = if command.is_audio() {
-            &senders.audio
-        } else if command.is_brightness() {
-            &senders.brightness
-        } else if command.is_monitor() {
-            &senders.monitors
-        } else if command.is_idle_inhibit() {
-            &senders.idle_inhibit
-        } else if command.is_power_profiles() {
-            &senders.power_profiles
-        } else if command.is_network() {
-            &senders.network
-        } else if command.is_tray() {
-            &senders.tray
-        } else if command.is_media() {
-            &senders.media
-        } else if command.is_menu() {
-            &senders.menu
-        } else if command.is_notifications() {
-            &senders.notifications
-        } else if command.is_auth() {
-            &senders.auth
-        } else if command.is_polkit() {
-            &senders.polkit
-        } else if command.is_power() {
-            &senders.power
-        } else {
-            &senders.workspaces
-        };
-
-        if sender.send(command).await.is_err() {
+        let index = command.service() as usize;
+        if senders.by_service[index].send(command).await.is_err() {
             tracing::debug!("a service command channel is closed");
         }
     }
-}
-
-/// Merges partial snapshots from the services into one accumulator and forwards
-/// every event in order.
-///
-/// Typed updates refresh the accumulator, so the next full snapshot carries the
-/// latest state. A snapshot field is replaced only when the incoming value is
-/// `Some`, so a partial snapshot never erases the state of another service.
-async fn merge_events(events: Receiver<Event>, public: Sender<Event>) {
-    let mut snapshot = Snapshot::default();
-
-    while let Ok(event) = events.recv().await {
-        let event = match event {
-            Event::Snapshot(partial) => {
-                merge_snapshot(&mut snapshot, partial);
-                Event::Snapshot(snapshot.clone())
-            }
-            event => {
-                absorb_event(&mut snapshot, &event);
-                event
-            }
-        };
-
-        if public.send(event).await.is_err() {
-            return;
-        }
-    }
-}
-
-fn merge_snapshot(accumulator: &mut Snapshot, incoming: Snapshot) {
-    if incoming.workspaces.is_some() {
-        accumulator.workspaces = incoming.workspaces;
-    }
-    if incoming.workspace_backend.is_some() {
-        accumulator.workspace_backend = incoming.workspace_backend;
-    }
-    if incoming.monitors.is_some() {
-        accumulator.monitors = incoming.monitors;
-    }
-    if incoming.monitor_backend.is_some() {
-        accumulator.monitor_backend = incoming.monitor_backend;
-    }
-    if incoming.audio.is_some() {
-        accumulator.audio = incoming.audio;
-    }
-    if incoming.audio_backend.is_some() {
-        accumulator.audio_backend = incoming.audio_backend;
-    }
-    if incoming.brightness.is_some() {
-        accumulator.brightness = incoming.brightness;
-    }
-    if incoming.battery.is_some() {
-        accumulator.battery = incoming.battery;
-    }
-    if incoming.system_stats.is_some() {
-        accumulator.system_stats = incoming.system_stats;
-    }
-    if incoming.idle_inhibit.is_some() {
-        accumulator.idle_inhibit = incoming.idle_inhibit;
-    }
-    if incoming.idle_inhibit_backend.is_some() {
-        accumulator.idle_inhibit_backend = incoming.idle_inhibit_backend;
-    }
-    if incoming.power_profiles.is_some() {
-        accumulator.power_profiles = incoming.power_profiles;
-    }
-    if incoming.network.is_some() {
-        accumulator.network = incoming.network;
-    }
-    if incoming.network_backend.is_some() {
-        accumulator.network_backend = incoming.network_backend;
-    }
-    if incoming.tray.is_some() {
-        accumulator.tray = incoming.tray;
-    }
-    if incoming.tray_backend.is_some() {
-        accumulator.tray_backend = incoming.tray_backend;
-    }
-    if incoming.media.is_some() {
-        accumulator.media = incoming.media;
-    }
-    if incoming.media_backend.is_some() {
-        accumulator.media_backend = incoming.media_backend;
-    }
-    if incoming.notifications.is_some() {
-        accumulator.notifications = incoming.notifications;
-    }
-    if incoming.notification_backend.is_some() {
-        accumulator.notification_backend = incoming.notification_backend;
-    }
-    if incoming.power.is_some() {
-        accumulator.power = incoming.power;
-    }
-}
-
-fn absorb_event(accumulator: &mut Snapshot, event: &Event) {
-    match event {
-        Event::Workspaces(WorkspaceEvent::Snapshot { state, backend }) => {
-            accumulator.workspaces = Some(state.clone());
-            accumulator.workspace_backend = Some(*backend);
-        }
-        Event::Monitors(MonitorEvent::Snapshot { layout, backend }) => {
-            accumulator.monitors = Some(layout.clone());
-            accumulator.monitor_backend = Some(*backend);
-        }
-        Event::Monitors(MonitorEvent::LayoutChanged(layout)) => {
-            accumulator.monitors = Some(layout.clone());
-        }
-        Event::Audio(event) => absorb_audio(accumulator, event),
-        Event::Brightness(event) => absorb_brightness(accumulator, event),
-        Event::Battery(event) => absorb_battery(accumulator, event),
-        Event::SystemStats(event) => absorb_system_stats(accumulator, event),
-        Event::IdleInhibit(event) => absorb_idle_inhibit(accumulator, event),
-        Event::PowerProfiles(event) => absorb_power_profiles(accumulator, event),
-        Event::Network(event) => absorb_network(accumulator, event),
-        Event::Tray(event) => absorb_tray(accumulator, event),
-        Event::Media(event) => absorb_media(accumulator, event),
-        Event::Notifications(event) => absorb_notifications(accumulator, event),
-        Event::Power(event) => absorb_power(accumulator, event),
-        _ => {}
-    }
-}
-
-fn absorb_power(accumulator: &mut Snapshot, event: &crate::event::PowerEvent) {
-    match event {
-        crate::event::PowerEvent::Snapshot(model) => accumulator.power = Some(model.clone()),
-        crate::event::PowerEvent::Unavailable => accumulator.power = None,
-        crate::event::PowerEvent::ActionStarted(_)
-        | crate::event::PowerEvent::ActionCompleted(_)
-        | crate::event::PowerEvent::ActionFailed { .. } => {}
-    }
-}
-
-fn absorb_battery(accumulator: &mut Snapshot, event: &BatteryEvent) {
-    match event {
-        BatteryEvent::Snapshot(model) | BatteryEvent::Changed(model) => {
-            accumulator.battery = Some(model.clone());
-        }
-        BatteryEvent::Unavailable => accumulator.battery = None,
-    }
-}
-
-fn absorb_system_stats(accumulator: &mut Snapshot, event: &SystemStatsEvent) {
-    match event {
-        SystemStatsEvent::Changed(stats) => accumulator.system_stats = Some(*stats),
-    }
-}
-
-fn absorb_idle_inhibit(accumulator: &mut Snapshot, event: &IdleInhibitEvent) {
-    match event {
-        IdleInhibitEvent::Snapshot { available, active } => {
-            accumulator.idle_inhibit = Some(IdleInhibitState::new(*available, *active));
-        }
-        IdleInhibitEvent::Changed { active } => {
-            if let Some(state) = accumulator.idle_inhibit.as_mut() {
-                state.active = *active;
-            }
-        }
-        IdleInhibitEvent::Unavailable => accumulator.idle_inhibit = None,
-    }
-}
-
-fn absorb_power_profiles(accumulator: &mut Snapshot, event: &PowerProfilesEvent) {
-    match event {
-        PowerProfilesEvent::Snapshot(model) | PowerProfilesEvent::Changed(model) => {
-            accumulator.power_profiles = Some(model.clone());
-        }
-        PowerProfilesEvent::Unavailable => accumulator.power_profiles = None,
-    }
-}
-
-fn absorb_network(accumulator: &mut Snapshot, event: &NetworkEvent) {
-    match event {
-        NetworkEvent::Snapshot(model) | NetworkEvent::Changed(model) => {
-            accumulator.network = Some(model.clone());
-            accumulator.network_backend = Some("networkmanager");
-        }
-        NetworkEvent::Unavailable => {
-            accumulator.network = None;
-            accumulator.network_backend = None;
-        }
-        NetworkEvent::ScanStarted
-        | NetworkEvent::ScanFinished
-        | NetworkEvent::OperationFailed(_) => {}
-    }
-}
-
-fn absorb_tray(accumulator: &mut Snapshot, event: &TrayEvent) {
-    match event {
-        TrayEvent::Snapshot(items) => accumulator.tray = Some(items.clone()),
-        TrayEvent::ItemAdded { item, .. } | TrayEvent::ItemUpdated { item } => {
-            let Some(items) = accumulator.tray.as_mut() else {
-                return;
-            };
-            if let Some(existing) = items.iter_mut().find(|entry| entry.item_id == item.item_id) {
-                *existing = item.clone();
-            } else {
-                items.push(item.clone());
-            }
-        }
-        TrayEvent::ItemRemoved { item_id } => {
-            if let Some(items) = accumulator.tray.as_mut() {
-                items.retain(|item| &item.item_id != item_id);
-            }
-        }
-        TrayEvent::MenuUpdated { .. } => {}
-        TrayEvent::BackendChanged { backend } => {
-            accumulator.tray_backend = Some(*backend);
-        }
-        TrayEvent::Unavailable => accumulator.tray = None,
-    }
-}
-
-fn absorb_media(accumulator: &mut Snapshot, event: &MediaEvent) {
-    match event {
-        MediaEvent::Snapshot(model) | MediaEvent::Changed(model) => {
-            accumulator.media = Some(model.clone());
-        }
-        MediaEvent::Unavailable => accumulator.media = None,
-        MediaEvent::WriteFailed(_) => {}
-    }
-}
-
-fn absorb_notifications(accumulator: &mut Snapshot, event: &NotificationEvent) {
-    match event {
-        NotificationEvent::Snapshot(model) => {
-            accumulator.notifications = Some(model.clone());
-        }
-        NotificationEvent::Received { notification, .. } => {
-            if let Some(model) = accumulator.notifications.as_mut() {
-                model.upsert(notification.clone());
-            }
-        }
-        NotificationEvent::Closed { id, .. } => {
-            if let Some(model) = accumulator.notifications.as_mut() {
-                model.remove(*id);
-            }
-        }
-        NotificationEvent::DndChanged { enabled } => {
-            if let Some(model) = accumulator.notifications.as_mut() {
-                model.settings.dont_disturb = *enabled;
-            }
-        }
-        NotificationEvent::BackendChanged { backend } => {
-            accumulator.notification_backend = Some(*backend);
-        }
-        NotificationEvent::Invoked { .. } => {}
-        NotificationEvent::Unavailable => {
-            accumulator.notifications = None;
-            accumulator.notification_backend = None;
-        }
-    }
-}
-
-fn absorb_brightness(accumulator: &mut Snapshot, event: &BrightnessEvent) {
-    match event {
-        BrightnessEvent::Snapshot(devices) => accumulator.brightness = Some(devices.clone()),
-        BrightnessEvent::DeviceChanged {
-            device, percent, ..
-        } => {
-            let Some(devices) = accumulator.brightness.as_mut() else {
-                return;
-            };
-            if let Some(entry) = devices.iter_mut().find(|entry| &entry.id == device) {
-                entry.percent = *percent;
-                entry.pending_percent = None;
-                entry.available = true;
-            }
-        }
-        BrightnessEvent::Pending { device, target } => {
-            let Some(devices) = accumulator.brightness.as_mut() else {
-                return;
-            };
-            if let Some(entry) = devices.iter_mut().find(|entry| &entry.id == device) {
-                entry.pending_percent = Some(*target);
-            }
-        }
-        BrightnessEvent::Restored | BrightnessEvent::Unavailable => {}
-    }
-}
-
-fn absorb_audio(accumulator: &mut Snapshot, event: &AudioEvent) {
-    match event {
-        AudioEvent::Snapshot(model) => accumulator.audio = Some(model.clone()),
-        AudioEvent::VolumeChanged {
-            kind, id, volume, ..
-        } => {
-            let Some(model) = accumulator.audio.as_mut() else {
-                return;
-            };
-            let Some(updated) = update_endpoint(model, *kind, *id, |endpoint| {
-                endpoint.volume = *volume;
-                endpoint.icon_name =
-                    volume_icon(*kind, endpoint.volume, endpoint.muted).to_string();
-            }) else {
-                return;
-            };
-            if model
-                .default_for(*kind)
-                .is_some_and(|default| default.id == *id)
-            {
-                if let Some(default) = model.default_for_mut(*kind) {
-                    *default = updated;
-                }
-            }
-        }
-        AudioEvent::MuteChanged {
-            kind, id, muted, ..
-        } => {
-            let Some(model) = accumulator.audio.as_mut() else {
-                return;
-            };
-            let Some(updated) = update_endpoint(model, *kind, *id, |endpoint| {
-                endpoint.muted = *muted;
-                endpoint.icon_name =
-                    volume_icon(*kind, endpoint.volume, endpoint.muted).to_string();
-            }) else {
-                return;
-            };
-            if model
-                .default_for(*kind)
-                .is_some_and(|default| default.id == *id)
-            {
-                if let Some(default) = model.default_for_mut(*kind) {
-                    *default = updated;
-                }
-            }
-        }
-        AudioEvent::DefaultChanged { kind, endpoint } => {
-            let Some(model) = accumulator.audio.as_mut() else {
-                return;
-            };
-            match kind {
-                EndpointKind::Sink => {
-                    model.default_sink = Some(endpoint.clone());
-                    for sink in &mut model.sinks {
-                        sink.is_default = sink.id == endpoint.id;
-                    }
-                }
-                EndpointKind::Source => {
-                    model.default_source = Some(endpoint.clone());
-                    for source in &mut model.sources {
-                        source.is_default = source.id == endpoint.id;
-                    }
-                }
-            }
-        }
-        AudioEvent::BackendChanged { backend } => {
-            accumulator.audio_backend = Some(*backend);
-        }
-        AudioEvent::WriteFailed(_) | AudioEvent::ReadFailed(_) | AudioEvent::Unavailable => {}
-    }
-}
-
-fn update_endpoint(
-    model: &mut AudioModel,
-    kind: EndpointKind,
-    id: u32,
-    update: impl FnOnce(&mut AudioEndpoint),
-) -> Option<AudioEndpoint> {
-    let endpoint = model.endpoint_mut(kind, id)?;
-    update(endpoint);
-    Some(endpoint.clone())
 }
 
 #[cfg(test)]
@@ -685,8 +270,6 @@ mod tests {
 
     use super::*;
     use crate::monitors::LayoutPreset;
-    use crate::monitors::MonitorLayout;
-    use crate::workspaces::model::WorkspaceSnapshot;
 
     #[tokio::test]
     async fn commands_are_routed_to_the_matching_service() {
@@ -711,22 +294,23 @@ mod tests {
         let task = tokio::spawn(route_commands(
             public_rx,
             ServiceSenders {
-                workspaces: workspace_tx,
-                monitors: monitor_tx,
-                audio: audio_tx,
-                brightness: brightness_tx,
-                _battery: battery_tx,
-                _stats: stats_tx,
-                idle_inhibit: idle_inhibit_tx,
-                power_profiles: power_profiles_tx,
-                network: network_tx,
-                tray: tray_tx,
-                media: media_tx,
-                menu: menu_tx,
-                notifications: notification_tx,
-                auth: auth_tx,
-                polkit: polkit_tx,
-                power: power_tx,
+                by_service: [
+                    workspace_tx,
+                    monitor_tx,
+                    audio_tx,
+                    brightness_tx,
+                    idle_inhibit_tx,
+                    power_profiles_tx,
+                    network_tx,
+                    tray_tx,
+                    media_tx,
+                    menu_tx,
+                    notification_tx,
+                    auth_tx,
+                    polkit_tx,
+                    power_tx,
+                ],
+                _passive: vec![battery_tx, stats_tx],
             },
         ));
 
@@ -842,356 +426,5 @@ mod tests {
 
         drop(public_tx);
         task.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn two_partial_snapshots_merge_into_one_full_snapshot() {
-        let (service_tx, service_rx) = async_channel::unbounded();
-        let (public_tx, public_rx) = async_channel::unbounded();
-        let task = tokio::spawn(merge_events(service_rx, public_tx));
-
-        let workspaces = WorkspaceSnapshot {
-            focused_workspace: Some("1".to_string()),
-            ..WorkspaceSnapshot::default()
-        };
-        service_tx
-            .send(Event::Snapshot(Snapshot {
-                workspaces: Some(workspaces),
-                workspace_backend: Some("hyprland"),
-                ..Snapshot::default()
-            }))
-            .await
-            .unwrap();
-
-        let first = public_rx.recv().await.unwrap();
-        match first {
-            Event::Snapshot(snapshot) => {
-                assert!(snapshot.workspaces.is_some());
-                assert_eq!(snapshot.workspace_backend, Some("hyprland"));
-                assert!(snapshot.monitors.is_none());
-                assert!(snapshot.monitor_backend.is_none());
-            }
-            other => panic!("expected a merged snapshot, got {other:?}"),
-        }
-
-        let monitors = MonitorLayout {
-            primary: Some("DP-1".to_string()),
-            ..MonitorLayout::default()
-        };
-        service_tx
-            .send(Event::Snapshot(Snapshot {
-                monitors: Some(monitors),
-                monitor_backend: Some("hyprland"),
-                ..Snapshot::default()
-            }))
-            .await
-            .unwrap();
-
-        let second = public_rx.recv().await.unwrap();
-        match second {
-            Event::Snapshot(snapshot) => {
-                assert_eq!(
-                    snapshot
-                        .workspaces
-                        .expect("workspace state was not merged")
-                        .focused_workspace
-                        .as_deref(),
-                    Some("1")
-                );
-                assert_eq!(snapshot.workspace_backend, Some("hyprland"));
-                assert_eq!(
-                    snapshot
-                        .monitors
-                        .expect("monitor state was not merged")
-                        .primary
-                        .as_deref(),
-                    Some("DP-1")
-                );
-                assert_eq!(snapshot.monitor_backend, Some("hyprland"));
-            }
-            other => panic!("expected a merged snapshot, got {other:?}"),
-        }
-
-        drop(service_tx);
-        task.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn typed_updates_are_reflected_in_the_next_full_snapshot() {
-        let (service_tx, service_rx) = async_channel::unbounded();
-        let (public_tx, public_rx) = async_channel::unbounded();
-        let task = tokio::spawn(merge_events(service_rx, public_tx));
-
-        let workspaces = WorkspaceSnapshot {
-            focused_workspace: Some("3".to_string()),
-            ..WorkspaceSnapshot::default()
-        };
-        service_tx
-            .send(Event::Workspaces(WorkspaceEvent::Snapshot {
-                state: workspaces,
-                backend: "hyprland",
-            }))
-            .await
-            .unwrap();
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::Workspaces(WorkspaceEvent::Snapshot { .. })
-        ));
-
-        let first_monitor_layout = MonitorLayout {
-            primary: Some("DP-1".to_string()),
-            ..MonitorLayout::default()
-        };
-        service_tx
-            .send(Event::Monitors(MonitorEvent::Snapshot {
-                layout: first_monitor_layout,
-                backend: "hyprland",
-            }))
-            .await
-            .unwrap();
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::Monitors(MonitorEvent::Snapshot { .. })
-        ));
-
-        let updated_monitor_layout = MonitorLayout {
-            primary: Some("DP-2".to_string()),
-            ..MonitorLayout::default()
-        };
-        service_tx
-            .send(Event::Monitors(MonitorEvent::LayoutChanged(
-                updated_monitor_layout,
-            )))
-            .await
-            .unwrap();
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::Monitors(MonitorEvent::LayoutChanged(_))
-        ));
-
-        service_tx
-            .send(Event::Snapshot(Snapshot::default()))
-            .await
-            .unwrap();
-        let event = public_rx.recv().await.unwrap();
-        match event {
-            Event::Snapshot(snapshot) => {
-                assert_eq!(
-                    snapshot
-                        .workspaces
-                        .expect("workspace update was not absorbed")
-                        .focused_workspace
-                        .as_deref(),
-                    Some("3")
-                );
-                assert_eq!(snapshot.workspace_backend, Some("hyprland"));
-                assert_eq!(
-                    snapshot
-                        .monitors
-                        .expect("monitor update was not absorbed")
-                        .primary
-                        .as_deref(),
-                    Some("DP-2")
-                );
-                assert_eq!(snapshot.monitor_backend, Some("hyprland"));
-            }
-            other => panic!("expected a merged snapshot, got {other:?}"),
-        }
-
-        drop(service_tx);
-        task.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn audio_updates_are_reflected_in_the_next_full_snapshot() {
-        use crate::audio::model::{AudioEndpoint, AudioModel, EndpointKind};
-
-        let (service_tx, service_rx) = async_channel::unbounded();
-        let (public_tx, public_rx) = async_channel::unbounded();
-        let task = tokio::spawn(merge_events(service_rx, public_tx));
-
-        let sink = AudioEndpoint {
-            id: 1,
-            name: "sink".to_string(),
-            description: "Sink".to_string(),
-            volume: 0.3,
-            muted: false,
-            icon_name: "audio-volume-low-symbolic".to_string(),
-            is_default: true,
-        };
-        let audio = AudioModel {
-            default_sink: Some(sink.clone()),
-            sinks: vec![sink],
-            ..AudioModel::default()
-        };
-
-        service_tx
-            .send(Event::Audio(AudioEvent::Snapshot(audio)))
-            .await
-            .unwrap();
-        service_tx
-            .send(Event::Audio(AudioEvent::VolumeChanged {
-                kind: EndpointKind::Sink,
-                id: 1,
-                volume: 0.7,
-                old: 0.3,
-                origin: crate::origin::ChangeOrigin::External,
-            }))
-            .await
-            .unwrap();
-        service_tx
-            .send(Event::Snapshot(Snapshot::default()))
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::Audio(AudioEvent::Snapshot(_))
-        ));
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::Audio(AudioEvent::VolumeChanged { .. })
-        ));
-        let event = public_rx.recv().await.unwrap();
-        match event {
-            Event::Snapshot(snapshot) => {
-                let audio = snapshot.audio.expect("audio was not absorbed");
-                assert_eq!(audio.sinks[0].volume, 0.7);
-                assert_eq!(
-                    audio
-                        .default_sink
-                        .expect("the default sink was lost")
-                        .volume,
-                    0.7
-                );
-            }
-            other => panic!("expected a merged snapshot, got {other:?}"),
-        }
-
-        drop(service_tx);
-        task.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn idle_inhibit_updates_are_reflected_in_the_next_full_snapshot() {
-        let (service_tx, service_rx) = async_channel::unbounded();
-        let (public_tx, public_rx) = async_channel::unbounded();
-        let task = tokio::spawn(merge_events(service_rx, public_tx));
-
-        service_tx
-            .send(Event::IdleInhibit(IdleInhibitEvent::Snapshot {
-                available: true,
-                active: false,
-            }))
-            .await
-            .unwrap();
-        service_tx
-            .send(Event::IdleInhibit(IdleInhibitEvent::Changed {
-                active: true,
-            }))
-            .await
-            .unwrap();
-        service_tx
-            .send(Event::Snapshot(Snapshot {
-                idle_inhibit_backend: Some("wayland"),
-                ..Snapshot::default()
-            }))
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::IdleInhibit(IdleInhibitEvent::Snapshot { .. })
-        ));
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::IdleInhibit(IdleInhibitEvent::Changed { .. })
-        ));
-        match public_rx.recv().await.unwrap() {
-            Event::Snapshot(snapshot) => {
-                let state = snapshot
-                    .idle_inhibit
-                    .expect("the idle inhibitor state was not absorbed");
-                assert!(state.available);
-                assert!(state.active);
-                assert_eq!(snapshot.idle_inhibit_backend, Some("wayland"));
-            }
-            other => panic!("expected a merged snapshot, got {other:?}"),
-        }
-
-        drop(service_tx);
-        task.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn event_order_is_preserved() {
-        let (service_tx, service_rx) = async_channel::unbounded();
-        let (public_tx, public_rx) = async_channel::unbounded();
-        let task = tokio::spawn(merge_events(service_rx, public_tx));
-
-        service_tx
-            .send(Event::Workspaces(WorkspaceEvent::FocusedChanged {
-                workspace: Some("1".to_string()),
-            }))
-            .await
-            .unwrap();
-        service_tx
-            .send(Event::Monitors(MonitorEvent::ApplyFailed(
-                "rejected".to_string(),
-            )))
-            .await
-            .unwrap();
-        service_tx
-            .send(Event::Battery(BatteryEvent::Unavailable))
-            .await
-            .unwrap();
-        service_tx
-            .send(Event::Snapshot(Snapshot::default()))
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::Workspaces(WorkspaceEvent::FocusedChanged { .. })
-        ));
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::Monitors(MonitorEvent::ApplyFailed(_))
-        ));
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::Battery(BatteryEvent::Unavailable)
-        ));
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::Snapshot(_)
-        ));
-
-        drop(service_tx);
-        task.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn the_merger_exits_after_both_service_senders_drop() {
-        let (first_service, service_rx) = async_channel::unbounded();
-        let second_service = first_service.clone();
-        let (public_tx, public_rx) = async_channel::unbounded();
-        let task = tokio::spawn(merge_events(service_rx, public_tx));
-
-        drop(first_service);
-        second_service
-            .send(Event::Battery(BatteryEvent::Unavailable))
-            .await
-            .unwrap();
-        assert!(matches!(
-            public_rx.recv().await.unwrap(),
-            Event::Battery(BatteryEvent::Unavailable)
-        ));
-        drop(second_service);
-
-        tokio::time::timeout(Duration::from_secs(1), task)
-            .await
-            .unwrap()
-            .unwrap();
     }
 }

@@ -12,7 +12,7 @@ use zbus::Connection;
 
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
-use crate::event::{Event, NotificationEvent, Snapshot};
+use crate::event::{Event, NotificationEvent};
 use crate::notifications::backend::{
     default_candidates, DaemonRole, IncomingRequest, NotificationBackendRef, NotificationCandidate,
     NotificationSession, NotifyRequest, NOTIFICATION_INTERFACE, NOTIFICATION_PATH,
@@ -26,6 +26,7 @@ use crate::notifications::model::{
 use crate::notifications::persistence;
 use crate::notifications::store::NotificationStore;
 use crate::paths::NoshPaths;
+use crate::service::{seed, wait_or_closed};
 
 /// The debounce for state writes.
 pub const FLUSH_DELAY: Duration = Duration::from_millis(100);
@@ -102,10 +103,7 @@ impl NotificationService {
                 continue;
             };
 
-            if announce(&events, session.name, &store, &settings)
-                .await
-                .is_err()
-            {
+            if announce(&events, &store, &settings).await.is_err() {
                 return;
             }
 
@@ -533,7 +531,6 @@ async fn run_session(
 
 async fn announce(
     events: &Sender<Event>,
-    backend: &'static str,
     store: &NotificationStore,
     settings: &NotificationSettings,
 ) -> Result<(), ()> {
@@ -541,24 +538,10 @@ async fn announce(
         notifications: store.snapshot(),
         settings: settings.clone(),
     };
-    if events
-        .send(Event::Notifications(NotificationEvent::Snapshot(
-            model.clone(),
-        )))
+    events
+        .send(Event::Notifications(NotificationEvent::Snapshot(model)))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    let snapshot = Snapshot {
-        notifications: Some(model),
-        notification_backend: Some(backend),
-        ..Snapshot::default()
-    };
-    if events.send(Event::Snapshot(snapshot)).await.is_err() {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
@@ -568,29 +551,10 @@ async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
         .map_err(|_| ())
 }
 
-async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
-    tokio::select! {
-        _ = tokio::time::sleep(duration) => false,
-        result = commands.recv() => {
-            if result.is_ok() {
-                tracing::debug!("dropping a command while the notification daemon is unavailable");
-            }
-            result.is_err()
-        }
-    }
-}
-
 fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0)
-}
-
-fn seed() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
         .unwrap_or(0)
 }
 

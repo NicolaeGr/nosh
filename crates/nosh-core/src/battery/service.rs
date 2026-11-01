@@ -4,7 +4,7 @@
 //! re-reads the device on every property change. A missing UPower or a lost
 //! connection reports the service as unavailable and retries with backoff.
 
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 
@@ -15,7 +15,8 @@ use crate::battery::backend::{
 use crate::battery::model::BatteryModel;
 use crate::battery::upower::UpowerBackend;
 use crate::command::Command;
-use crate::event::{BatteryEvent, Event, Snapshot};
+use crate::event::{BatteryEvent, Event};
+use crate::service::{seed, wait_or_closed};
 
 #[derive(Debug, Clone)]
 pub struct BatteryServiceConfig {
@@ -205,21 +206,10 @@ impl BatteryService {
 }
 
 async fn emit_snapshot(events: &Sender<Event>, model: &BatteryModel) -> Result<(), ()> {
-    if events
+    events
         .send(Event::Battery(BatteryEvent::Snapshot(model.clone())))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    let snapshot = Snapshot {
-        battery: Some(model.clone()),
-        ..Snapshot::default()
-    };
-    if events.send(Event::Snapshot(snapshot)).await.is_err() {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
@@ -227,25 +217,6 @@ async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
         .send(Event::Battery(BatteryEvent::Unavailable))
         .await
         .map_err(|_| ())
-}
-
-async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
-    tokio::select! {
-        _ = tokio::time::sleep(duration) => false,
-        result = commands.recv() => {
-            if result.is_ok() {
-                tracing::debug!("dropping a command while the battery is disconnected");
-            }
-            result.is_err()
-        }
-    }
-}
-
-fn seed() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

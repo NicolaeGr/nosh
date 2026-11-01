@@ -6,16 +6,17 @@
 //! normally.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
-use crate::event::{Event, MediaEvent, Snapshot};
+use crate::event::{Event, MediaEvent};
 use crate::media::backend::MediaBackendRef;
 use crate::media::model::MediaModel;
 use crate::media::mpris::MprisBackend;
+use crate::service::{seed, wait_or_closed};
 
 /// Fast polls after a change, before the interval backs off.
 const SETTLE_POLLS: u8 = 5;
@@ -106,7 +107,7 @@ impl MediaService {
                     continue;
                 }
             };
-            if emit_snapshot(&events, &self.backend, &state).await.is_err() {
+            if emit_snapshot(&events, &state).await.is_err() {
                 return;
             }
 
@@ -292,17 +293,9 @@ async fn refresh(
         .map_err(|_| ())
 }
 
-async fn emit_snapshot(
-    events: &Sender<Event>,
-    backend: &MediaBackendRef,
-    state: &MediaModel,
-) -> Result<(), ()> {
+async fn emit_snapshot(events: &Sender<Event>, state: &MediaModel) -> Result<(), ()> {
     events
-        .send(Event::Snapshot(Snapshot {
-            media: Some(state.clone()),
-            media_backend: Some(backend.name()),
-            ..Snapshot::default()
-        }))
+        .send(Event::Media(MediaEvent::Snapshot(state.clone())))
         .await
         .map_err(|_| ())
 }
@@ -312,20 +305,6 @@ async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
         .send(Event::Media(MediaEvent::Unavailable))
         .await
         .map_err(|_| ())
-}
-
-async fn wait_or_closed(commands: &Receiver<Command>, delay: Duration) -> bool {
-    tokio::select! {
-        _ = tokio::time::sleep(delay) => false,
-        _ = commands.recv() => true,
-    }
-}
-
-fn seed() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(0)
 }
 
 /// How often to re-read the player without a signal, or `None` to not poll.
@@ -405,9 +384,10 @@ mod tests {
 
     async fn next_media(events: &async_channel::Receiver<Event>) -> MediaEvent {
         loop {
-            let event = events.recv().await.unwrap();
-            if let Event::Media(event) = event {
-                return event;
+            match events.recv().await.unwrap() {
+                Event::Media(MediaEvent::Snapshot(_)) => continue,
+                Event::Media(event) => return event,
+                _ => continue,
             }
         }
     }
@@ -417,17 +397,13 @@ mod tests {
         let backend = FakeMediaBackend::new("fake", track("First")).arc();
         let (_commands, events) = start(service(&backend));
 
-        loop {
-            let Event::Snapshot(snapshot) = events.recv().await.unwrap() else {
-                continue;
-            };
-            let Some(model) = snapshot.media else {
-                continue;
-            };
-            assert_eq!(model.title, "First");
-            assert_eq!(snapshot.media_backend, Some("fake"));
-            return;
-        }
+        let model = loop {
+            match events.recv().await.unwrap() {
+                Event::Media(MediaEvent::Snapshot(model)) => break model,
+                _ => continue,
+            }
+        };
+        assert_eq!(model.title, "First");
     }
 
     #[tokio::test]

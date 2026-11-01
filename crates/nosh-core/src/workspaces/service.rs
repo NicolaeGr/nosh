@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
@@ -7,8 +7,9 @@ use async_trait::async_trait;
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::BackendError;
-use crate::event::{Event, Snapshot, WorkspaceEvent};
+use crate::event::{Event, WorkspaceEvent};
 use crate::hyprland::{Hyprland, HyprlandWorkspaceBackend};
+use crate::service::{seed, wait_or_closed};
 use crate::workspaces::backend::{WorkspaceBackend, WorkspaceBackendEvent, WorkspaceBackendRef};
 use crate::workspaces::model::WorkspaceCapabilities;
 use crate::workspaces::resolver::{resolve_workspace, ResolvedWorkspace, WorkspaceCandidate};
@@ -179,12 +180,14 @@ impl WorkspaceService {
                 }
             };
 
-            let snapshot = Snapshot {
-                workspaces: Some(initial.snapshot()),
-                workspace_backend: Some(resolved.name),
-                ..Snapshot::default()
-            };
-            if events.send(Event::Snapshot(snapshot)).await.is_err() {
+            if events
+                .send(Event::Workspaces(WorkspaceEvent::Snapshot {
+                    state: initial.snapshot(),
+                    backend: resolved.name,
+                }))
+                .await
+                .is_err()
+            {
                 return;
             }
 
@@ -436,25 +439,6 @@ async fn emit_unavailable(events: &Sender<Event>) -> Result<(), ()> {
         .map_err(|_| ())
 }
 
-async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
-    tokio::select! {
-        _ = tokio::time::sleep(duration) => false,
-        result = commands.recv() => {
-            if result.is_ok() {
-                tracing::debug!("dropping a workspace command while disconnected");
-            }
-            result.is_err()
-        }
-    }
-}
-
-fn seed() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::Ordering;
@@ -518,7 +502,10 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(matches!(event, Event::Snapshot(_)));
+        assert!(matches!(
+            event,
+            Event::Workspaces(WorkspaceEvent::Snapshot { .. })
+        ));
 
         task.abort();
     }
@@ -544,7 +531,7 @@ mod tests {
         while tokio::time::Instant::now() < deadline && backend.watch_count() < 2 {
             match tokio::time::timeout(Duration::from_millis(50), event_rx.recv()).await {
                 Ok(Ok(Event::Workspaces(WorkspaceEvent::Unavailable))) => saw_unavailable = true,
-                Ok(Ok(Event::Snapshot(_))) => saw_snapshot = true,
+                Ok(Ok(Event::Workspaces(WorkspaceEvent::Snapshot { .. }))) => saw_snapshot = true,
                 _ => {}
             }
         }
@@ -576,7 +563,9 @@ mod tests {
         let task = tokio::spawn(service.run(command_rx, event_tx));
         tokio::time::timeout(Duration::from_secs(1), async {
             loop {
-                if let Ok(Event::Snapshot(_)) = event_rx.recv().await {
+                if let Ok(Event::Workspaces(WorkspaceEvent::Snapshot { .. })) =
+                    event_rx.recv().await
+                {
                     break;
                 }
             }

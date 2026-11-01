@@ -356,58 +356,6 @@ impl Ui {
 
     fn apply(&self, event: Event) {
         match event {
-            Event::Snapshot(snapshot) => {
-                if let Some(layout) = snapshot.monitors {
-                    self.notifications.set_layout(&layout);
-                }
-                if let Some(notifications) = snapshot.notifications {
-                    self.notifications.apply_snapshot(&notifications);
-                    self.quick_settings
-                        .set_dnd(notifications.settings.dont_disturb);
-                }
-                if let Some(workspaces) = snapshot.workspaces {
-                    *self.workspaces.borrow_mut() = workspaces;
-                    self.render_workspaces();
-                }
-                if let Some(stats) = snapshot.system_stats {
-                    *self.stats.borrow_mut() = stats;
-                    self.render_stats();
-                }
-                if let Some(audio) = snapshot.audio {
-                    *self.audio.borrow_mut() = audio;
-                    self.render_audio();
-                }
-                if let Some(battery) = snapshot.battery {
-                    *self.battery.borrow_mut() = battery;
-                    self.render_battery();
-                }
-                if let Some(state) = snapshot.idle_inhibit {
-                    *self.idle_inhibit.borrow_mut() = state;
-                    self.render_idle_inhibit();
-                }
-                if let Some(power_profiles) = snapshot.power_profiles {
-                    *self.power_profiles.borrow_mut() = Some(power_profiles);
-                    self.render_power_profiles();
-                }
-                if let Some(network) = snapshot.network {
-                    *self.network.borrow_mut() = network;
-                    self.render_network();
-                }
-                if let Some(brightness) = snapshot.brightness {
-                    *self.brightness.borrow_mut() = brightness;
-                    self.render_brightness();
-                }
-                if let Some(tray) = snapshot.tray {
-                    self.replace_tray(tray);
-                }
-                if let Some(media) = snapshot.media {
-                    *self.media.borrow_mut() = media;
-                    self.render_media();
-                }
-                if let Some(power) = snapshot.power {
-                    self.power_menu.set_power(&power);
-                }
-            }
             Event::Workspaces(event) => self.apply_workspace_event(event),
             Event::SystemStats(SystemStatsEvent::Changed(stats)) => {
                 *self.stats.borrow_mut() = stats;
@@ -471,14 +419,6 @@ impl Ui {
                 self.quick_settings.set_dnd_unavailable();
             }
         }
-    }
-
-    fn replace_tray(&self, items: Vec<TrayItemModel>) {
-        self.tray_menus
-            .borrow_mut()
-            .retain(|item_id, _| items.iter().any(|item| &item.item_id == item_id));
-        *self.tray.borrow_mut() = items;
-        self.render_tray();
     }
 
     fn upsert_tray_item(&self, item: TrayItemModel) {

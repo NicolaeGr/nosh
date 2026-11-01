@@ -162,135 +162,96 @@ pub enum IdleInhibitCommand {
     Toggle,
 }
 
+/// The service that handles a command.
+///
+/// The bridge indexes its command senders by this value, so the order matches
+/// the sender array there. Every command has exactly one owner.
+#[repr(usize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Service {
+    Workspaces = 0,
+    Monitors,
+    Audio,
+    Brightness,
+    IdleInhibit,
+    PowerProfiles,
+    Network,
+    Tray,
+    Media,
+    Menu,
+    Notifications,
+    Auth,
+    Polkit,
+    Power,
+}
+
+impl Service {
+    pub const COUNT: usize = 14;
+}
+
 impl Command {
-    /// Whether the audio service handles this command.
-    pub fn is_audio(&self) -> bool {
-        matches!(
-            self,
-            Self::AudioSetVolume(_)
-                | Self::AudioStepVolume(_)
-                | Self::AudioSetSourceVolume(_)
-                | Self::AudioSetEndpointVolume { .. }
-                | Self::AudioSetEndpointMuted { .. }
-                | Self::AudioSetMuted(_)
-                | Self::AudioToggleMute(_)
-                | Self::AudioSetDefault(_)
-        )
-    }
-
-    /// Whether the brightness service handles this command.
-    pub fn is_brightness(&self) -> bool {
-        matches!(
-            self,
-            Self::BrightnessSet(_)
-                | Self::BrightnessStep(_)
-                | Self::BrightnessSetTarget { .. }
-                | Self::BrightnessSnapshot
-                | Self::BrightnessDim { .. }
-                | Self::BrightnessRestore
-                | Self::BrightnessRescan
-        )
-    }
-
-    /// Whether the monitor service handles this command.
-    pub fn is_monitor(&self) -> bool {
-        matches!(
-            self,
+    /// The service that handles this command.
+    ///
+    /// This match is exhaustive, so a new command cannot be added without
+    /// choosing its owner.
+    pub fn service(&self) -> Service {
+        match self {
+            Self::WorkspaceActivate(_) | Self::WorkspaceMoveToMonitor { .. } => Service::Workspaces,
             Self::MonitorApply(_)
-                | Self::MonitorCycle { .. }
-                | Self::MonitorMode { .. }
-                | Self::MonitorSetPrimary(_)
-                | Self::MonitorSetEnabled { .. }
-        )
-    }
-
-    /// Whether the media service handles this command.
-    pub fn is_media(&self) -> bool {
-        matches!(
-            self,
-            Self::MediaPlayPause
-                | Self::MediaNext
-                | Self::MediaPrevious
-                | Self::MediaSeek(_)
-                | Self::MediaSetVolume(_)
-                | Self::MediaSetVisible(_)
-        )
-    }
-
-    /// Whether the notification service handles this command.
-    pub fn is_notifications(&self) -> bool {
-        matches!(
-            self,
-            Self::NotificationDismiss(_)
-                | Self::NotificationExpire(_)
-                | Self::NotificationInvoke { .. }
-                | Self::NotificationSetDnd(_)
-        )
-    }
-
-    /// Whether the auth service handles this command.
-    pub fn is_auth(&self) -> bool {
-        matches!(self, Self::AuthAuthenticate { .. })
-    }
-
-    /// Whether the polkit agent handles this command.
-    pub fn is_polkit(&self) -> bool {
-        matches!(self, Self::PolkitRespond { .. } | Self::PolkitCancel { .. })
-    }
-
-    /// Whether the power service handles this command.
-    pub fn is_power(&self) -> bool {
-        matches!(self, Self::PowerAction(_))
-    }
-
-    /// Whether the tray service handles this command.
-    pub fn is_tray(&self) -> bool {
-        matches!(
-            self,
-            Self::TrayActivate { .. }
-                | Self::TraySecondaryActivate { .. }
-                | Self::TrayScroll { .. }
-                | Self::TrayMenuAboutToShow { .. }
-                | Self::TrayMenuEvent { .. }
-        )
-    }
-
-    /// Whether the menu service handles this command.
-    pub fn is_menu(&self) -> bool {
-        matches!(
-            self,
-            Self::MenuOpen(_)
-                | Self::MenuQuery { .. }
-                | Self::MenuActivate { .. }
-                | Self::MenuReload(_)
-                | Self::MenuClose(_)
-        )
-    }
-
-    /// Whether the power profiles service handles this command.
-    pub fn is_power_profiles(&self) -> bool {
-        matches!(self, Self::PowerProfileSet(_) | Self::PowerProfileCycle)
-    }
-
-    /// Whether the network service handles this command.
-    pub fn is_network(&self) -> bool {
-        matches!(
-            self,
+            | Self::MonitorCycle { .. }
+            | Self::MonitorMode { .. }
+            | Self::MonitorSetPrimary(_)
+            | Self::MonitorSetEnabled { .. } => Service::Monitors,
+            Self::AudioSetVolume(_)
+            | Self::AudioStepVolume(_)
+            | Self::AudioSetSourceVolume(_)
+            | Self::AudioSetEndpointVolume { .. }
+            | Self::AudioSetEndpointMuted { .. }
+            | Self::AudioSetMuted(_)
+            | Self::AudioToggleMute(_)
+            | Self::AudioSetDefault(_) => Service::Audio,
+            Self::BrightnessSet(_)
+            | Self::BrightnessStep(_)
+            | Self::BrightnessSetTarget { .. }
+            | Self::BrightnessSnapshot
+            | Self::BrightnessDim { .. }
+            | Self::BrightnessRestore
+            | Self::BrightnessRescan => Service::Brightness,
+            Self::IdleInhibitSet(_) | Self::IdleInhibitToggle => Service::IdleInhibit,
+            Self::PowerProfileSet(_) | Self::PowerProfileCycle => Service::PowerProfiles,
             Self::WifiSetEnabled(_)
-                | Self::WifiScan
-                | Self::WifiSetDetails(_)
-                | Self::WifiActivate { .. }
-                | Self::WifiDeactivate
-                | Self::WiredSetEnabled { .. }
-                | Self::VpnActivate(_)
-                | Self::VpnDeactivate(_)
-                | Self::AirplaneModeSet(_)
-        )
-    }
-
-    /// Whether the idle inhibitor service handles this command.
-    pub fn is_idle_inhibit(&self) -> bool {
-        self.idle_inhibit().is_some()
+            | Self::WifiScan
+            | Self::WifiSetDetails(_)
+            | Self::WifiActivate { .. }
+            | Self::WifiDeactivate
+            | Self::WiredSetEnabled { .. }
+            | Self::VpnActivate(_)
+            | Self::VpnDeactivate(_)
+            | Self::AirplaneModeSet(_) => Service::Network,
+            Self::TrayActivate { .. }
+            | Self::TraySecondaryActivate { .. }
+            | Self::TrayScroll { .. }
+            | Self::TrayMenuAboutToShow { .. }
+            | Self::TrayMenuEvent { .. } => Service::Tray,
+            Self::MediaPlayPause
+            | Self::MediaNext
+            | Self::MediaPrevious
+            | Self::MediaSeek(_)
+            | Self::MediaSetVolume(_)
+            | Self::MediaSetVisible(_) => Service::Media,
+            Self::MenuOpen(_)
+            | Self::MenuQuery { .. }
+            | Self::MenuActivate { .. }
+            | Self::MenuReload(_)
+            | Self::MenuClose(_) => Service::Menu,
+            Self::NotificationDismiss(_)
+            | Self::NotificationExpire(_)
+            | Self::NotificationInvoke { .. }
+            | Self::NotificationSetDnd(_) => Service::Notifications,
+            Self::AuthAuthenticate { .. } => Service::Auth,
+            Self::PolkitRespond { .. } | Self::PolkitCancel { .. } => Service::Polkit,
+            Self::PowerAction(_) => Service::Power,
+        }
     }
 
     /// The idle inhibitor command, if this is one.
@@ -308,232 +269,212 @@ mod tests {
     use super::*;
 
     #[test]
-    fn media_commands_are_classified_for_routing() {
-        assert!(Command::MediaPlayPause.is_media());
-        assert!(Command::MediaNext.is_media());
-        assert!(Command::MediaPrevious.is_media());
-        assert!(Command::MediaSeek(1_000).is_media());
-        assert!(Command::MediaSetVolume(0.4).is_media());
-        assert!(Command::MediaSetVisible(true).is_media());
-
-        assert!(!Command::AudioSetVolume(0.5).is_media());
-        assert!(!Command::NotificationDismiss(3).is_media());
-    }
-
-    #[test]
-    fn notification_commands_are_classified_for_routing() {
-        assert!(Command::NotificationDismiss(3).is_notifications());
-        assert!(Command::NotificationExpire(3).is_notifications());
-        assert!(Command::NotificationInvoke {
-            id: 3,
-            action: "default".to_string(),
-        }
-        .is_notifications());
-        assert!(Command::NotificationSetDnd(true).is_notifications());
-
-        assert!(!Command::IdleInhibitToggle.is_notifications());
-        assert!(!Command::AudioSetVolume(0.5).is_notifications());
-    }
-
-    #[test]
-    fn menu_commands_are_classified_for_routing() {
-        assert!(Command::MenuOpen("apps".to_string()).is_menu());
-        assert!(Command::MenuQuery {
-            id: "apps".to_string(),
-            query: "fire".to_string(),
-        }
-        .is_menu());
-        assert!(Command::MenuActivate {
-            id: "apps".to_string(),
-            index: 0,
-            action: None,
-        }
-        .is_menu());
-        assert!(Command::MenuReload("apps".to_string()).is_menu());
-        assert!(Command::MenuClose("apps".to_string()).is_menu());
-
-        assert!(!Command::IdleInhibitToggle.is_menu());
-        assert!(!Command::AudioSetVolume(0.5).is_menu());
-    }
-
-    #[test]
-    fn monitor_commands_are_classified_for_routing() {
-        assert!(Command::MonitorApply(MonitorLayout::default()).is_monitor());
-        assert!(Command::MonitorCycle {
-            target: "1".to_string(),
-            mode: None,
-        }
-        .is_monitor());
-        assert!(Command::MonitorMode {
-            target: "DP-1".to_string(),
-            mode: LayoutPreset::Mirror,
-        }
-        .is_monitor());
-        assert!(Command::MonitorSetPrimary("DP-1".to_string()).is_monitor());
-        assert!(Command::MonitorSetEnabled {
-            connector: "DP-1".to_string(),
-            enabled: false,
-        }
-        .is_monitor());
-
-        assert!(!Command::WorkspaceActivate("1".to_string()).is_monitor());
-        assert!(!Command::WorkspaceMoveToMonitor {
-            workspace: "1".to_string(),
-            monitor: "DP-1".to_string(),
-        }
-        .is_monitor());
-    }
-
-    #[test]
-    fn brightness_commands_are_classified_for_routing() {
-        assert!(Command::BrightnessSet(50.0).is_brightness());
-        assert!(Command::BrightnessStep(5.0).is_brightness());
-        assert!(Command::BrightnessSetTarget {
-            device: BrightnessDeviceId::Backlight("intel_backlight".to_string()),
-            percent: 40.0,
-        }
-        .is_brightness());
-        assert!(Command::BrightnessSnapshot.is_brightness());
-        assert!(Command::BrightnessDim { value: 10.0 }.is_brightness());
-        assert!(Command::BrightnessRestore.is_brightness());
-        assert!(Command::BrightnessRescan.is_brightness());
-
-        assert!(!Command::AudioSetVolume(0.5).is_brightness());
-        assert!(!Command::MonitorSetPrimary("DP-1".to_string()).is_brightness());
-    }
-
-    #[test]
-    fn audio_commands_are_classified_for_routing() {
-        assert!(Command::AudioSetVolume(0.5).is_audio());
-        assert!(Command::AudioStepVolume(-0.05).is_audio());
-        assert!(Command::AudioSetSourceVolume(0.5).is_audio());
-        assert!(Command::AudioSetEndpointVolume {
-            kind: EndpointKind::Sink,
-            id: 3,
-            volume: 0.5,
-        }
-        .is_audio());
-        assert!(Command::AudioSetEndpointMuted {
-            kind: EndpointKind::Source,
-            id: 4,
-            muted: true,
-        }
-        .is_audio());
-        assert!(Command::AudioSetMuted(true).is_audio());
-        assert!(Command::AudioToggleMute(EndpointKind::Sink).is_audio());
-        assert!(Command::AudioSetDefault(3).is_audio());
-
-        assert!(!Command::WorkspaceActivate("1".to_string()).is_audio());
-        assert!(!Command::MonitorSetPrimary("DP-1".to_string()).is_audio());
-    }
-
-    #[test]
-    fn auth_and_power_commands_are_classified_for_routing() {
-        assert!(Command::AuthAuthenticate {
+    fn every_command_routes_to_one_service() {
+        let auth = || Command::AuthAuthenticate {
             request_id: 1,
             username: "user".to_string(),
             password: Secret::new("x"),
-        }
-        .is_auth());
-        assert!(Command::PowerAction(PowerAction::Shutdown).is_power());
+        };
+        let cases = vec![
+            (
+                Command::WorkspaceActivate("1".to_string()),
+                Service::Workspaces,
+            ),
+            (
+                Command::WorkspaceMoveToMonitor {
+                    workspace: "1".to_string(),
+                    monitor: "DP-1".to_string(),
+                },
+                Service::Workspaces,
+            ),
+            (
+                Command::MonitorApply(MonitorLayout::default()),
+                Service::Monitors,
+            ),
+            (
+                Command::MonitorCycle {
+                    target: "1".to_string(),
+                    mode: None,
+                },
+                Service::Monitors,
+            ),
+            (
+                Command::MonitorMode {
+                    target: "DP-1".to_string(),
+                    mode: LayoutPreset::Mirror,
+                },
+                Service::Monitors,
+            ),
+            (
+                Command::MonitorSetPrimary("DP-1".to_string()),
+                Service::Monitors,
+            ),
+            (
+                Command::MonitorSetEnabled {
+                    connector: "DP-1".to_string(),
+                    enabled: false,
+                },
+                Service::Monitors,
+            ),
+            (Command::AudioSetVolume(0.5), Service::Audio),
+            (Command::AudioStepVolume(-0.05), Service::Audio),
+            (Command::AudioSetSourceVolume(0.5), Service::Audio),
+            (
+                Command::AudioSetEndpointVolume {
+                    kind: EndpointKind::Sink,
+                    id: 3,
+                    volume: 0.5,
+                },
+                Service::Audio,
+            ),
+            (
+                Command::AudioSetEndpointMuted {
+                    kind: EndpointKind::Source,
+                    id: 4,
+                    muted: true,
+                },
+                Service::Audio,
+            ),
+            (Command::AudioSetMuted(true), Service::Audio),
+            (Command::AudioToggleMute(EndpointKind::Sink), Service::Audio),
+            (Command::AudioSetDefault(3), Service::Audio),
+            (Command::BrightnessSet(50.0), Service::Brightness),
+            (Command::BrightnessStep(5.0), Service::Brightness),
+            (
+                Command::BrightnessSetTarget {
+                    device: BrightnessDeviceId::Backlight("intel_backlight".to_string()),
+                    percent: 40.0,
+                },
+                Service::Brightness,
+            ),
+            (Command::BrightnessSnapshot, Service::Brightness),
+            (Command::BrightnessDim { value: 10.0 }, Service::Brightness),
+            (Command::BrightnessRestore, Service::Brightness),
+            (Command::BrightnessRescan, Service::Brightness),
+            (Command::IdleInhibitSet(true), Service::IdleInhibit),
+            (Command::IdleInhibitToggle, Service::IdleInhibit),
+            (
+                Command::PowerProfileSet(PowerProfile::Performance),
+                Service::PowerProfiles,
+            ),
+            (Command::PowerProfileCycle, Service::PowerProfiles),
+            (Command::WifiSetEnabled(true), Service::Network),
+            (Command::WifiScan, Service::Network),
+            (Command::WifiSetDetails(false), Service::Network),
+            (
+                Command::WifiActivate {
+                    ssid: "home".to_string(),
+                    password: None,
+                },
+                Service::Network,
+            ),
+            (Command::WifiDeactivate, Service::Network),
+            (
+                Command::WiredSetEnabled {
+                    interface: "eth0".to_string(),
+                    enabled: false,
+                },
+                Service::Network,
+            ),
+            (Command::VpnActivate("uuid".to_string()), Service::Network),
+            (Command::VpnDeactivate("uuid".to_string()), Service::Network),
+            (Command::AirplaneModeSet(true), Service::Network),
+            (
+                Command::TrayActivate {
+                    item_id: ":1.2/StatusNotifierItem".to_string(),
+                    x: 0,
+                    y: 0,
+                },
+                Service::Tray,
+            ),
+            (
+                Command::TraySecondaryActivate {
+                    item_id: "item".to_string(),
+                    x: 1,
+                    y: 2,
+                },
+                Service::Tray,
+            ),
+            (
+                Command::TrayScroll {
+                    item_id: "item".to_string(),
+                    delta: 1,
+                    horizontal: false,
+                },
+                Service::Tray,
+            ),
+            (
+                Command::TrayMenuAboutToShow {
+                    item_id: "item".to_string(),
+                },
+                Service::Tray,
+            ),
+            (
+                Command::TrayMenuEvent {
+                    item_id: "item".to_string(),
+                    menu_id: 3,
+                    event: "clicked".to_string(),
+                },
+                Service::Tray,
+            ),
+            (Command::MediaPlayPause, Service::Media),
+            (Command::MediaNext, Service::Media),
+            (Command::MediaPrevious, Service::Media),
+            (Command::MediaSeek(1_000), Service::Media),
+            (Command::MediaSetVolume(0.4), Service::Media),
+            (Command::MediaSetVisible(true), Service::Media),
+            (Command::MenuOpen("apps".to_string()), Service::Menu),
+            (
+                Command::MenuQuery {
+                    id: "apps".to_string(),
+                    query: "fire".to_string(),
+                },
+                Service::Menu,
+            ),
+            (
+                Command::MenuActivate {
+                    id: "apps".to_string(),
+                    index: 0,
+                    action: None,
+                },
+                Service::Menu,
+            ),
+            (Command::MenuReload("apps".to_string()), Service::Menu),
+            (Command::MenuClose("apps".to_string()), Service::Menu),
+            (Command::NotificationDismiss(3), Service::Notifications),
+            (Command::NotificationExpire(3), Service::Notifications),
+            (
+                Command::NotificationInvoke {
+                    id: 3,
+                    action: "default".to_string(),
+                },
+                Service::Notifications,
+            ),
+            (Command::NotificationSetDnd(true), Service::Notifications),
+            (auth(), Service::Auth),
+            (
+                Command::PolkitRespond {
+                    cookie: "cookie".to_string(),
+                    password: Secret::new("x"),
+                },
+                Service::Polkit,
+            ),
+            (
+                Command::PolkitCancel {
+                    cookie: "cookie".to_string(),
+                },
+                Service::Polkit,
+            ),
+            (Command::PowerAction(PowerAction::Shutdown), Service::Power),
+        ];
 
-        assert!(Command::PolkitRespond {
-            cookie: "cookie".to_string(),
-            password: Secret::new("x"),
+        for (command, service) in cases {
+            assert_eq!(command.service(), service, "{command:?}");
         }
-        .is_polkit());
-        assert!(Command::PolkitCancel {
-            cookie: "cookie".to_string(),
-        }
-        .is_polkit());
-
-        assert!(!Command::PolkitCancel {
-            cookie: "cookie".to_string(),
-        }
-        .is_auth());
-        assert!(!Command::PowerAction(PowerAction::Shutdown).is_polkit());
-
-        assert!(!Command::PowerAction(PowerAction::Shutdown).is_auth());
-        assert!(!Command::AuthAuthenticate {
-            request_id: 1,
-            username: "user".to_string(),
-            password: Secret::new("x"),
-        }
-        .is_power());
     }
 
     #[test]
-    fn tray_commands_are_classified_for_routing() {
-        assert!(Command::TrayActivate {
-            item_id: ":1.2/StatusNotifierItem".to_string(),
-            x: 0,
-            y: 0,
-        }
-        .is_tray());
-        assert!(Command::TraySecondaryActivate {
-            item_id: "item".to_string(),
-            x: 1,
-            y: 2,
-        }
-        .is_tray());
-        assert!(Command::TrayScroll {
-            item_id: "item".to_string(),
-            delta: 1,
-            horizontal: false,
-        }
-        .is_tray());
-        assert!(Command::TrayMenuAboutToShow {
-            item_id: "item".to_string(),
-        }
-        .is_tray());
-        assert!(Command::TrayMenuEvent {
-            item_id: "item".to_string(),
-            menu_id: 3,
-            event: "clicked".to_string(),
-        }
-        .is_tray());
-
-        assert!(!Command::IdleInhibitToggle.is_tray());
-        assert!(!Command::AudioSetVolume(0.5).is_tray());
-    }
-
-    #[test]
-    fn power_profile_commands_are_classified_for_routing() {
-        assert!(Command::PowerProfileSet(PowerProfile::Performance).is_power_profiles());
-        assert!(Command::PowerProfileCycle.is_power_profiles());
-
-        assert!(!Command::IdleInhibitToggle.is_power_profiles());
-        assert!(!Command::AudioSetVolume(0.5).is_power_profiles());
-    }
-
-    #[test]
-    fn network_commands_are_classified_for_routing() {
-        assert!(Command::WifiSetEnabled(true).is_network());
-        assert!(Command::WifiScan.is_network());
-        assert!(Command::WifiSetDetails(false).is_network());
-        assert!(Command::WifiActivate {
-            ssid: "home".to_string(),
-            password: None,
-        }
-        .is_network());
-        assert!(Command::WifiDeactivate.is_network());
-        assert!(Command::WiredSetEnabled {
-            interface: "eth0".to_string(),
-            enabled: false,
-        }
-        .is_network());
-        assert!(Command::VpnActivate("uuid".to_string()).is_network());
-        assert!(Command::VpnDeactivate("uuid".to_string()).is_network());
-        assert!(Command::AirplaneModeSet(true).is_network());
-
-        assert!(!Command::AudioSetVolume(0.5).is_network());
-        assert!(!Command::AirplaneModeSet(true).is_power_profiles());
-    }
-
-    #[test]
-    fn idle_inhibit_commands_are_classified_for_routing() {
-        assert!(Command::IdleInhibitSet(true).is_idle_inhibit());
-        assert!(Command::IdleInhibitToggle.is_idle_inhibit());
+    fn idle_inhibit_commands_carry_their_value() {
         assert_eq!(
             Command::IdleInhibitSet(false).idle_inhibit(),
             Some(IdleInhibitCommand::Set(false))
@@ -542,8 +483,6 @@ mod tests {
             Command::IdleInhibitToggle.idle_inhibit(),
             Some(IdleInhibitCommand::Toggle)
         );
-
-        assert!(!Command::AudioSetVolume(0.5).is_idle_inhibit());
-        assert!(!Command::BrightnessSet(50.0).is_idle_inhibit());
+        assert_eq!(Command::AudioSetVolume(0.5).idle_inhibit(), None);
     }
 }

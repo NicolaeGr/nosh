@@ -2,7 +2,6 @@ use crate::audio::model::{AudioEndpoint, AudioModel, EndpointKind};
 use crate::auth::model::AuthResult;
 use crate::battery::model::BatteryModel;
 use crate::brightness::model::{BrightnessDevice, BrightnessDeviceId};
-use crate::idle_inhibit::model::IdleInhibitState;
 use crate::media::model::MediaModel;
 use crate::menu::MenuEvent;
 use crate::monitors::MonitorLayout;
@@ -17,14 +16,9 @@ use crate::tray::model::{TrayItemModel, TrayMenu};
 use crate::workspaces::model::WorkspaceSnapshot;
 
 /// Every service publishes state through this enum.
-///
-/// A snapshot carries the complete state of every service, so it is much
-/// larger than a single-service event by design.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum Event {
-    /// Complete state for every service that has started.
-    Snapshot(Snapshot),
     Workspaces(WorkspaceEvent),
     Monitors(MonitorEvent),
     Audio(AudioEvent),
@@ -42,31 +36,6 @@ pub enum Event {
     Power(PowerEvent),
     SessionLock(SessionLockEvent),
     Menu(MenuEvent),
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Snapshot {
-    pub workspaces: Option<WorkspaceSnapshot>,
-    pub workspace_backend: Option<&'static str>,
-    pub monitors: Option<MonitorLayout>,
-    pub monitor_backend: Option<&'static str>,
-    pub audio: Option<AudioModel>,
-    pub audio_backend: Option<&'static str>,
-    pub brightness: Option<Vec<crate::brightness::model::BrightnessDevice>>,
-    pub battery: Option<BatteryModel>,
-    pub system_stats: Option<SystemStats>,
-    pub idle_inhibit: Option<IdleInhibitState>,
-    pub idle_inhibit_backend: Option<&'static str>,
-    pub power_profiles: Option<PowerProfilesModel>,
-    pub network: Option<NetworkModel>,
-    pub network_backend: Option<&'static str>,
-    pub tray: Option<Vec<TrayItemModel>>,
-    pub tray_backend: Option<&'static str>,
-    pub media: Option<MediaModel>,
-    pub media_backend: Option<&'static str>,
-    pub notifications: Option<NotificationModel>,
-    pub notification_backend: Option<&'static str>,
-    pub power: Option<PowerModel>,
 }
 
 #[derive(Debug, Clone)]

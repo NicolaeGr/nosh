@@ -25,6 +25,7 @@ pub mod paths;
 pub mod polkit;
 pub mod power;
 pub mod power_profiles;
+mod service;
 pub mod session_lock;
 pub mod stats;
 pub mod tray;
@@ -54,7 +55,7 @@ pub use brightness::{
     CommandBackend, CommandDeviceConfig, DdcBackend, DdcDisplay, DdcutilBackend,
     SysfsLogindBackend, BRIGHTNESS_STEP, DIM_PERCENT, GAMMA,
 };
-pub use command::{Command, IdleInhibitCommand};
+pub use command::{Command, IdleInhibitCommand, Service};
 pub use error::{
     BackendError, BrightnessError, CoreError, EventParseError, MonitorError, NotificationError,
     PathError, StatsError,
@@ -62,7 +63,7 @@ pub use error::{
 pub use event::{
     AudioEvent, AuthEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MediaEvent,
     MonitorEvent, NetworkEvent, NotificationEvent, PowerEvent, PowerProfilesEvent,
-    SessionLockEvent, Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
+    SessionLockEvent, SystemStatsEvent, TrayEvent, WorkspaceEvent,
 };
 pub use idle_inhibit::{
     IdleInhibitBackend, IdleInhibitService, IdleInhibitServiceConfig, IdleInhibitState,

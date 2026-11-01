@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
@@ -15,21 +15,9 @@ use crate::audio::wpctl::WpctlBackend;
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::BackendError;
-use crate::event::{AudioEvent, Event, Snapshot};
+use crate::event::{AudioEvent, Event};
 use crate::origin::ChangeOrigin;
-
-/// Cancels a task and waits for it to stop, so its resources are released
-/// before the service returns.
-///
-/// A handle whose output was already taken by `select!` must not be polled
-/// again, so a finished task is skipped.
-async fn stop_task<T>(task: &mut tokio::task::JoinHandle<T>) {
-    if task.is_finished() {
-        return;
-    }
-    task.abort();
-    let _ = task.await;
-}
+use crate::service::{seed, stop_task, wait_or_closed};
 
 /// A backend that reports no audio devices. It keeps the shell running
 /// without an audio server.
@@ -212,12 +200,8 @@ impl AudioService {
 
             let mut state = AudioState {
                 model: initial.clone(),
-                backend: resolved.name,
             };
-            if emit_snapshot(&events, &state.model, resolved.name)
-                .await
-                .is_err()
-            {
+            if emit_snapshot(&events, &state.model).await.is_err() {
                 return;
             }
 
@@ -391,7 +375,6 @@ impl AudioService {
 
 struct AudioState {
     model: AudioModel,
-    backend: &'static str,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -589,31 +572,15 @@ async fn refresh(
     };
 
     let previous = std::mem::replace(&mut state.model, next.clone());
-    emit_snapshot(events, &next, state.backend).await?;
+    emit_snapshot(events, &next).await?;
     emit_changes(&previous, &next, user, events).await
 }
 
-async fn emit_snapshot(
-    events: &Sender<Event>,
-    model: &AudioModel,
-    backend: &'static str,
-) -> Result<(), ()> {
-    if events
+async fn emit_snapshot(events: &Sender<Event>, model: &AudioModel) -> Result<(), ()> {
+    events
         .send(Event::Audio(AudioEvent::Snapshot(model.clone())))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    let snapshot = Snapshot {
-        audio: Some(model.clone()),
-        audio_backend: Some(backend),
-        ..Snapshot::default()
-    };
-    if events.send(Event::Snapshot(snapshot)).await.is_err() {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 async fn emit_changes(
@@ -839,25 +806,6 @@ async fn stable_backend(
             });
         }
     }
-}
-
-async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
-    tokio::select! {
-        _ = tokio::time::sleep(duration) => false,
-        result = commands.recv() => {
-            if result.is_ok() {
-                tracing::debug!("dropping an audio command while disconnected");
-            }
-            result.is_err()
-        }
-    }
-}
-
-fn seed() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

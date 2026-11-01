@@ -11,7 +11,8 @@ use std::time::Duration;
 use async_channel::{Receiver, Sender};
 
 use crate::command::Command;
-use crate::event::{Event, Snapshot, SystemStatsEvent};
+use crate::event::{Event, SystemStatsEvent};
+use crate::service::wait_or_closed;
 use crate::stats::backend::StatsSourceRef;
 use crate::stats::model::{cpu_percent, CpuTimes, SystemStats};
 use crate::stats::proc::ProcStatsSource;
@@ -53,7 +54,6 @@ impl SystemStatsService {
     /// Runs until the command receiver closes or the event receiver is dropped.
     pub async fn run(self, commands: Receiver<Command>, events: Sender<Event>) {
         let mut sampler = Sampler::new(self.source);
-        let mut emitted = false;
 
         loop {
             let (stats, fresh) = sampler.sample().await;
@@ -67,17 +67,6 @@ impl SystemStatsService {
                     .is_err()
                 {
                     return;
-                }
-
-                if !emitted {
-                    emitted = true;
-                    let snapshot = Snapshot {
-                        system_stats: Some(stats),
-                        ..Snapshot::default()
-                    };
-                    if events.send(Event::Snapshot(snapshot)).await.is_err() {
-                        return;
-                    }
                 }
             }
 
@@ -156,18 +145,6 @@ impl Sampler {
             (Some(next), true)
         } else {
             (self.stats, false)
-        }
-    }
-}
-
-async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
-    tokio::select! {
-        _ = tokio::time::sleep(duration) => false,
-        result = commands.recv() => {
-            if result.is_ok() {
-                tracing::debug!("dropping a command while the stats service is idle");
-            }
-            result.is_err()
         }
     }
 }
@@ -340,11 +317,6 @@ mod tests {
                 mem_percent: 75,
             }
         );
-
-        match next_event(&events).await {
-            Event::Snapshot(snapshot) => assert_eq!(snapshot.system_stats, Some(stats)),
-            other => panic!("expected a snapshot, got {other:?}"),
-        }
     }
 
     #[tokio::test]

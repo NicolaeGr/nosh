@@ -26,7 +26,7 @@ use crate::brightness::snapshot;
 use crate::brightness::sysfs::SysfsLogindBackend;
 use crate::command::Command;
 use crate::error::BrightnessError;
-use crate::event::{BrightnessEvent, Event, Snapshot};
+use crate::event::{BrightnessEvent, Event};
 use crate::origin::ChangeOrigin;
 use crate::paths::NoshPaths;
 
@@ -965,18 +965,8 @@ fn find_entry(
 }
 
 async fn emit_snapshot(events: &Sender<Event>, state: &BrightnessState) -> Result<(), ()> {
-    let devices = state.models();
     events
-        .send(Event::Brightness(BrightnessEvent::Snapshot(
-            devices.clone(),
-        )))
-        .await
-        .map_err(|_| ())?;
-    events
-        .send(Event::Snapshot(Snapshot {
-            brightness: Some(devices),
-            ..Snapshot::default()
-        }))
+        .send(Event::Brightness(BrightnessEvent::Snapshot(state.models())))
         .await
         .map_err(|_| ())
 }

@@ -6,16 +6,17 @@
 //! backoff, so the rest of quick settings keeps working.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
-use crate::event::{Event, PowerProfilesEvent, Snapshot};
+use crate::event::{Event, PowerProfilesEvent};
 use crate::power_profiles::backend::{PowerProfilesBackendEvent, PowerProfilesBackendRef};
 use crate::power_profiles::dbus::DbusPowerProfilesBackend;
 use crate::power_profiles::model::{next_profile, PowerProfilesModel};
+use crate::service::{seed, wait_or_closed};
 
 #[derive(Debug, Clone)]
 pub struct PowerProfilesServiceConfig {
@@ -250,23 +251,12 @@ impl PowerProfilesService {
 }
 
 async fn emit_snapshot(events: &Sender<Event>, model: &PowerProfilesModel) -> Result<(), ()> {
-    if events
+    events
         .send(Event::PowerProfiles(PowerProfilesEvent::Snapshot(
             model.clone(),
         )))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    let snapshot = Snapshot {
-        power_profiles: Some(model.clone()),
-        ..Snapshot::default()
-    };
-    if events.send(Event::Snapshot(snapshot)).await.is_err() {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
@@ -274,25 +264,6 @@ async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
         .send(Event::PowerProfiles(PowerProfilesEvent::Unavailable))
         .await
         .map_err(|_| ())
-}
-
-async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
-    tokio::select! {
-        _ = tokio::time::sleep(duration) => false,
-        result = commands.recv() => {
-            if result.is_ok() {
-                tracing::debug!("dropping a command while the power profiles daemon is unavailable");
-            }
-            result.is_err()
-        }
-    }
-}
-
-fn seed() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

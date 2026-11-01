@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 use futures_util::stream::{select_all, SelectAll};
@@ -19,7 +19,8 @@ use zbus::{Connection, OwnedObjectPath, OwnedVariant, Proxy};
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::BackendError;
-use crate::event::{Event, Snapshot, TrayEvent};
+use crate::event::{Event, TrayEvent};
+use crate::service::{seed, stop_task, wait_or_closed};
 use crate::tray::focus::{HyprlandFocus, WindowFocus, WindowFocusRef, WindowHint};
 use crate::tray::icon::{largest_pixmap, IconCache};
 use crate::tray::menu::{DbusMenuClient, MENU_TIMEOUT};
@@ -37,19 +38,6 @@ pub const DBUS_INTERFACE: &str = "org.freedesktop.DBus";
 
 /// The number of item commands that may wait before new ones are dropped.
 const COMMAND_CAPACITY: usize = 32;
-
-/// Cancels a task and waits for it to stop, so its resources are released
-/// before the service returns.
-///
-/// A handle whose output was already taken by `select!` must not be polled
-/// again, so a finished task is skipped.
-async fn stop_task<T>(task: &mut tokio::task::JoinHandle<T>) {
-    if task.is_finished() {
-        return;
-    }
-    task.abort();
-    let _ = task.await;
-}
 
 /// The longest a focus lookup may take before the click falls back to
 /// `Activate`.
@@ -267,7 +255,6 @@ async fn run_session(
                             &mut models,
                             &mut menus,
                             events,
-                            backend,
                         )
                         .await?;
                     }
@@ -288,7 +275,6 @@ async fn run_session(
                     &mut models,
                     &mut menus,
                     events,
-                    backend,
                 )
                 .await?;
             }
@@ -314,7 +300,6 @@ async fn run_session(
                         &mut models,
                         &mut menus,
                         events,
-                        backend,
                     )
                     .await?;
                 }
@@ -335,7 +320,6 @@ async fn apply_item_event(
     models: &mut Vec<TrayItemModel>,
     menus: &mut HashMap<String, TrayMenu>,
     events: &Sender<Event>,
-    backend: &'static str,
 ) -> Result<(), ()> {
     match event {
         TrayItemEvent::Added { item, menu } => {
@@ -356,7 +340,6 @@ async fn apply_item_event(
             {
                 return Err(());
             }
-            emit_snapshot(events, models, backend).await?;
         }
         TrayItemEvent::Updated(item) => {
             upsert_model(models, item.clone());
@@ -409,7 +392,6 @@ async fn apply_item_event(
                 {
                     return Err(());
                 }
-                emit_snapshot(events, models, backend).await?;
             }
         }
     }
@@ -423,7 +405,6 @@ async fn remove_item(
     models: &mut Vec<TrayItemModel>,
     menus: &mut HashMap<String, TrayMenu>,
     events: &Sender<Event>,
-    backend: &'static str,
 ) -> Result<(), ()> {
     if let Some(mut runtime) = items.remove(item_id) {
         stop_task(&mut runtime.task).await;
@@ -433,17 +414,15 @@ async fn remove_item(
     models.retain(|model| model.item_id != item_id);
     menus.remove(item_id);
 
-    if was_visible {
-        if events
+    if was_visible
+        && events
             .send(Event::Tray(TrayEvent::ItemRemoved {
                 item_id: item_id.to_string(),
             }))
             .await
             .is_err()
-        {
-            return Err(());
-        }
-        emit_snapshot(events, models, backend).await?;
+    {
+        return Err(());
     }
 
     Ok(())
@@ -497,23 +476,14 @@ async fn announce_session(events: &Sender<Event>, backend: &'static str) -> Resu
     {
         return Err(());
     }
-    emit_snapshot(events, &[], backend).await
+    emit_snapshot(events, &[]).await
 }
 
-async fn emit_snapshot(
-    events: &Sender<Event>,
-    models: &[TrayItemModel],
-    backend: &'static str,
-) -> Result<(), ()> {
-    let snapshot = Snapshot {
-        tray: Some(models.to_vec()),
-        tray_backend: Some(backend),
-        ..Snapshot::default()
-    };
-    if events.send(Event::Snapshot(snapshot)).await.is_err() {
-        return Err(());
-    }
-    Ok(())
+async fn emit_snapshot(events: &Sender<Event>, models: &[TrayItemModel]) -> Result<(), ()> {
+    events
+        .send(Event::Tray(TrayEvent::Snapshot(models.to_vec())))
+        .await
+        .map_err(|_| ())
 }
 
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
@@ -521,25 +491,6 @@ async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
         .send(Event::Tray(TrayEvent::Unavailable))
         .await
         .map_err(|_| ())
-}
-
-async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
-    tokio::select! {
-        _ = tokio::time::sleep(duration) => false,
-        result = commands.recv() => {
-            if result.is_ok() {
-                tracing::debug!("dropping a command while the tray is disconnected");
-            }
-            result.is_err()
-        }
-    }
-}
-
-fn seed() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(0)
 }
 
 struct ItemRuntime {

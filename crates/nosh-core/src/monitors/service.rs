@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::{BackendError, MonitorError};
-use crate::event::{Event, MonitorEvent, Snapshot};
+use crate::event::{Event, MonitorEvent};
 use crate::hyprland::{Hyprland, HyprlandMonitorBackend};
 use crate::monitors::backend::{
     resolve_monitor, MonitorBackend, MonitorBackendEvent, MonitorBackendRef, MonitorCandidate,
@@ -16,6 +16,7 @@ use crate::monitors::backend::{
 };
 use crate::monitors::model::{MonitorCapabilities, MonitorLayout};
 use crate::monitors::preset::{preset_layout, resolve_target, LayoutPreset};
+use crate::service::{seed, wait_or_closed};
 
 /// A backend that reports no monitors. It keeps the shell running on a
 /// compositor without a monitor adapter.
@@ -221,20 +222,12 @@ impl MonitorService {
             let layout = state.adopt(initial);
             if events
                 .send(Event::Monitors(MonitorEvent::Snapshot {
-                    layout: layout.clone(),
+                    layout,
                     backend: resolved.name,
                 }))
                 .await
                 .is_err()
             {
-                return;
-            }
-            let snapshot = Snapshot {
-                monitors: Some(layout),
-                monitor_backend: Some(resolved.name),
-                ..Snapshot::default()
-            };
-            if events.send(Event::Snapshot(snapshot)).await.is_err() {
                 return;
             }
 
@@ -655,25 +648,6 @@ async fn emit_unavailable(events: &Sender<Event>) -> Result<(), ()> {
         .map_err(|_| ())
 }
 
-async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
-    tokio::select! {
-        _ = tokio::time::sleep(duration) => false,
-        result = commands.recv() => {
-            if result.is_ok() {
-                tracing::debug!("dropping a monitor command while disconnected");
-            }
-            result.is_err()
-        }
-    }
-}
-
-fn seed() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::Ordering;
@@ -743,10 +717,10 @@ mod tests {
     async fn wait_for_snapshot(events: &Receiver<Event>) -> MonitorLayout {
         tokio::time::timeout(Duration::from_secs(1), async {
             loop {
-                if let Ok(Event::Snapshot(snapshot)) = events.recv().await {
-                    if let Some(layout) = snapshot.monitors {
-                        break layout;
-                    }
+                if let Ok(Event::Monitors(MonitorEvent::Snapshot { layout, .. })) =
+                    events.recv().await
+                {
+                    break layout;
                 }
             }
         })
@@ -796,12 +770,6 @@ mod tests {
             event,
             Event::Monitors(MonitorEvent::Snapshot { .. })
         ));
-
-        let event = tokio::time::timeout(Duration::from_secs(1), event_rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(matches!(event, Event::Snapshot(_)));
 
         task.abort();
     }

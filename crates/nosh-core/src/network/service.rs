@@ -14,29 +14,17 @@
 //!   open handler and the refresh button.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
-use crate::event::{Event, NetworkEvent, Snapshot};
+use crate::event::{Event, NetworkEvent};
 use crate::network::backend::{NetworkBackendEvent, NetworkBackendRef};
 use crate::network::model::NetworkModel;
 use crate::network::nm::NetworkManagerBackend;
-
-/// Cancels a task and waits for it to stop, so its resources are released
-/// before the service returns.
-///
-/// A handle whose output was already taken by `select!` must not be polled
-/// again, so a finished task is skipped.
-async fn stop_task<T>(task: &mut tokio::task::JoinHandle<T>) {
-    if task.is_finished() {
-        return;
-    }
-    task.abort();
-    let _ = task.await;
-}
+use crate::service::{seed, stop_task, wait_or_closed};
 
 #[derive(Debug, Clone)]
 pub struct NetworkServiceConfig {
@@ -430,37 +418,17 @@ fn log_watch_end(
 }
 
 async fn emit_snapshot(events: &Sender<Event>, model: &NetworkModel) -> Result<(), ()> {
-    if events
+    events
         .send(Event::Network(NetworkEvent::Snapshot(model.clone())))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    let snapshot = Snapshot {
-        network: Some(model.clone()),
-        network_backend: Some("networkmanager"),
-        ..Snapshot::default()
-    };
-    if events.send(Event::Snapshot(snapshot)).await.is_err() {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 async fn emit_changed(events: &Sender<Event>, model: &NetworkModel) -> Result<(), ()> {
-    if events
+    events
         .send(Event::Network(NetworkEvent::Changed(model.clone())))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    let snapshot = Snapshot {
-        network: Some(model.clone()),
-        ..Snapshot::default()
-    };
-    events.send(Event::Snapshot(snapshot)).await.map_err(|_| ())
+        .map_err(|_| ())
 }
 
 async fn send_failure(events: &Sender<Event>, message: String) -> Result<(), ()> {
@@ -475,25 +443,6 @@ async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
         .send(Event::Network(NetworkEvent::Unavailable))
         .await
         .map_err(|_| ())
-}
-
-async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
-    tokio::select! {
-        _ = tokio::time::sleep(duration) => false,
-        result = commands.recv() => {
-            if result.is_ok() {
-                tracing::debug!("dropping a command while NetworkManager is unavailable");
-            }
-            result.is_err()
-        }
-    }
-}
-
-fn seed() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

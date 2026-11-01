@@ -196,11 +196,16 @@ impl BrightnessService {
                     }
                 }
                 _ = ticker.tick() => {
-                    if self.poll(&mut state, &events).await.is_err() {
+                    if self.poll(&mut state, &events, false).await.is_err() {
                         return;
                     }
                 }
                 _ = retry_ticker.tick() => {
+                    // Hotplug is rare, so the full discovery runs on the slow
+                    // ticker instead of on every poll.
+                    if self.poll(&mut state, &events, true).await.is_err() {
+                        return;
+                    }
                     let retry = state.devices.iter().any(|device| {
                         device.device.kind == BrightnessKind::ExternalDdc
                             && !device.device.available
@@ -343,7 +348,12 @@ impl BrightnessService {
     }
 
     /// Reads internal brightness files and picks up sysfs backlight changes.
-    async fn poll(&self, state: &mut BrightnessState, events: &Sender<Event>) -> Result<(), ()> {
+    async fn poll(
+        &self,
+        state: &mut BrightnessState,
+        events: &Sender<Event>,
+        rediscover: bool,
+    ) -> Result<(), ()> {
         let mut changed = false;
 
         for device in state.devices.iter_mut() {
@@ -386,6 +396,10 @@ impl BrightnessService {
                     );
                 }
             }
+        }
+
+        if !rediscover {
+            return Ok(());
         }
 
         let discovered = discover_first(&self.internal).await;
@@ -1529,7 +1543,7 @@ mod tests {
         let reads = fallback.read_count().await;
 
         for _ in 0..3 {
-            service.poll(&mut state, &event_tx).await.unwrap();
+            service.poll(&mut state, &event_tx, true).await.unwrap();
         }
 
         assert_eq!(fallback.read_count().await, reads);

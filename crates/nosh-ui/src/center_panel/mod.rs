@@ -121,6 +121,8 @@ struct Inner {
     collapsed: Cell<Collapsed>,
     hover_close: Cell<bool>,
     leave_timer: RefCell<Option<glib::SourceId>>,
+    /// The one-second panel clock, armed only while the panel is on screen.
+    clock_timer: RefCell<Option<glib::SourceId>>,
     restore: RefCell<Option<Box<dyn Fn()>>>,
 }
 
@@ -216,6 +218,7 @@ impl CenterPanelWindow {
             }),
             hover_close: Cell::new(false),
             leave_timer: RefCell::new(None),
+            clock_timer: RefCell::new(None),
             restore: RefCell::new(None),
         });
 
@@ -267,27 +270,6 @@ impl CenterPanelWindow {
             motion.connect_leave(move |_| schedule_hover_close(&inner));
         }
         inner.card.add_controller(motion);
-
-        let weak = Rc::downgrade(&inner);
-        glib::timeout_add_seconds_local(1, move || {
-            let Some(inner) = weak.upgrade() else {
-                return glib::ControlFlow::Break;
-            };
-            if inner.clock_label.parent().is_none() {
-                return glib::ControlFlow::Break;
-            }
-            // Nothing behind the panel changes while it is closed, and the bar
-            // carries its own clock.
-            if inner.state.get() == State::Closed {
-                return glib::ControlFlow::Continue;
-            }
-            let text = crate::bar::time::now_text();
-            if inner.clock_label.text().as_str() != text {
-                inner.clock_label.set_text(&text);
-            }
-            inner.media_view.advance();
-            glib::ControlFlow::Continue
-        });
 
         Self { inner }
     }
@@ -383,12 +365,43 @@ impl CenterPanelWindow {
         self.inner.hover_close.set(hover);
         let generation = self.inner.generation.get().wrapping_add(1);
         self.inner.generation.set(generation);
+        arm_clock(&self.inner);
 
         self.inner.window.present();
         self.inner.viewport.grab_focus();
         animate_open(Rc::clone(&self.inner), width, height, tab, generation);
         true
     }
+}
+
+/// Arms the one-second clock. The panel closes and restores the real island
+/// when it is done, so nothing here is needed while it is hidden and the bar
+/// carries its own clock.
+fn arm_clock(inner: &Rc<Inner>) {
+    if inner.clock_timer.borrow().is_some() {
+        return;
+    }
+    let weak = Rc::downgrade(inner);
+    let source = glib::timeout_add_seconds_local(1, move || {
+        let Some(inner) = weak.upgrade() else {
+            return glib::ControlFlow::Break;
+        };
+        if inner.clock_label.parent().is_none() || inner.state.get() == State::Closed {
+            *inner.clock_timer.borrow_mut() = None;
+            return glib::ControlFlow::Break;
+        }
+        refresh_clock(&inner);
+        glib::ControlFlow::Continue
+    });
+    *inner.clock_timer.borrow_mut() = Some(source);
+}
+
+fn refresh_clock(inner: &Inner) {
+    let text = crate::bar::time::now_text();
+    if inner.clock_label.text().as_str() != text {
+        inner.clock_label.set_text(&text);
+    }
+    inner.media_view.advance();
 }
 
 fn cancel_leave(inner: &Rc<Inner>) {
@@ -1149,6 +1162,10 @@ struct Marquee {
     wait: Cell<f64>,
     last: Cell<Option<Instant>>,
     centered: Cell<bool>,
+    /// The frame-clock callback, present only while the text overflows and
+    /// the widget is mapped. Anything else would keep the compositor busy
+    /// drawing frames that never change.
+    tick: RefCell<Option<gtk::TickCallbackId>>,
 }
 
 impl Marquee {
@@ -1174,7 +1191,7 @@ impl Marquee {
         viewport.set_hexpand(true);
         viewport.set_child(Some(&track));
 
-        Rc::new(Self {
+        let marquee = Rc::new(Self {
             viewport,
             track,
             label,
@@ -1183,31 +1200,81 @@ impl Marquee {
             wait: Cell::new(MARQUEE_PAUSE),
             last: Cell::new(None),
             centered: Cell::new(true),
-        })
+            tick: RefCell::new(None),
+        });
+
+        // A mapped widget is the only place the animation can run, so the
+        // callback starts on map and stops on unmap. The stack stashes the
+        // media tab when it is not shown, which unmaps the viewport.
+        {
+            let weak = Rc::downgrade(&marquee);
+            marquee.viewport.connect_map(move |_| {
+                if let Some(marquee) = weak.upgrade() {
+                    marquee.kick();
+                }
+            });
+        }
+        {
+            let weak = Rc::downgrade(&marquee);
+            marquee.viewport.connect_unmap(move |_| {
+                if let Some(marquee) = weak.upgrade() {
+                    marquee.stop();
+                }
+            });
+        }
+        marquee
+    }
+
+    /// Starts the frame callback unless it is already running. It stops on its
+    /// own once the text fits, and `set_text` starts it again.
+    fn kick(self: &Rc<Self>) {
+        if self.tick.borrow().is_some() {
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        let id = self.viewport.add_tick_callback(move |_, _| {
+            let Some(marquee) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            let flow = marquee.advance();
+            if flow == glib::ControlFlow::Break {
+                *marquee.tick.borrow_mut() = None;
+            }
+            flow
+        });
+        *self.tick.borrow_mut() = Some(id);
+    }
+
+    fn stop(&self) {
+        if let Some(id) = self.tick.borrow_mut().take() {
+            id.remove();
+        }
     }
 
     fn widget(&self) -> &gtk::ScrolledWindow {
         &self.viewport
     }
 
-    fn set_text(&self, text: &str) {
+    fn set_text(self: &Rc<Self>, text: &str) {
         if self.label.text().as_str() == text {
             return;
         }
         self.label.set_text(text);
         self.reset();
+        self.kick();
     }
 
     fn reset(&self) {
         self.offset.set(0.0);
         self.direction.set(1.0);
         self.wait.set(MARQUEE_PAUSE);
+        self.last.set(None);
         self.viewport.hadjustment().set_value(0.0);
     }
 
-    /// Moves the text when it overflows. Runs from a tick callback on the
-    /// viewport, which only fires while the media tab is mapped.
-    fn advance(&self) {
+    /// Moves the text when it overflows. Returns `Break` when there is nothing
+    /// left to animate, which stops the frame callback.
+    fn advance(&self) -> glib::ControlFlow {
         let now = Instant::now();
         let dt = self
             .last
@@ -1226,7 +1293,7 @@ impl Marquee {
                 self.offset.set(0.0);
                 self.viewport.hadjustment().set_value(0.0);
             }
-            return;
+            return glib::ControlFlow::Break;
         }
         if self.centered.replace(false) {
             self.label.set_halign(gtk::Align::Start);
@@ -1235,7 +1302,7 @@ impl Marquee {
 
         if self.wait.get() > 0.0 {
             self.wait.set(self.wait.get() - dt);
-            return;
+            return glib::ControlFlow::Continue;
         }
 
         let mut offset = self.offset.get() + self.direction.get() * MARQUEE_SPEED * dt;
@@ -1250,6 +1317,7 @@ impl Marquee {
         }
         self.offset.set(offset);
         self.viewport.hadjustment().set_value(offset);
+        glib::ControlFlow::Continue
     }
 }
 
@@ -1461,16 +1529,6 @@ impl MediaView {
                     view.core.send(Command::MediaSetVolume(value / 100.0));
                 }
                 glib::Propagation::Proceed
-            });
-        }
-        {
-            let weak = Rc::downgrade(&view);
-            view.marquee.widget().add_tick_callback(move |_, _| {
-                let Some(view) = weak.upgrade() else {
-                    return glib::ControlFlow::Break;
-                };
-                view.marquee.advance();
-                glib::ControlFlow::Continue
             });
         }
         view

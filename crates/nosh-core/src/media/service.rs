@@ -17,6 +17,13 @@ use crate::media::backend::MediaBackendRef;
 use crate::media::model::MediaModel;
 use crate::media::mpris::MprisBackend;
 
+/// Fast polls after a change, before the interval backs off.
+const SETTLE_POLLS: u8 = 5;
+/// The steady-state interval is this many times the configured poll.
+const SLOW_POLL_FACTOR: u32 = 5;
+/// A paused player is polled this rarely.
+const PAUSED_POLL: Duration = Duration::from_secs(30);
+
 #[derive(Debug, Clone)]
 pub struct MediaServiceConfig {
     pub retry: RetryPolicy,
@@ -107,6 +114,10 @@ impl MediaService {
             let backend = Arc::clone(&self.backend);
             let mut watch = tokio::spawn(async move { backend.watch(watch_tx).await });
             let connected_at = Instant::now();
+            // Players publish metadata in stages right after a change, so poll
+            // quickly for a while and then back off. The position does not need
+            // a fast poll: the panel advances it locally between reads.
+            let mut settle = SETTLE_POLLS;
 
             loop {
                 tokio::select! {
@@ -130,18 +141,27 @@ impl MediaService {
                     event = watch_rx.recv() => {
                         match event {
                             Ok(_) => {
-                                if refresh(&self.backend, &mut state, &events).await.is_err() {
-                                    watch.abort();
-                                    return;
+                                match refresh(&self.backend, &mut state, &events).await {
+                                    Ok(false) => {}
+                                    Ok(true) => settle = SETTLE_POLLS,
+                                    Err(()) => {
+                                        watch.abort();
+                                        return;
+                                    }
                                 }
                             }
                             Err(_) => break,
                         }
                     }
-                    _ = poll_sleep(poll_delay(&state, self.config.poll)) => {
-                        if refresh(&self.backend, &mut state, &events).await.is_err() {
-                            watch.abort();
-                            return;
+                    _ = poll_sleep(poll_delay(&state, self.config.poll, settle)) => {
+                        settle = settle.saturating_sub(1);
+                        match refresh(&self.backend, &mut state, &events).await {
+                            Ok(false) => {}
+                            Ok(true) => settle = SETTLE_POLLS,
+                            Err(()) => {
+                                watch.abort();
+                                return;
+                            }
                         }
                     }
                     result = &mut watch => {
@@ -231,7 +251,7 @@ async fn refresh(
     backend: &MediaBackendRef,
     state: &mut MediaModel,
     events: &Sender<Event>,
-) -> Result<(), ()> {
+) -> Result<bool, ()> {
     let next = match backend.read().await {
         Ok(model) => model,
         Err(error) => {
@@ -240,18 +260,19 @@ async fn refresh(
                 %error,
                 "a media read after a change failed"
             );
-            return Ok(());
+            return Ok(false);
         }
     };
 
-    if next != *state {
-        *state = next.clone();
-        events
-            .send(Event::Media(MediaEvent::Changed(next)))
-            .await
-            .map_err(|_| ())?;
+    if next == *state {
+        return Ok(false);
     }
-    Ok(())
+    *state = next.clone();
+    events
+        .send(Event::Media(MediaEvent::Changed(next)))
+        .await
+        .map_err(|_| ())?;
+    Ok(true)
 }
 
 async fn emit_snapshot(
@@ -290,15 +311,20 @@ fn seed() -> u64 {
         .unwrap_or(0)
 }
 
-/// How long until the next unsolicited read. A playing player advances its
-/// position and staged metadata arrives late, so keep reading while there is
-/// something to show. Without a player the watch signals are enough to notice
-/// one appearing, so the interval stops entirely.
-fn poll_delay(state: &MediaModel, active: Duration) -> Option<Duration> {
+/// How often to re-read the player without a signal. A change is followed by
+/// a burst of fast polls because players stage their metadata, and the steady
+/// state is slow because the panel advances the position itself. A paused
+/// player only needs an occasional safety net, and a player that is not there
+/// needs nothing: the watch reports it appearing or changing.
+fn poll_delay(state: &MediaModel, active: Duration, settle: u8) -> Option<Duration> {
     if state.status.is_playing() {
-        Some(active)
+        if settle > 0 {
+            Some(active)
+        } else {
+            Some(active * SLOW_POLL_FACTOR)
+        }
     } else if state.is_active() {
-        Some(active.max(Duration::from_secs(5)))
+        Some(active.max(PAUSED_POLL))
     } else {
         None
     }

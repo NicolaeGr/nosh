@@ -39,6 +39,19 @@ pub const DBUS_INTERFACE: &str = "org.freedesktop.DBus";
 /// The number of item commands that may wait before new ones are dropped.
 const COMMAND_CAPACITY: usize = 32;
 
+/// Cancels a task and waits for it to stop, so its resources are released
+/// before the service returns.
+///
+/// A handle whose output was already taken by `select!` must not be polled
+/// again, so a finished task is skipped.
+async fn stop_task<T>(task: &mut tokio::task::JoinHandle<T>) {
+    if task.is_finished() {
+        return;
+    }
+    task.abort();
+    let _ = task.await;
+}
+
 /// The longest a focus lookup may take before the click falls back to
 /// `Activate`.
 const FOCUS_TIMEOUT: Duration = Duration::from_secs(1);
@@ -310,8 +323,8 @@ async fn run_session(
         }
     }
 
-    for (_, runtime) in std::mem::take(&mut items) {
-        runtime.task.abort();
+    for (_, mut runtime) in std::mem::take(&mut items) {
+        stop_task(&mut runtime.task).await;
     }
 
     Ok(())
@@ -375,15 +388,15 @@ async fn apply_item_event(
         }
         TrayItemEvent::Failed { item_id, error } => {
             tracing::debug!(item_id, %error, "a tray item could not be read");
-            if let Some(runtime) = items.remove(&item_id) {
-                runtime.task.abort();
+            if let Some(mut runtime) = items.remove(&item_id) {
+                stop_task(&mut runtime.task).await;
             }
             models.retain(|model| model.item_id != item_id);
             menus.remove(&item_id);
         }
         TrayItemEvent::Removed(item_id) => {
-            if let Some(runtime) = items.remove(&item_id) {
-                runtime.task.abort();
+            if let Some(mut runtime) = items.remove(&item_id) {
+                stop_task(&mut runtime.task).await;
             }
             if models.iter().any(|model| model.item_id == item_id) {
                 models.retain(|model| model.item_id != item_id);
@@ -413,8 +426,8 @@ async fn remove_item(
     events: &Sender<Event>,
     backend: &'static str,
 ) -> Result<(), ()> {
-    if let Some(runtime) = items.remove(item_id) {
-        runtime.task.abort();
+    if let Some(mut runtime) = items.remove(item_id) {
+        stop_task(&mut runtime.task).await;
     }
 
     let was_visible = models.iter().any(|model| model.item_id == item_id);

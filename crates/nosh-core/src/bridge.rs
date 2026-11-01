@@ -49,6 +49,13 @@ pub struct CoreSettings {
     pub power: PowerServiceConfig,
 }
 
+/// Capacity of every command channel in the bridge.
+///
+/// Commands are user actions, so a small bound is plenty. When a service is
+/// slow the router applies backpressure to the service channel, and the public
+/// command channel never grows without bound.
+const COMMAND_CAPACITY: usize = 64;
+
 /// Handle to the core thread.
 ///
 /// The core runs on its own Tokio runtime. The UI subscribes to events before
@@ -86,25 +93,30 @@ impl Core {
             .thread_name("nosh-core")
             .build()?;
 
-        let (commands, public_commands) = async_channel::unbounded();
+        let (commands, public_commands) = async_channel::bounded(COMMAND_CAPACITY);
+        // Events stay unbounded because several services use `try_send` for
+        // them and would silently drop state updates under load.
         let (event_sender, events) = async_channel::unbounded();
         let (service_events, service_event_receiver) = async_channel::unbounded();
-        let (workspace_commands, workspace_receiver) = async_channel::unbounded();
-        let (monitor_commands, monitor_receiver) = async_channel::unbounded();
-        let (audio_commands, audio_receiver) = async_channel::unbounded();
-        let (brightness_commands, brightness_receiver) = async_channel::unbounded();
-        let (battery_commands, battery_receiver) = async_channel::unbounded();
-        let (stats_commands, stats_receiver) = async_channel::unbounded();
-        let (idle_inhibit_commands, idle_inhibit_receiver) = async_channel::unbounded();
-        let (power_profiles_commands, power_profiles_receiver) = async_channel::unbounded();
-        let (network_commands, network_receiver) = async_channel::unbounded();
-        let (tray_commands, tray_receiver) = async_channel::unbounded();
-        let (media_commands, media_receiver) = async_channel::unbounded();
-        let (menu_commands, menu_receiver) = async_channel::unbounded();
-        let (notification_commands, notification_receiver) = async_channel::unbounded();
-        let (auth_commands, auth_receiver) = async_channel::unbounded();
-        let (polkit_commands, polkit_receiver) = async_channel::unbounded();
-        let (power_commands, power_receiver) = async_channel::unbounded();
+        let (workspace_commands, workspace_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (monitor_commands, monitor_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (audio_commands, audio_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (brightness_commands, brightness_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (battery_commands, battery_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (stats_commands, stats_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (idle_inhibit_commands, idle_inhibit_receiver) =
+            async_channel::bounded(COMMAND_CAPACITY);
+        let (power_profiles_commands, power_profiles_receiver) =
+            async_channel::bounded(COMMAND_CAPACITY);
+        let (network_commands, network_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (tray_commands, tray_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (media_commands, media_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (menu_commands, menu_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (notification_commands, notification_receiver) =
+            async_channel::bounded(COMMAND_CAPACITY);
+        let (auth_commands, auth_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (polkit_commands, polkit_receiver) = async_channel::bounded(COMMAND_CAPACITY);
+        let (power_commands, power_receiver) = async_channel::bounded(COMMAND_CAPACITY);
 
         let thread = thread::Builder::new()
             .name("nosh-core".to_string())
@@ -196,8 +208,10 @@ impl Core {
                         session_lock
                     );
                     router.abort();
+                    let _ = router.await;
                     if let Some(bind_sync) = bind_sync {
                         bind_sync.abort();
+                        let _ = bind_sync.await;
                     }
                     let _ = merger.await;
                 });
@@ -214,8 +228,11 @@ impl Core {
         self.events.clone()
     }
 
-    /// Queues a command without blocking. The core channel is unbounded, so a
-    /// failure means the core has stopped.
+    /// Queues a command without blocking.
+    ///
+    /// The public command channel is bounded, so a command is dropped (and
+    /// logged) when the core is overwhelmed instead of growing memory without
+    /// bound. A failure also means the core has stopped.
     pub fn send(&self, command: Command) {
         if let Err(error) = self.commands.try_send(command) {
             tracing::warn!(%error, "core command was not delivered");

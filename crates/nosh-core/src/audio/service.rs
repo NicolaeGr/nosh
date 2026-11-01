@@ -18,6 +18,19 @@ use crate::error::BackendError;
 use crate::event::{AudioEvent, Event, Service, Snapshot};
 use crate::origin::ChangeOrigin;
 
+/// Cancels a task and waits for it to stop, so its resources are released
+/// before the service returns.
+///
+/// A handle whose output was already taken by `select!` must not be polled
+/// again, so a finished task is skipped.
+async fn stop_task<T>(task: &mut tokio::task::JoinHandle<T>) {
+    if task.is_finished() {
+        return;
+    }
+    task.abort();
+    let _ = task.await;
+}
+
 /// A backend that reports no audio devices. It keeps the shell running
 /// without an audio server.
 pub struct StaticAudioBackend;
@@ -288,13 +301,13 @@ impl AudioService {
                                     .await
                                     .is_err()
                                     {
-                                        watch.abort();
+                                        stop_task(&mut watch).await;
                                         return;
                                     }
                                 }
                             }
                             Err(_) => {
-                                watch.abort();
+                                stop_task(&mut watch).await;
                                 return;
                             }
                         }
@@ -317,7 +330,7 @@ impl AudioService {
                                 .await
                                 .is_err()
                                 {
-                                    watch.abort();
+                                    stop_task(&mut watch).await;
                                     return;
                                 }
                             }
@@ -367,9 +380,9 @@ impl AudioService {
                 }
             }
 
-            watch.abort();
-            if let Some(task) = recovery_task.take() {
-                task.abort();
+            stop_task(&mut watch).await;
+            if let Some(mut task) = recovery_task.take() {
+                stop_task(&mut task).await;
             }
 
             if recovered_backend {

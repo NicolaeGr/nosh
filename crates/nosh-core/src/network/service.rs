@@ -25,6 +25,19 @@ use crate::network::backend::{NetworkBackendEvent, NetworkBackendRef};
 use crate::network::model::NetworkModel;
 use crate::network::nm::NetworkManagerBackend;
 
+/// Cancels a task and waits for it to stop, so its resources are released
+/// before the service returns.
+///
+/// A handle whose output was already taken by `select!` must not be polled
+/// again, so a finished task is skipped.
+async fn stop_task<T>(task: &mut tokio::task::JoinHandle<T>) {
+    if task.is_finished() {
+        return;
+    }
+    task.abort();
+    let _ = task.await;
+}
+
 #[derive(Debug, Clone)]
 pub struct NetworkServiceConfig {
     pub retry: RetryPolicy,
@@ -141,7 +154,7 @@ impl NetworkService {
                 tokio::select! {
                     result = commands.recv() => {
                         let Ok(command) = result else {
-                            watch.abort();
+                            stop_task(&mut watch).await;
                             return;
                         };
 
@@ -157,7 +170,7 @@ impl NetworkService {
                                         state = model;
                                         state.wifi.scanning = scanning;
                                         if emit_changed(&events, &state).await.is_err() {
-                                            watch.abort();
+                                            stop_task(&mut watch).await;
                                             return;
                                         }
                                     }
@@ -170,7 +183,7 @@ impl NetworkService {
                                 if let Err(error) = self.backend.set_wifi_enabled(enabled).await {
                                     tracing::warn!(%error, "setting Wi-Fi power failed");
                                     if send_failure(&events, error.to_string()).await.is_err() {
-                                        watch.abort();
+                                        stop_task(&mut watch).await;
                                         return;
                                     }
                                 }
@@ -184,11 +197,11 @@ impl NetworkService {
                                         scanning = true;
                                         state.wifi.scanning = true;
                                         if events.send(Event::Network(NetworkEvent::ScanStarted)).await.is_err() {
-                                            watch.abort();
+                                            stop_task(&mut watch).await;
                                             return;
                                         }
                                         if emit_changed(&events, &state).await.is_err() {
-                                            watch.abort();
+                                            stop_task(&mut watch).await;
                                             return;
                                         }
                                         let timeout = self.config.scan_timeout;
@@ -203,7 +216,7 @@ impl NetworkService {
                                         scanning = false;
                                         state.wifi.scanning = false;
                                         if send_failure(&events, error.to_string()).await.is_err() {
-                                            watch.abort();
+                                            stop_task(&mut watch).await;
                                             return;
                                         }
                                     }
@@ -221,7 +234,7 @@ impl NetworkService {
                                     Err(error) => {
                                         tracing::warn!(%error, ssid = %ssid, "connecting to Wi-Fi failed");
                                         if send_failure(&events, error.to_string()).await.is_err() {
-                                            watch.abort();
+                                            stop_task(&mut watch).await;
                                             return;
                                         }
                                     }
@@ -231,7 +244,7 @@ impl NetworkService {
                                 if let Err(error) = self.backend.deactivate_wifi().await {
                                     tracing::warn!(%error, "disconnecting Wi-Fi failed");
                                     if send_failure(&events, error.to_string()).await.is_err() {
-                                        watch.abort();
+                                        stop_task(&mut watch).await;
                                         return;
                                     }
                                 }
@@ -244,7 +257,7 @@ impl NetworkService {
                                 {
                                     tracing::warn!(%error, %interface, "setting a wired interface failed");
                                     if send_failure(&events, error.to_string()).await.is_err() {
-                                        watch.abort();
+                                        stop_task(&mut watch).await;
                                         return;
                                     }
                                 }
@@ -253,7 +266,7 @@ impl NetworkService {
                                     state = model;
                                     state.wifi.scanning = scanning;
                                     if emit_changed(&events, &state).await.is_err() {
-                                        watch.abort();
+                                        stop_task(&mut watch).await;
                                         return;
                                     }
                                 }
@@ -262,7 +275,7 @@ impl NetworkService {
                                 if let Err(error) = self.backend.activate_vpn(&uuid).await {
                                     tracing::warn!(%error, %uuid, "activating a VPN failed");
                                     if send_failure(&events, error.to_string()).await.is_err() {
-                                        watch.abort();
+                                        stop_task(&mut watch).await;
                                         return;
                                     }
                                 }
@@ -271,7 +284,7 @@ impl NetworkService {
                                 if let Err(error) = self.backend.deactivate_vpn(&uuid).await {
                                     tracing::warn!(%error, %uuid, "deactivating a VPN failed");
                                     if send_failure(&events, error.to_string()).await.is_err() {
-                                        watch.abort();
+                                        stop_task(&mut watch).await;
                                         return;
                                     }
                                 }
@@ -280,7 +293,7 @@ impl NetworkService {
                                 if let Err(error) = self.backend.set_airplane_mode(enabled).await {
                                     tracing::warn!(%error, "setting airplane mode failed");
                                     if send_failure(&events, error.to_string()).await.is_err() {
-                                        watch.abort();
+                                        stop_task(&mut watch).await;
                                         return;
                                     }
                                 }
@@ -289,7 +302,7 @@ impl NetworkService {
                                         state = model;
                                         state.wifi.scanning = scanning;
                                         if emit_changed(&events, &state).await.is_err() {
-                                            watch.abort();
+                                            stop_task(&mut watch).await;
                                             return;
                                         }
                                     }
@@ -311,7 +324,7 @@ impl NetworkService {
                                     state = model;
                                     state.wifi.scanning = scanning;
                                     if emit_snapshot(&events, &state).await.is_err() {
-                                        watch.abort();
+                                        stop_task(&mut watch).await;
                                         return;
                                     }
                                 }
@@ -333,7 +346,7 @@ impl NetworkService {
                                 if model != state {
                                     state = model;
                                     if emit_changed(&events, &state).await.is_err() {
-                                        watch.abort();
+                                        stop_task(&mut watch).await;
                                         return;
                                     }
                                 }
@@ -357,11 +370,11 @@ impl NetworkService {
                                 model.wifi.scanning = false;
                                 state = model;
                                 if events.send(Event::Network(NetworkEvent::ScanFinished)).await.is_err() {
-                                    watch.abort();
+                                    stop_task(&mut watch).await;
                                     return;
                                 }
                                 if emit_changed(&events, &state).await.is_err() {
-                                    watch.abort();
+                                    stop_task(&mut watch).await;
                                     return;
                                 }
                             }
@@ -378,7 +391,7 @@ impl NetworkService {
                 }
             }
 
-            watch.abort();
+            stop_task(&mut watch).await;
             if report_unavailable(&events).await.is_err() {
                 return;
             }

@@ -932,6 +932,16 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
 
     app.connect_startup(|_| install_css());
 
+    // Drop the UI (and with it the core) on shutdown instead of leaving it
+    // rooted in `ui_slot` until the process exits. This closes the channel and
+    // joins the core thread deterministically.
+    {
+        let ui_slot = Rc::clone(&ui_slot);
+        app.connect_shutdown(move |_| {
+            ui_slot.borrow_mut().take();
+        });
+    }
+
     // A secondary `nosh <command>` forwards its command line to the running
     // instance, which owns the windows.
     {
@@ -1008,10 +1018,14 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
             ui.sync_bars();
 
             if let Some(display) = gdk::Display::default() {
-                let ui = Rc::clone(&ui);
-                display
-                    .monitors()
-                    .connect_items_changed(move |_, _, _, _| ui.sync_bars());
+                // The monitor list (and its signal handler) outlives any single
+                // bar, so hold the UI only weakly here.
+                let weak = Rc::downgrade(&ui);
+                display.monitors().connect_items_changed(move |_, _, _, _| {
+                    if let Some(ui) = weak.upgrade() {
+                        ui.sync_bars();
+                    }
+                });
             }
 
             let pending: Vec<StartupAction> = pending.borrow_mut().drain(..).collect();
@@ -1026,8 +1040,14 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
             }
 
             let events = events.clone();
+            // The future lives for the whole GLib loop. Keep the UI weak so it
+            // stops holding the window tree alive after shutdown.
+            let weak = Rc::downgrade(&ui);
             glib::spawn_future_local(async move {
                 while let Ok(event) = events.recv().await {
+                    let Some(ui) = weak.upgrade() else {
+                        break;
+                    };
                     ui.apply(event);
                 }
             });

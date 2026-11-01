@@ -107,10 +107,15 @@ impl BarWindow {
             });
         }
         {
-            let button = quick_settings_button.clone();
+            // The quick settings window outlives individual bars, so this
+            // handler must not keep the bar's button alive.
+            let button = quick_settings_button.downgrade();
             quick_settings
                 .window()
                 .connect_visible_notify(move |window| {
+                    let Some(button) = button.upgrade() else {
+                        return;
+                    };
                     if window.is_visible() {
                         button.add_css_class("is-open");
                     } else {
@@ -137,14 +142,25 @@ impl BarWindow {
         {
             let panel = Rc::clone(&center_panel);
             let monitor = monitor.clone();
-            let island = center_island.clone();
-            let root = bar.clone();
-            let clock_label = clock.label().clone();
-            let media_button = media.button().clone();
+            // These widgets live inside the bar, and the handler lives on them,
+            // so holding them strongly would keep the bar alive after
+            // `destroy()` (for example when a monitor is unplugged).
+            let island = center_island.downgrade();
+            let root = bar.downgrade();
+            let clock_label = clock.label().downgrade();
+            let media_button = media.button().downgrade();
             let open: Rc<dyn Fn(Tab, bool)> = Rc::new(move |tab, hover| {
                 if panel.is_open() {
                     return;
                 }
+                let (Some(island), Some(root), Some(clock_label), Some(media_button)) = (
+                    island.upgrade(),
+                    root.upgrade(),
+                    clock_label.upgrade(),
+                    media_button.upgrade(),
+                ) else {
+                    return;
+                };
                 let Some(island_rect) = bounds(&island, &root) else {
                     return;
                 };
@@ -276,8 +292,10 @@ fn attach_hover(
     {
         let open = Rc::clone(&open);
         let pending = Rc::clone(&pending);
-        let island = island.clone();
-        let media = media.clone();
+        // The controller lives on the island itself, so weak references keep
+        // the controller from rooting the island.
+        let island = island.downgrade();
+        let media = media.downgrade();
         let pointer = Rc::clone(&pointer);
         motion.connect_enter(move |_, x, y| {
             cancel_hover(&pending);
@@ -291,8 +309,10 @@ fn attach_hover(
                 std::time::Duration::from_millis(HOVER_OPEN_MS),
                 move || {
                     *fired.borrow_mut() = None;
-                    let (x, y) = pointer.get();
-                    open(tab_at(&island, &media, x, y), true);
+                    if let (Some(island), Some(media)) = (island.upgrade(), media.upgrade()) {
+                        let (x, y) = pointer.get();
+                        open(tab_at(&island, &media, x, y), true);
+                    }
                     glib::ControlFlow::Break
                 },
             );

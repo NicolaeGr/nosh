@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::{BackendError, MonitorError};
-use crate::event::{Event, MonitorEvent, Service, Snapshot};
+use crate::event::{Event, MonitorEvent, Snapshot};
 use crate::hyprland::{Hyprland, HyprlandMonitorBackend};
 use crate::monitors::backend::{
     resolve_monitor, MonitorBackend, MonitorBackendEvent, MonitorBackendRef, MonitorCandidate,
@@ -160,13 +160,6 @@ impl MonitorService {
                 Ok(resolved) => resolved,
                 Err(error) => {
                     tracing::warn!(%error, "no monitor read backend is available");
-                    if events
-                        .send(Event::ServiceAvailability(Service::Monitors, false))
-                        .await
-                        .is_err()
-                    {
-                        return;
-                    }
                     if wait_or_closed(&commands, self.config.missing_env_retry).await {
                         return;
                     }
@@ -206,16 +199,6 @@ impl MonitorService {
             if fallback_only && emit_unavailable(&events).await.is_err() {
                 return;
             }
-            if events
-                .send(Event::ServiceAvailability(
-                    Service::Monitors,
-                    !fallback_only,
-                ))
-                .await
-                .is_err()
-            {
-                return;
-            }
 
             let initial = match resolved.backend.read().await {
                 Ok(layout) => layout,
@@ -226,13 +209,6 @@ impl MonitorService {
                         "initial monitor read failed"
                     );
                     if emit_unavailable(&events).await.is_err() {
-                        return;
-                    }
-                    if events
-                        .send(Event::ServiceAvailability(Service::Monitors, false))
-                        .await
-                        .is_err()
-                    {
                         return;
                     }
                     if wait_or_closed(&commands, self.config.missing_env_retry).await {
@@ -370,13 +346,6 @@ impl MonitorService {
             }
 
             if emit_unavailable(&events).await.is_err() {
-                return;
-            }
-            if events
-                .send(Event::ServiceAvailability(Service::Monitors, false))
-                .await
-                .is_err()
-            {
                 return;
             }
 
@@ -825,15 +794,6 @@ mod tests {
             .unwrap();
         assert!(matches!(
             event,
-            Event::ServiceAvailability(Service::Monitors, false)
-        ));
-
-        let event = tokio::time::timeout(Duration::from_secs(1), event_rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(matches!(
-            event,
             Event::Monitors(MonitorEvent::Snapshot { .. })
         ));
 
@@ -861,20 +821,20 @@ mod tests {
 
         let task = tokio::spawn(service.run(command_rx, event_tx));
 
-        let mut saw_available = false;
         let mut saw_unavailable = false;
+        let mut saw_snapshot = false;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
 
         while tokio::time::Instant::now() < deadline && backend.watch_count() < 2 {
             match tokio::time::timeout(Duration::from_millis(50), event_rx.recv()).await {
-                Ok(Ok(Event::ServiceAvailability(_, true))) => saw_available = true,
-                Ok(Ok(Event::ServiceAvailability(_, false))) => saw_unavailable = true,
+                Ok(Ok(Event::Monitors(MonitorEvent::Unavailable))) => saw_unavailable = true,
+                Ok(Ok(Event::Monitors(MonitorEvent::Snapshot { .. }))) => saw_snapshot = true,
                 _ => {}
             }
         }
 
-        assert!(saw_available, "expected an availability true event");
-        assert!(saw_unavailable, "expected an availability false event");
+        assert!(saw_unavailable, "expected an unavailable event");
+        assert!(saw_snapshot, "expected a snapshot event");
         assert!(backend.watch_count() >= 2, "expected a reconnect");
 
         task.abort();

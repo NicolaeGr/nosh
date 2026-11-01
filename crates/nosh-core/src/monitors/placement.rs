@@ -1,7 +1,7 @@
 //! Pure monitor placement rules.
 //!
-//! The score is defined by `docs/features/monitors.md`. Ties are broken by the
-//! distance from the primary center (farther wins), then by connector name.
+//! Ties are broken by the distance from the primary center (farther wins), then
+//! by connector name.
 
 use std::str::FromStr;
 

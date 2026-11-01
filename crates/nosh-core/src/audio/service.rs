@@ -15,7 +15,7 @@ use crate::audio::wpctl::WpctlBackend;
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::BackendError;
-use crate::event::{AudioEvent, Event, Service, Snapshot};
+use crate::event::{AudioEvent, Event, Snapshot};
 use crate::origin::ChangeOrigin;
 
 /// Cancels a task and waits for it to stop, so its resources are released
@@ -164,13 +164,6 @@ impl AudioService {
                     Ok(resolved) => resolved,
                     Err(error) => {
                         tracing::warn!(%error, "no audio backend is available");
-                        if events
-                            .send(Event::ServiceAvailability(Service::Audio, false))
-                            .await
-                            .is_err()
-                        {
-                            return;
-                        }
                         if wait_or_closed(&commands, self.config.missing_env_retry).await {
                             return;
                         }
@@ -201,13 +194,6 @@ impl AudioService {
             {
                 return;
             }
-            if events
-                .send(Event::ServiceAvailability(Service::Audio, !unavailable))
-                .await
-                .is_err()
-            {
-                return;
-            }
 
             let initial = match resolved.backend.read().await {
                 Ok(model) => model,
@@ -217,13 +203,6 @@ impl AudioService {
                         %error,
                         "initial audio read failed"
                     );
-                    if events
-                        .send(Event::ServiceAvailability(Service::Audio, false))
-                        .await
-                        .is_err()
-                    {
-                        return;
-                    }
                     if wait_or_closed(&commands, self.config.missing_env_retry).await {
                         return;
                     }
@@ -392,13 +371,6 @@ impl AudioService {
 
             if events
                 .send(Event::Audio(AudioEvent::Unavailable))
-                .await
-                .is_err()
-            {
-                return;
-            }
-            if events
-                .send(Event::ServiceAvailability(Service::Audio, false))
                 .await
                 .is_err()
             {
@@ -1255,13 +1227,10 @@ mod tests {
         let task = tokio::spawn(service.run(command_rx, event_tx));
 
         let event = wait_for_audio(&event_rx, |event| {
-            matches!(event, Event::ServiceAvailability(Service::Audio, false))
+            matches!(event, Event::Audio(AudioEvent::Unavailable))
         })
         .await;
-        assert!(matches!(
-            event,
-            Event::ServiceAvailability(Service::Audio, false)
-        ));
+        assert!(matches!(event, Event::Audio(AudioEvent::Unavailable)));
 
         drop(command_tx);
         task.await.unwrap();

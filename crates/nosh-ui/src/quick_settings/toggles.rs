@@ -1,8 +1,8 @@
 //! The two-column toggle grid.
 //!
-//! Controls whose core service does not exist yet stay visible and insensitive,
-//! following the VPN rule in `docs/features/quick-settings.md`. Power profiles
-//! are a soft dependency, so that control hides when the daemon is missing.
+//! Controls whose core service does not exist yet stay visible and insensitive.
+//! Power profiles are a soft dependency, so that control hides when the daemon
+//! is missing.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

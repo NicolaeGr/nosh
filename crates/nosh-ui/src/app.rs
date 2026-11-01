@@ -435,7 +435,6 @@ impl Ui {
             }
             Event::Monitors(_) => {}
             Event::Notifications(event) => self.apply_notification_event(event),
-            _ => {}
         }
     }
 

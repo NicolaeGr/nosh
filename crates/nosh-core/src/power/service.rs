@@ -6,7 +6,7 @@
 use async_channel::{Receiver, Sender};
 
 use crate::command::Command;
-use crate::event::{Event, PowerEvent, Service, Snapshot};
+use crate::event::{Event, PowerEvent, Snapshot};
 use crate::power::backend::PowerBackendRef;
 use crate::power::logind::LogindBackend;
 
@@ -39,13 +39,6 @@ impl PowerService {
                     "session actions are unavailable"
                 );
                 if events
-                    .send(Event::ServiceAvailability(Service::Power, false))
-                    .await
-                    .is_err()
-                {
-                    return;
-                }
-                if events
                     .send(Event::Power(PowerEvent::Unavailable))
                     .await
                     .is_err()
@@ -57,14 +50,6 @@ impl PowerService {
         };
 
         if available {
-            if events
-                .send(Event::ServiceAvailability(Service::Power, true))
-                .await
-                .is_err()
-            {
-                return;
-            }
-
             match self.backend.read().await {
                 Ok(model) => {
                     let snapshot = Snapshot {

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use async_channel::{Receiver, Sender};
 
-use crate::event::{Event, Service, SessionLockEvent};
+use crate::event::{Event, SessionLockEvent};
 use crate::session_lock::backend::SessionLockBackendRef;
 use crate::session_lock::logind::LogindSessionLockBackend;
 
@@ -41,13 +41,6 @@ impl SessionLockService {
             }
         };
 
-        if events
-            .send(Event::ServiceAvailability(Service::SessionLock, available))
-            .await
-            .is_err()
-        {
-            return;
-        }
         if !available {
             if events
                 .send(Event::SessionLock(SessionLockEvent::Unavailable))
@@ -159,14 +152,7 @@ mod tests {
         tokio::spawn(SessionLockService::with_backend(backend.clone()).run(event_tx));
 
         // The service probes before it watches, so the fake sender appears
-        // after the availability event.
-        loop {
-            if let Event::ServiceAvailability(Service::SessionLock, true) =
-                event_rx.recv().await.unwrap()
-            {
-                break;
-            }
-        }
+        // after the probe.
         while backend.events.lock().unwrap().is_none() {
             tokio::task::yield_now().await;
         }
@@ -180,12 +166,6 @@ mod tests {
         let (event_tx, mut event_rx) = async_channel::unbounded();
         tokio::spawn(SessionLockService::with_backend(FakeBackend::new(false)).run(event_tx));
 
-        loop {
-            match event_rx.recv().await.unwrap() {
-                Event::ServiceAvailability(Service::SessionLock, false) => break,
-                _ => continue,
-            }
-        }
         assert_eq!(
             next_lock(&mut event_rx).await,
             SessionLockEvent::Unavailable

@@ -61,7 +61,7 @@ pub use error::{
 };
 pub use event::{
     AudioEvent, AuthEvent, BatteryEvent, BrightnessEvent, Event, IdleInhibitEvent, MediaEvent,
-    MonitorEvent, NetworkEvent, NotificationEvent, PowerEvent, PowerProfilesEvent, Service,
+    MonitorEvent, NetworkEvent, NotificationEvent, PowerEvent, PowerProfilesEvent,
     SessionLockEvent, Snapshot, SystemStatsEvent, TrayEvent, WorkspaceEvent,
 };
 pub use idle_inhibit::{

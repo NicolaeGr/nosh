@@ -11,7 +11,7 @@ use std::time::Duration;
 use async_channel::{Receiver, Sender};
 
 use crate::command::Command;
-use crate::event::{Event, Service, Snapshot, SystemStatsEvent};
+use crate::event::{Event, Snapshot, SystemStatsEvent};
 use crate::stats::backend::StatsSourceRef;
 use crate::stats::model::{cpu_percent, CpuTimes, SystemStats};
 use crate::stats::proc::ProcStatsSource;
@@ -53,7 +53,6 @@ impl SystemStatsService {
     /// Runs until the command receiver closes or the event receiver is dropped.
     pub async fn run(self, commands: Receiver<Command>, events: Sender<Event>) {
         let mut sampler = Sampler::new(self.source);
-        let mut available = None;
         let mut emitted = false;
 
         loop {
@@ -61,12 +60,6 @@ impl SystemStatsService {
 
             if fresh {
                 let stats = stats.unwrap_or_default();
-                if set_availability(&events, &mut available, true)
-                    .await
-                    .is_err()
-                {
-                    return;
-                }
 
                 if events
                     .send(Event::SystemStats(SystemStatsEvent::Changed(stats)))
@@ -86,12 +79,6 @@ impl SystemStatsService {
                         return;
                     }
                 }
-            } else if stats.is_none()
-                && set_availability(&events, &mut available, false)
-                    .await
-                    .is_err()
-            {
-                return;
             }
 
             if wait_or_closed(&commands, self.config.interval).await {
@@ -171,23 +158,6 @@ impl Sampler {
             (self.stats, false)
         }
     }
-}
-
-async fn set_availability(
-    events: &Sender<Event>,
-    available: &mut Option<bool>,
-    value: bool,
-) -> Result<(), ()> {
-    if *available == Some(value) {
-        return Ok(());
-    }
-
-    events
-        .send(Event::ServiceAvailability(Service::SystemStats, value))
-        .await
-        .map_err(|_| ())?;
-    *available = Some(value);
-    Ok(())
 }
 
 async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
@@ -355,14 +325,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn startup_reports_availability_then_a_zero_cpu_snapshot() {
+    async fn startup_emits_a_zero_cpu_snapshot() {
         let source = Arc::new(FakeSource::new(vec![times(100, 40)], memory(1000, 250)));
         let (_commands, events) = start(service(source));
-
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::SystemStats, true)
-        ));
 
         let stats = match next_event(&events).await {
             Event::SystemStats(SystemStatsEvent::Changed(stats)) => stats,
@@ -437,14 +402,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unreadable_proc_tree_reports_unavailable_and_recovers() {
+    async fn an_unreadable_proc_tree_recovers() {
         let source = Arc::new(FakeSource::failing());
         let (commands, events) = start(service(source.clone()));
-
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::SystemStats, false)
-        ));
 
         tokio::time::sleep(Duration::from_millis(50)).await;
         expect_no_stats(&events, Duration::from_millis(20)).await;
@@ -452,10 +412,6 @@ mod tests {
         source.set_cpu(vec![times(100, 40)]).await;
         source.set_memory(Ok(memory(1000, 250))).await;
 
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::SystemStats, true)
-        ));
         assert_eq!(
             next_stats(&events).await,
             SystemStats {

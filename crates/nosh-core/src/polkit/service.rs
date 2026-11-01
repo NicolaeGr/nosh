@@ -10,7 +10,7 @@ use async_channel::{Receiver, Sender};
 
 use crate::auth::model::Secret;
 use crate::command::Command;
-use crate::event::{Event, Service};
+use crate::event::Event;
 use crate::polkit::agent::{PolkitAgentBackend, POLKIT_AGENT_PATH};
 use crate::polkit::backend::PolkitBackendRef;
 use crate::polkit::model::{AgentRequest, PolkitEvent};
@@ -44,19 +44,7 @@ impl PolkitService {
                 %error,
                 "the polkit authentication agent is unavailable"
             );
-            let _ = events
-                .send(Event::ServiceAvailability(Service::Polkit, false))
-                .await;
             let _ = events.send(Event::Polkit(PolkitEvent::Unavailable)).await;
-            return;
-        }
-
-        if events
-            .send(Event::ServiceAvailability(Service::Polkit, true))
-            .await
-            .is_err()
-        {
-            let _ = self.backend.unregister(POLKIT_AGENT_PATH).await;
             return;
         }
 
@@ -166,6 +154,7 @@ mod tests {
     use crate::error::BackendError;
     use crate::polkit::model::{Identity, PolkitPrompt};
     use std::sync::Mutex;
+    use std::time::Duration;
 
     struct FakeBackend {
         requests: Mutex<Option<Sender<AgentRequest>>>,
@@ -250,15 +239,14 @@ mod tests {
         let (event_tx, event_rx) = async_channel::unbounded();
         tokio::spawn(PolkitService::with_backend(backend.clone()).run(command_rx, event_tx));
 
-        // The availability event is sent after registration.
-        loop {
-            match event_rx.recv().await.unwrap() {
-                Event::ServiceAvailability(Service::Polkit, true) => break,
-                Event::ServiceAvailability(Service::Polkit, false) => {
-                    panic!("the service did not register")
-                }
-                _ => {}
-            }
+        // Registration happens before the service accepts requests.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+        while backend.requests.lock().unwrap().is_none() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the service did not register"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
         }
 
         (backend, event_rx, commands)

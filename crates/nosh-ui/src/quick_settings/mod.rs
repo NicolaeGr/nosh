@@ -1,7 +1,6 @@
 //! The quick settings overlay.
 //!
-//! The window rules follow `docs/features/quick-settings.md`. The card layout,
-//! spacing, and class names follow `docs/reference/design_proto.html`.
+//! Card layout, spacing, and class names live in `resources/quick_settings.css`.
 //!
 //! The UI owns the open state. Services own the toggle states, so a control
 //! only changes after the core reports the new value.

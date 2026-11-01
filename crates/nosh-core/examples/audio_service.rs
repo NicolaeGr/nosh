@@ -79,9 +79,6 @@ mod enabled {
                     );
                     break;
                 }
-                Event::ServiceAvailability(service, available) => {
-                    println!("{service:?} available: {available}");
-                }
                 Event::Audio(nosh_core::AudioEvent::BackendChanged { backend }) => {
                     println!("backend: {backend}");
                 }

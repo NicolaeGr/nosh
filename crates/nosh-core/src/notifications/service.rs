@@ -12,7 +12,7 @@ use zbus::Connection;
 
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
-use crate::event::{Event, NotificationEvent, Service, Snapshot};
+use crate::event::{Event, NotificationEvent, Snapshot};
 use crate::notifications::backend::{
     default_candidates, DaemonRole, IncomingRequest, NotificationBackendRef, NotificationCandidate,
     NotificationSession, NotifyRequest, NOTIFICATION_INTERFACE, NOTIFICATION_PATH,
@@ -558,32 +558,14 @@ async fn announce(
     if events.send(Event::Snapshot(snapshot)).await.is_err() {
         return Err(());
     }
-    if events
-        .send(Event::ServiceAvailability(Service::Notifications, true))
-        .await
-        .is_err()
-    {
-        return Err(());
-    }
     Ok(())
 }
 
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
-    if events
+    events
         .send(Event::Notifications(NotificationEvent::Unavailable))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    if events
-        .send(Event::ServiceAvailability(Service::Notifications, false))
-        .await
-        .is_err()
-    {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {

@@ -1,8 +1,7 @@
 //! One notification card.
 //!
 //! The card owns its display timer and the dismissal animation. It sends
-//! `NotificationDismiss` and `NotificationInvoke` and never touches D-Bus, as
-//! required by `docs/features/notifications.md`.
+//! `NotificationDismiss` and `NotificationInvoke` and never touches D-Bus.
 
 use std::cell::{Cell, RefCell};
 use std::path::Path;

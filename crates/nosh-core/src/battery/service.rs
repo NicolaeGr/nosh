@@ -15,7 +15,7 @@ use crate::battery::backend::{
 use crate::battery::model::BatteryModel;
 use crate::battery::upower::UpowerBackend;
 use crate::command::Command;
-use crate::event::{BatteryEvent, Event, Service, Snapshot};
+use crate::event::{BatteryEvent, Event, Snapshot};
 
 #[derive(Debug, Clone)]
 pub struct BatteryServiceConfig {
@@ -80,14 +80,6 @@ impl BatteryService {
                     continue;
                 }
             };
-
-            if events
-                .send(Event::ServiceAvailability(Service::Battery, true))
-                .await
-                .is_err()
-            {
-                return;
-            }
 
             let initial = match resolved.backend.read().await {
                 Ok(properties) => properties.model(),
@@ -231,21 +223,10 @@ async fn emit_snapshot(events: &Sender<Event>, model: &BatteryModel) -> Result<(
 }
 
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
-    if events
+    events
         .send(Event::Battery(BatteryEvent::Unavailable))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    if events
-        .send(Event::ServiceAvailability(Service::Battery, false))
-        .await
-        .is_err()
-    {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
@@ -419,14 +400,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn startup_reports_availability_and_a_snapshot() {
+    async fn startup_emits_a_snapshot() {
         let backend = FakeBatteryBackend::new(laptop(54.5)).arc();
         let (_commands, events) = start(service(backend));
-
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::Battery, true)
-        ));
 
         let model = match next_battery_event(&events).await {
             BatteryEvent::Snapshot(model) => model,
@@ -477,10 +453,6 @@ mod tests {
             next_battery_event(&events).await,
             BatteryEvent::Unavailable
         ));
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::Battery, false)
-        ));
 
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(backend.probes.load(Ordering::SeqCst) > 1);
@@ -517,10 +489,6 @@ mod tests {
         assert!(matches!(
             next_battery_event(&events).await,
             BatteryEvent::Unavailable
-        ));
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::Battery, false)
         ));
 
         let model = match next_battery_event(&events).await {

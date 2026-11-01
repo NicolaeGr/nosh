@@ -1,9 +1,5 @@
 //! The notification overlay.
 //!
-//! Placement, the queue, and the card lifecycle follow
-//! `docs/features/notifications.md` and the corner rule in
-//! `docs/features/monitors.md`.
-//!
 //! The window is sized to the cards instead of the output. That keeps every
 //! pixel that is not a card out of the window's input region, so the bar and
 //! the applications underneath stay clickable. For top corners the window is

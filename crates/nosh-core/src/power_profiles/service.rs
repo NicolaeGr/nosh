@@ -12,7 +12,7 @@ use async_channel::{Receiver, Sender};
 
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
-use crate::event::{Event, PowerProfilesEvent, Service, Snapshot};
+use crate::event::{Event, PowerProfilesEvent, Snapshot};
 use crate::power_profiles::backend::{PowerProfilesBackendEvent, PowerProfilesBackendRef};
 use crate::power_profiles::dbus::DbusPowerProfilesBackend;
 use crate::power_profiles::model::{next_profile, PowerProfilesModel};
@@ -77,14 +77,6 @@ impl PowerProfilesService {
                     return;
                 }
                 continue;
-            }
-
-            if events
-                .send(Event::ServiceAvailability(Service::PowerProfiles, true))
-                .await
-                .is_err()
-            {
-                return;
             }
 
             let initial = match self.backend.read().await {
@@ -278,21 +270,10 @@ async fn emit_snapshot(events: &Sender<Event>, model: &PowerProfilesModel) -> Re
 }
 
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
-    if events
+    events
         .send(Event::PowerProfiles(PowerProfilesEvent::Unavailable))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    if events
-        .send(Event::ServiceAvailability(Service::PowerProfiles, false))
-        .await
-        .is_err()
-    {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {
@@ -460,14 +441,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn startup_reports_availability_and_a_snapshot() {
+    async fn startup_emits_a_snapshot() {
         let backend = FakeBackend::new(model(PowerProfile::Balanced)).arc();
         let (_commands, events) = start(service(backend));
-
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::PowerProfiles, true)
-        ));
 
         let model = match next_power_event(&events).await {
             PowerProfilesEvent::Snapshot(model) => model,
@@ -536,10 +512,6 @@ mod tests {
         assert!(matches!(
             next_power_event(&events).await,
             PowerProfilesEvent::Unavailable
-        ));
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::PowerProfiles, false)
         ));
 
         tokio::time::sleep(Duration::from_millis(50)).await;

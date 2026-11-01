@@ -26,7 +26,7 @@ use crate::brightness::snapshot;
 use crate::brightness::sysfs::SysfsLogindBackend;
 use crate::command::Command;
 use crate::error::BrightnessError;
-use crate::event::{BrightnessEvent, Event, Service, Snapshot};
+use crate::event::{BrightnessEvent, Event, Snapshot};
 use crate::origin::ChangeOrigin;
 use crate::paths::NoshPaths;
 
@@ -460,10 +460,6 @@ impl BrightnessState {
             .iter()
             .map(|device| device.device.clone())
             .collect()
-    }
-
-    fn has_available(&self) -> bool {
-        self.devices.iter().any(|device| device.device.available)
     }
 
     fn all_unavailable(&self) -> bool {
@@ -967,13 +963,6 @@ async fn emit_snapshot(events: &Sender<Event>, state: &BrightnessState) -> Resul
             brightness: Some(devices),
             ..Snapshot::default()
         }))
-        .await
-        .map_err(|_| ())?;
-    events
-        .send(Event::ServiceAvailability(
-            Service::Brightness,
-            state.has_available(),
-        ))
         .await
         .map_err(|_| ())
 }
@@ -1549,22 +1538,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn no_devices_reports_unavailable() {
+    async fn no_devices_reports_an_empty_snapshot() {
         let backend = FakeBrightnessBackend::new("sysfs-logind", Vec::new()).arc();
         let (commands, command_rx) = async_channel::unbounded();
         let (event_tx, event_rx) = async_channel::unbounded();
         let task = tokio::spawn(service(backend, config()).run(command_rx, event_tx));
 
         let event = wait_for(&event_rx, |event| {
-            matches!(
-                event,
-                Event::ServiceAvailability(Service::Brightness, false)
-            )
+            matches!(event, Event::Brightness(BrightnessEvent::Snapshot(_)))
         })
         .await;
         assert!(matches!(
             event,
-            Event::ServiceAvailability(Service::Brightness, false)
+            Event::Brightness(BrightnessEvent::Snapshot(devices)) if devices.is_empty()
         ));
 
         drop(commands);

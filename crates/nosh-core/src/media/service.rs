@@ -12,7 +12,7 @@ use async_channel::{Receiver, Sender};
 
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
-use crate::event::{Event, MediaEvent, Service, Snapshot};
+use crate::event::{Event, MediaEvent, Snapshot};
 use crate::media::backend::MediaBackendRef;
 use crate::media::model::MediaModel;
 use crate::media::mpris::MprisBackend;
@@ -79,14 +79,6 @@ impl MediaService {
                     return;
                 }
                 continue;
-            }
-
-            if events
-                .send(Event::ServiceAvailability(Service::Media, true))
-                .await
-                .is_err()
-            {
-                return;
             }
 
             let mut state = match self.backend.read().await {
@@ -192,13 +184,6 @@ impl MediaService {
             {
                 return;
             }
-            if events
-                .send(Event::ServiceAvailability(Service::Media, false))
-                .await
-                .is_err()
-            {
-                return;
-            }
 
             if connected_at.elapsed() >= self.config.stable_connection {
                 backoff.reset();
@@ -291,10 +276,6 @@ async fn emit_snapshot(
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
     events
         .send(Event::Media(MediaEvent::Unavailable))
-        .await
-        .map_err(|_| ())?;
-    events
-        .send(Event::ServiceAvailability(Service::Media, false))
         .await
         .map_err(|_| ())
 }

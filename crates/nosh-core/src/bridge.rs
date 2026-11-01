@@ -684,7 +684,6 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::event::Service;
     use crate::monitors::LayoutPreset;
     use crate::monitors::MonitorLayout;
     use crate::workspaces::model::WorkspaceSnapshot;
@@ -1143,7 +1142,7 @@ mod tests {
             .await
             .unwrap();
         service_tx
-            .send(Event::ServiceAvailability(Service::Workspaces, true))
+            .send(Event::Battery(BatteryEvent::Unavailable))
             .await
             .unwrap();
         service_tx
@@ -1161,7 +1160,7 @@ mod tests {
         ));
         assert!(matches!(
             public_rx.recv().await.unwrap(),
-            Event::ServiceAvailability(Service::Workspaces, true)
+            Event::Battery(BatteryEvent::Unavailable)
         ));
         assert!(matches!(
             public_rx.recv().await.unwrap(),
@@ -1181,12 +1180,12 @@ mod tests {
 
         drop(first_service);
         second_service
-            .send(Event::ServiceAvailability(Service::Monitors, true))
+            .send(Event::Battery(BatteryEvent::Unavailable))
             .await
             .unwrap();
         assert!(matches!(
             public_rx.recv().await.unwrap(),
-            Event::ServiceAvailability(Service::Monitors, true)
+            Event::Battery(BatteryEvent::Unavailable)
         ));
         drop(second_service);
 

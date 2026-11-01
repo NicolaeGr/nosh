@@ -11,11 +11,11 @@ use async_channel::{Receiver, Sender};
 use crate::auth::backend::{AuthBackendRef, PamBackend};
 use crate::auth::model::{AuthRequest, AuthResult};
 use crate::command::Command;
-use crate::event::{AuthEvent, Event, Service};
+use crate::event::{AuthEvent, Event};
 
 #[derive(Debug, Clone)]
 pub struct AuthServiceConfig {
-    /// The PAM service stack. See `docs/features/auth.md`.
+    /// The PAM service stack.
     pub service: String,
     /// Use the `login` stack when the configured service file is missing.
     pub allow_fallback: bool,
@@ -64,14 +64,6 @@ impl AuthService {
                 false
             }
         };
-
-        if events
-            .send(Event::ServiceAvailability(Service::Auth, available))
-            .await
-            .is_err()
-        {
-            return;
-        }
 
         let mut attempts = Attempts::new(self.config.lockout_attempts, self.config.lockout);
 

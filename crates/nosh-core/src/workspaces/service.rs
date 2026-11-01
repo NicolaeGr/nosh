@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::BackendError;
-use crate::event::{Event, Service, Snapshot, WorkspaceEvent};
+use crate::event::{Event, Snapshot, WorkspaceEvent};
 use crate::hyprland::{Hyprland, HyprlandWorkspaceBackend};
 use crate::workspaces::backend::{WorkspaceBackend, WorkspaceBackendEvent, WorkspaceBackendRef};
 use crate::workspaces::model::WorkspaceCapabilities;
@@ -141,13 +141,6 @@ impl WorkspaceService {
                 Ok(resolved) => resolved,
                 Err(error) => {
                     tracing::warn!(%error, "no workspace backend is available");
-                    if events
-                        .send(Event::ServiceAvailability(Service::Workspaces, false))
-                        .await
-                        .is_err()
-                    {
-                        return;
-                    }
                     if wait_or_closed(&commands, self.config.missing_env_retry).await {
                         return;
                     }
@@ -167,13 +160,6 @@ impl WorkspaceService {
                     return;
                 }
             }
-            if events
-                .send(Event::ServiceAvailability(Service::Workspaces, true))
-                .await
-                .is_err()
-            {
-                return;
-            }
 
             let initial = match resolved.backend.read().await {
                 Ok(state) => state,
@@ -184,13 +170,6 @@ impl WorkspaceService {
                         "initial workspace read failed"
                     );
                     if emit_unavailable(&events).await.is_err() {
-                        return;
-                    }
-                    if events
-                        .send(Event::ServiceAvailability(Service::Workspaces, false))
-                        .await
-                        .is_err()
-                    {
                         return;
                     }
                     if wait_or_closed(&commands, self.config.missing_env_retry).await {
@@ -314,13 +293,6 @@ impl WorkspaceService {
             }
 
             if emit_unavailable(&events).await.is_err() {
-                return;
-            }
-            if events
-                .send(Event::ServiceAvailability(Service::Workspaces, false))
-                .await
-                .is_err()
-            {
                 return;
             }
 
@@ -546,15 +518,6 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(matches!(
-            event,
-            Event::ServiceAvailability(Service::Workspaces, true)
-        ));
-
-        let event = tokio::time::timeout(Duration::from_secs(1), event_rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
         assert!(matches!(event, Event::Snapshot(_)));
 
         task.abort();
@@ -574,20 +537,20 @@ mod tests {
 
         let task = tokio::spawn(service.run(command_rx, event_tx));
 
-        let mut saw_available = false;
         let mut saw_unavailable = false;
+        let mut saw_snapshot = false;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
 
         while tokio::time::Instant::now() < deadline && backend.watch_count() < 2 {
             match tokio::time::timeout(Duration::from_millis(50), event_rx.recv()).await {
-                Ok(Ok(Event::ServiceAvailability(_, true))) => saw_available = true,
-                Ok(Ok(Event::ServiceAvailability(_, false))) => saw_unavailable = true,
+                Ok(Ok(Event::Workspaces(WorkspaceEvent::Unavailable))) => saw_unavailable = true,
+                Ok(Ok(Event::Snapshot(_))) => saw_snapshot = true,
                 _ => {}
             }
         }
 
-        assert!(saw_available, "expected an availability true event");
-        assert!(saw_unavailable, "expected an availability false event");
+        assert!(saw_unavailable, "expected an unavailable event");
+        assert!(saw_snapshot, "expected a snapshot event");
         assert!(
             backend.watch_count() >= 2,
             "expected the watch loop to reconnect"

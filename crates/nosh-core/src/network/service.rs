@@ -20,7 +20,7 @@ use async_channel::{Receiver, Sender};
 
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
-use crate::event::{Event, NetworkEvent, Service, Snapshot};
+use crate::event::{Event, NetworkEvent, Snapshot};
 use crate::network::backend::{NetworkBackendEvent, NetworkBackendRef};
 use crate::network::model::NetworkModel;
 use crate::network::nm::NetworkManagerBackend;
@@ -106,13 +106,6 @@ impl NetworkService {
                 continue;
             }
 
-            if events
-                .send(Event::ServiceAvailability(Service::Network, true))
-                .await
-                .is_err()
-            {
-                return;
-            }
             tracing::info!(
                 feature = "network",
                 backend = self.backend.name(),
@@ -478,21 +471,10 @@ async fn send_failure(events: &Sender<Event>, message: String) -> Result<(), ()>
 }
 
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
-    if events
+    events
         .send(Event::Network(NetworkEvent::Unavailable))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    if events
-        .send(Event::ServiceAvailability(Service::Network, false))
-        .await
-        .is_err()
-    {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {

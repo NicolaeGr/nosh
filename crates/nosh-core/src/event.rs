@@ -42,7 +42,6 @@ pub enum Event {
     Power(PowerEvent),
     SessionLock(SessionLockEvent),
     Menu(MenuEvent),
-    ServiceAvailability(Service, bool),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -68,27 +67,6 @@ pub struct Snapshot {
     pub notifications: Option<NotificationModel>,
     pub notification_backend: Option<&'static str>,
     pub power: Option<PowerModel>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum Service {
-    Workspaces,
-    Monitors,
-    Audio,
-    Brightness,
-    Battery,
-    SystemStats,
-    IdleInhibit,
-    PowerProfiles,
-    Network,
-    Tray,
-    Media,
-    Notifications,
-    Auth,
-    Polkit,
-    Power,
-    SessionLock,
 }
 
 #[derive(Debug, Clone)]

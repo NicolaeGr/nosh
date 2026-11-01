@@ -19,7 +19,7 @@ use zbus::{Connection, OwnedObjectPath, OwnedVariant, Proxy};
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::Command;
 use crate::error::BackendError;
-use crate::event::{Event, Service, Snapshot, TrayEvent};
+use crate::event::{Event, Snapshot, TrayEvent};
 use crate::tray::focus::{HyprlandFocus, WindowFocus, WindowFocusRef, WindowHint};
 use crate::tray::icon::{largest_pixmap, IconCache};
 use crate::tray::menu::{DbusMenuClient, MENU_TIMEOUT};
@@ -491,13 +491,6 @@ fn upsert_model(models: &mut Vec<TrayItemModel>, item: TrayItemModel) {
 
 async fn announce_session(events: &Sender<Event>, backend: &'static str) -> Result<(), ()> {
     if events
-        .send(Event::ServiceAvailability(Service::Tray, true))
-        .await
-        .is_err()
-    {
-        return Err(());
-    }
-    if events
         .send(Event::Tray(TrayEvent::BackendChanged { backend }))
         .await
         .is_err()
@@ -524,21 +517,10 @@ async fn emit_snapshot(
 }
 
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
-    if events
+    events
         .send(Event::Tray(TrayEvent::Unavailable))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    if events
-        .send(Event::ServiceAvailability(Service::Tray, false))
-        .await
-        .is_err()
-    {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 async fn wait_or_closed(commands: &Receiver<Command>, duration: Duration) -> bool {

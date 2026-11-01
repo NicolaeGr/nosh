@@ -1,9 +1,9 @@
 //! The power menu overlay.
 //!
-//! The window rules follow `docs/features/power-menu.md`. The flow is one
-//! action, one confirmation, then the logind command. logind decides whether
-//! the action also needs a PAM check: a `challenge` answer shows the password
-//! field, a `yes` answer sends the action after the confirmation.
+//! The flow is one action, one confirmation, then the logind command. logind
+//! decides whether the action also needs a PAM check: a `challenge` answer
+//! shows the password field, a `yes` answer sends the action after the
+//! confirmation.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

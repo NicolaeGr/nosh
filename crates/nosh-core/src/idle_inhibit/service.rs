@@ -12,7 +12,7 @@ use async_channel::{Receiver, Sender};
 
 use crate::backoff::{Backoff, RetryPolicy};
 use crate::command::{Command, IdleInhibitCommand};
-use crate::event::{Event, IdleInhibitEvent, Service, Snapshot};
+use crate::event::{Event, IdleInhibitEvent, Snapshot};
 use crate::idle_inhibit::backend::{IdleInhibitBackend, InhibitBackendEvent};
 use crate::idle_inhibit::model::IdleInhibitState;
 use crate::idle_inhibit::wayland::WaylandBackend;
@@ -205,13 +205,6 @@ async fn emit_available(
     active: bool,
 ) -> Result<(), ()> {
     if events
-        .send(Event::ServiceAvailability(Service::IdleInhibit, true))
-        .await
-        .is_err()
-    {
-        return Err(());
-    }
-    if events
         .send(Event::IdleInhibit(IdleInhibitEvent::Snapshot {
             available: true,
             active,
@@ -233,21 +226,10 @@ async fn emit_available(
 }
 
 async fn report_unavailable(events: &Sender<Event>) -> Result<(), ()> {
-    if events
+    events
         .send(Event::IdleInhibit(IdleInhibitEvent::Unavailable))
         .await
-        .is_err()
-    {
-        return Err(());
-    }
-    if events
-        .send(Event::ServiceAvailability(Service::IdleInhibit, false))
-        .await
-        .is_err()
-    {
-        return Err(());
-    }
-    Ok(())
+        .map_err(|_| ())
 }
 
 /// Drops commands while disconnected and reports the inhibitor as unavailable.
@@ -447,10 +429,6 @@ mod tests {
     }
 
     async fn consume_startup(events: &Receiver<Event>, available: bool) {
-        assert!(matches!(
-            next_event(events).await,
-            Event::ServiceAvailability(Service::IdleInhibit, true)
-        ));
         assert_eq!(
             next_idle_event(events).await,
             IdleInhibitEvent::Snapshot {
@@ -510,10 +488,6 @@ mod tests {
             next_idle_event(&events).await,
             IdleInhibitEvent::Unavailable
         );
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::IdleInhibit, false)
-        ));
 
         commands.send(Command::IdleInhibitSet(true)).await.unwrap();
         assert_eq!(
@@ -542,15 +516,7 @@ mod tests {
             next_idle_event(&events).await,
             IdleInhibitEvent::Unavailable
         );
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::IdleInhibit, false)
-        ));
 
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::IdleInhibit, true)
-        ));
         assert_eq!(
             next_idle_event(&events).await,
             IdleInhibitEvent::Snapshot {
@@ -571,18 +537,10 @@ mod tests {
             next_idle_event(&events).await,
             IdleInhibitEvent::Unavailable
         );
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::IdleInhibit, false)
-        ));
 
         backend
             .last_session()
             .push(InhibitBackendEvent::Availability(true));
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::IdleInhibit, true)
-        ));
         assert_eq!(
             next_idle_event(&events).await,
             IdleInhibitEvent::Snapshot {
@@ -609,10 +567,6 @@ mod tests {
             next_idle_event(&events).await,
             IdleInhibitEvent::Unavailable
         );
-        assert!(matches!(
-            next_event(&events).await,
-            Event::ServiceAvailability(Service::IdleInhibit, false)
-        ));
 
         wait_for_connects(&backend, 2).await;
         consume_startup(&events, true).await;

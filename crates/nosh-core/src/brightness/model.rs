@@ -19,6 +19,50 @@ pub const DIM_PERCENT: f64 = 10.0;
 /// A difference smaller than this is not reported as a change.
 pub const PERCENT_EPSILON: f64 = 0.05;
 
+/// Why the screen is dimmed.
+///
+/// Several sources can dim at once. The service keeps one entry per reason and
+/// restores the snapshot only when the last reason clears, so an idle timeout
+/// cannot undo the dim of a session lock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DimReason {
+    /// An idle listener asked for the dim.
+    Idle,
+    /// The session lock screen is up.
+    Lock,
+    /// A suspend or resume transition.
+    Sleep,
+    /// An explicit user request, from a menu action or the command line.
+    Manual,
+}
+
+impl DimReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Lock => "lock",
+            Self::Sleep => "sleep",
+            Self::Manual => "manual",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "idle" => Some(Self::Idle),
+            "lock" => Some(Self::Lock),
+            "sleep" => Some(Self::Sleep),
+            "manual" => Some(Self::Manual),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for DimReason {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 /// Where a brightness device lives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BrightnessKind {

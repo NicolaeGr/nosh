@@ -52,7 +52,7 @@ pub use brightness::{
     clamp_percent, percent_from_raw, raw_from_percent, BrightnessBackend, BrightnessCandidate,
     BrightnessDevice, BrightnessDeviceId, BrightnessDeviceInfo, BrightnessKind, BrightnessReading,
     BrightnessService, BrightnessServiceConfig, BrightnessSnapshotFile, BrightnessctlBackend,
-    CommandBackend, CommandDeviceConfig, DdcBackend, DdcDisplay, DdcutilBackend,
+    CommandBackend, CommandDeviceConfig, DdcBackend, DdcDisplay, DdcutilBackend, DimReason,
     SysfsLogindBackend, BRIGHTNESS_STEP, DIM_PERCENT, GAMMA,
 };
 pub use command::{Command, IdleInhibitCommand, Service};

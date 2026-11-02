@@ -29,7 +29,7 @@ pub use ddc::{
 pub use model::{
     clamp_percent, linear_percent_from_raw, linear_raw_from_percent, percent_from_raw,
     raw_from_percent, round_percent, BrightnessDevice, BrightnessDeviceId, BrightnessDeviceInfo,
-    BrightnessKind, BrightnessReading, BrightnessSnapshotEntry, BrightnessSnapshotFile,
+    BrightnessKind, BrightnessReading, BrightnessSnapshotEntry, BrightnessSnapshotFile, DimReason,
     BRIGHTNESS_STEP, DIM_PERCENT, GAMMA, PERCENT_EPSILON,
 };
 pub use service::{BrightnessService, BrightnessServiceConfig};

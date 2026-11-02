@@ -20,7 +20,7 @@ use crate::brightness::command::{CommandBackend, CommandDeviceConfig};
 use crate::brightness::ddc::{DdcBackendBridge, DdcutilBackend, DEFAULT_DDC_TIMEOUT};
 use crate::brightness::model::{
     clamp_percent, linear_raw_from_percent, raw_from_percent, BrightnessDevice, BrightnessDeviceId,
-    BrightnessDeviceInfo, BrightnessKind, BrightnessSnapshotFile, PERCENT_EPSILON,
+    BrightnessDeviceInfo, BrightnessKind, BrightnessSnapshotFile, DimReason, PERCENT_EPSILON,
 };
 use crate::brightness::snapshot;
 use crate::brightness::sysfs::SysfsLogindBackend;
@@ -330,12 +330,24 @@ impl BrightnessService {
 
                 match other {
                     Command::BrightnessSnapshot => {
-                        capture_snapshot(state, &self.config, events).await
+                        // A snapshot taken while dimmed would replace the saved
+                        // levels with the dimmed ones, so the restore would
+                        // leave the screen dim.
+                        if state.dim.is_empty() {
+                            capture_snapshot(state, &self.config, events).await
+                        } else {
+                            tracing::debug!(
+                                "ignoring a snapshot request while the screen is dimmed"
+                            );
+                            Ok(())
+                        }
                     }
-                    Command::BrightnessDim { value } => {
-                        dim(state, &self.config, value, events).await
+                    Command::BrightnessDim { value, reason } => {
+                        dim(state, &self.config, reason, value, events).await
                     }
-                    Command::BrightnessRestore => restore(state, &self.config, events).await,
+                    Command::BrightnessRestore { reason } => {
+                        restore(state, &self.config, reason, events).await
+                    }
                     Command::BrightnessRescan => {
                         self.discover_local(state).await;
                         self.spawn_external_discovery(discovery_tx);
@@ -460,6 +472,10 @@ struct BoundDevice {
 #[derive(Default)]
 struct BrightnessState {
     devices: Vec<BoundDevice>,
+    /// The dim requests that are currently active, with the level each one
+    /// asked for. The dimmest request wins, and the hardware is restored only
+    /// when the map is empty.
+    dim: BTreeMap<DimReason, f64>,
 }
 
 impl BrightnessState {
@@ -859,29 +875,53 @@ async fn refresh_readings(state: &mut BrightnessState) {
 async fn dim(
     state: &mut BrightnessState,
     config: &BrightnessServiceConfig,
+    reason: DimReason,
     value: f64,
     events: &Sender<Event>,
 ) -> Result<(), ()> {
-    let existing = match &config.snapshot_path {
-        Some(path) => snapshot::load(path).await.ok().flatten().is_some(),
-        None => false,
-    };
-    if !existing {
-        capture_snapshot(state, config, events).await?;
+    if state.dim.is_empty() {
+        let existing = match &config.snapshot_path {
+            Some(path) => snapshot::load(path).await.ok().flatten().is_some(),
+            None => false,
+        };
+        if !existing {
+            capture_snapshot(state, config, events).await?;
+        }
     }
 
-    let target = clamp_percent(value);
+    state.dim.insert(reason, clamp_percent(value));
+    let Some(target) = dim_target(&state.dim) else {
+        return Ok(());
+    };
     for id in state.available_ids() {
         apply_target(state, &id, target, ChangeOrigin::Automatic, events).await?;
     }
     emit_snapshot(events, state).await
 }
 
+/// The dimmest active request. Two sources that want different levels must not
+/// fight over the hardware.
+fn dim_target(dim: &BTreeMap<DimReason, f64>) -> Option<f64> {
+    dim.values().copied().reduce(f64::min).map(clamp_percent)
+}
+
 async fn restore(
     state: &mut BrightnessState,
     config: &BrightnessServiceConfig,
+    reason: DimReason,
     events: &Sender<Event>,
 ) -> Result<(), ()> {
+    state.dim.remove(&reason);
+
+    // Another source still wants the screen dimmed. Keep the snapshot and
+    // reapply the dimmest remaining level instead of restoring the hardware.
+    if let Some(target) = dim_target(&state.dim) {
+        tracing::debug!(%reason, target, "keeping the screen dimmed for another reason");
+        for id in state.available_ids() {
+            apply_target(state, &id, target, ChangeOrigin::Automatic, events).await?;
+        }
+        return emit_snapshot(events, state).await;
+    }
     let Some(path) = &config.snapshot_path else {
         tracing::warn!("no brightness snapshot path is configured");
         return Ok(());
@@ -1300,7 +1340,10 @@ mod tests {
         .await;
 
         commands
-            .send(Command::BrightnessDim { value: 10.0 })
+            .send(Command::BrightnessDim {
+                value: 10.0,
+                reason: DimReason::Idle,
+            })
             .await
             .unwrap();
         wait_for(&event_rx, |event| {
@@ -1324,6 +1367,121 @@ mod tests {
 
         let writes = backend.writes().await;
         assert!(writes.iter().any(|(_, value)| *value == 10.0));
+
+        drop(commands);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dim_reasons_hold_the_screen_dim_until_the_last_one_restores() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("snapshot.json");
+        let mut config = config();
+        config.snapshot_path = Some(path.clone());
+
+        let id = BrightnessDeviceId::Named("Desk lamp".into());
+        let backend =
+            FakeBrightnessBackend::new("command", vec![BrightnessDeviceInfo::command("Desk lamp")])
+                .arc();
+        backend.set_value(&id, 70.0).await;
+
+        let service = BrightnessService::with_candidates(
+            Vec::new(),
+            Vec::new(),
+            vec![fake_candidate(backend.clone())],
+            config,
+        );
+        let (commands, command_rx) = async_channel::unbounded();
+        let (event_tx, event_rx) = async_channel::unbounded();
+        let task = tokio::spawn(service.run(command_rx, event_tx));
+
+        let _ = wait_for(&event_rx, |event| {
+            matches!(event, Event::Brightness(BrightnessEvent::Snapshot(_)))
+        })
+        .await;
+
+        commands
+            .send(Command::BrightnessDim {
+                value: 20.0,
+                reason: DimReason::Lock,
+            })
+            .await
+            .unwrap();
+        wait_for(&event_rx, |event| {
+            matches!(
+                event,
+                Event::Brightness(BrightnessEvent::DeviceChanged {
+                    origin: ChangeOrigin::Automatic,
+                    percent: 20.0,
+                    ..
+                })
+            )
+        })
+        .await;
+
+        // A second source dims further. The snapshot was captured once.
+        commands
+            .send(Command::BrightnessDim {
+                value: 10.0,
+                reason: DimReason::Idle,
+            })
+            .await
+            .unwrap();
+        wait_for(&event_rx, |event| {
+            matches!(
+                event,
+                Event::Brightness(BrightnessEvent::DeviceChanged {
+                    origin: ChangeOrigin::Automatic,
+                    percent: 10.0,
+                    ..
+                })
+            )
+        })
+        .await;
+
+        // The idle source resumes while the lock is still up: the screen stays
+        // dimmed at the dimmest remaining request.
+        commands
+            .send(Command::BrightnessRestore {
+                reason: DimReason::Idle,
+            })
+            .await
+            .unwrap();
+        wait_for(&event_rx, |event| {
+            matches!(
+                event,
+                Event::Brightness(BrightnessEvent::DeviceChanged {
+                    origin: ChangeOrigin::Automatic,
+                    percent: 20.0,
+                    ..
+                })
+            )
+        })
+        .await;
+        assert!(snapshot::load(&path).await.unwrap().is_some());
+        assert!(!backend
+            .writes()
+            .await
+            .iter()
+            .any(|(_, value)| *value == 70.0));
+
+        commands
+            .send(Command::BrightnessRestore {
+                reason: DimReason::Lock,
+            })
+            .await
+            .unwrap();
+        wait_for(&event_rx, |event| {
+            matches!(event, Event::Brightness(BrightnessEvent::Restored))
+        })
+        .await;
+
+        assert!(backend
+            .writes()
+            .await
+            .iter()
+            .any(|(_, value)| *value == 70.0));
+        assert_eq!(snapshot::load(&path).await.unwrap(), None);
 
         drop(commands);
         task.await.unwrap();
@@ -1369,7 +1527,12 @@ mod tests {
         })
         .await;
 
-        commands.send(Command::BrightnessRestore).await.unwrap();
+        commands
+            .send(Command::BrightnessRestore {
+                reason: DimReason::Idle,
+            })
+            .await
+            .unwrap();
         wait_for(&event_rx, |event| {
             matches!(event, Event::Brightness(BrightnessEvent::Restored))
         })
@@ -1435,7 +1598,12 @@ mod tests {
         })
         .await;
 
-        commands.send(Command::BrightnessRestore).await.unwrap();
+        commands
+            .send(Command::BrightnessRestore {
+                reason: DimReason::Idle,
+            })
+            .await
+            .unwrap();
         wait_for(&event_rx, |event| {
             matches!(event, Event::Brightness(BrightnessEvent::Restored))
         })
@@ -1505,6 +1673,7 @@ mod tests {
                 candidates: candidates.clone(),
                 ..bound
             }],
+            ..BrightnessState::default()
         };
 
         assert!(add_or_rebind(&mut state, &candidates, info("intel_backlight")).await);

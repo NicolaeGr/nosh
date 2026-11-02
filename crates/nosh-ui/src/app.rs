@@ -9,7 +9,7 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use nosh_core::{
     volume_icon, AudioEndpoint, AudioEvent, AudioModel, AuthEvent, BatteryEvent, BatteryModel,
-    BrightnessDevice, BrightnessEvent, ChangeOrigin, Command, Core, EndpointKind, Event,
+    BrightnessDevice, BrightnessEvent, ChangeOrigin, Command, Core, DimReason, EndpointKind, Event,
     IdleInhibitEvent, IdleInhibitState, LayoutPreset, MediaEvent, MediaModel, MenuEvent,
     MonitorEvent, NetworkEvent, NetworkModel, NotificationEvent, PolkitEvent, PowerEvent,
     PowerModel, PowerProfilesEvent, PowerProfilesModel, SessionLockEvent, SystemStats,
@@ -1074,12 +1074,35 @@ fn startup_action(arguments: &[std::ffi::OsString]) -> Option<StartupAction> {
                 )))
             }
             "brightness-dim" => {
+                let reason = match words.get(index).copied() {
+                    None => DimReason::Idle,
+                    Some(word) => match DimReason::parse(word) {
+                        Some(reason) => reason,
+                        None => {
+                            eprintln!("nosh: unknown dim reason: {word}");
+                            return None;
+                        }
+                    },
+                };
                 return Some(StartupAction::Command(Command::BrightnessDim {
                     value: DIM_PERCENT,
-                }))
+                    reason,
+                }));
             }
             "brightness-restore" => {
-                return Some(StartupAction::Command(Command::BrightnessRestore))
+                let reason = match words.get(index).copied() {
+                    None => DimReason::Idle,
+                    Some(word) => match DimReason::parse(word) {
+                        Some(reason) => reason,
+                        None => {
+                            eprintln!("nosh: unknown dim reason: {word}");
+                            return None;
+                        }
+                    },
+                };
+                return Some(StartupAction::Command(Command::BrightnessRestore {
+                    reason,
+                }));
             }
             "monitor-cycle" => {
                 let target = words
@@ -1315,12 +1338,22 @@ mod tests {
         assert_eq!(
             startup_action(&arguments(&["brightness-dim"])),
             Some(StartupAction::Command(Command::BrightnessDim {
-                value: DIM_PERCENT
+                value: DIM_PERCENT,
+                reason: DimReason::Idle
+            }))
+        );
+        assert_eq!(
+            startup_action(&arguments(&["brightness-dim", "lock"])),
+            Some(StartupAction::Command(Command::BrightnessDim {
+                value: DIM_PERCENT,
+                reason: DimReason::Lock
             }))
         );
         assert_eq!(
             startup_action(&arguments(&["brightness-restore"])),
-            Some(StartupAction::Command(Command::BrightnessRestore))
+            Some(StartupAction::Command(Command::BrightnessRestore {
+                reason: DimReason::Idle
+            }))
         );
     }
 

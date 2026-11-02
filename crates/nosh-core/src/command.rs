@@ -1,6 +1,6 @@
 use crate::audio::model::EndpointKind;
 use crate::auth::model::Secret;
-use crate::brightness::model::BrightnessDeviceId;
+use crate::brightness::model::{BrightnessDeviceId, DimReason};
 use crate::monitors::LayoutPreset;
 use crate::monitors::MonitorLayout;
 use crate::power::model::PowerAction;
@@ -37,8 +37,11 @@ pub enum Command {
     BrightnessSnapshot,
     BrightnessDim {
         value: f64,
+        reason: DimReason,
     },
-    BrightnessRestore,
+    BrightnessRestore {
+        reason: DimReason,
+    },
     BrightnessRescan,
     WorkspaceActivate(String),
     WorkspaceMoveToMonitor {
@@ -215,7 +218,7 @@ impl Command {
             | Self::BrightnessSetTarget { .. }
             | Self::BrightnessSnapshot
             | Self::BrightnessDim { .. }
-            | Self::BrightnessRestore
+            | Self::BrightnessRestore { .. }
             | Self::BrightnessRescan => Service::Brightness,
             Self::IdleInhibitSet(_) | Self::IdleInhibitToggle => Service::IdleInhibit,
             Self::PowerProfileSet(_) | Self::PowerProfileCycle => Service::PowerProfiles,
@@ -348,8 +351,19 @@ mod tests {
                 Service::Brightness,
             ),
             (Command::BrightnessSnapshot, Service::Brightness),
-            (Command::BrightnessDim { value: 10.0 }, Service::Brightness),
-            (Command::BrightnessRestore, Service::Brightness),
+            (
+                Command::BrightnessDim {
+                    value: 10.0,
+                    reason: DimReason::Idle,
+                },
+                Service::Brightness,
+            ),
+            (
+                Command::BrightnessRestore {
+                    reason: DimReason::Idle,
+                },
+                Service::Brightness,
+            ),
             (Command::BrightnessRescan, Service::Brightness),
             (Command::IdleInhibitSet(true), Service::IdleInhibit),
             (Command::IdleInhibitToggle, Service::IdleInhibit),

@@ -74,6 +74,8 @@ chord = "SUPER, SHIFT, M"
 # [menu.wallpapers]
 # title = "Wallpapers"
 # placeholder = "Search wallpapers"
+# icon = "preferences-desktop-wallpaper-symbolic"
+# show_in_apps = true
 #
 # [menu.wallpapers.window]
 # width = 900
@@ -94,11 +96,11 @@ chord = "SUPER, SHIFT, M"
 # search = "client"
 #
 # [menu.wallpapers.source.options]
-# path = "~/Pictures/wallpapers"
+# path = "~/Media/images/Wallpapers"
 # extensions = ["png", "jpg", "jpeg", "webp"]
 #
 # [menu.wallpapers.action]
-# command = ["swww", "img", "{item.path}"]
+# command = ["awww", "img", "{item.path}"]
 # after = "close"
 #
 # [menu.wallpapers.actions.open]

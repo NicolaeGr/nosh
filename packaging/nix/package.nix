@@ -14,7 +14,7 @@
 }:
 
 let
-  version = (lib.importTOML ../crates/nosh-ui/Cargo.toml).package.version;
+  version = (lib.importTOML ../../crates/nosh-ui/Cargo.toml).package.version;
 
   runtimeDeps = [
     brightnessctl
@@ -28,7 +28,7 @@ rustPlatform.buildRustPackage {
   inherit version;
 
   src = lib.cleanSourceWith {
-    src = ../.;
+    src = ../..;
     filter =
       path: type:
       lib.cleanSourceFilter path type
@@ -39,7 +39,7 @@ rustPlatform.buildRustPackage {
       ]);
   };
 
-  cargoLock.lockFile = ../Cargo.lock;
+  cargoLock.lockFile = ../../Cargo.lock;
 
   nativeBuildInputs = [
     makeWrapper
@@ -72,7 +72,7 @@ rustPlatform.buildRustPackage {
   '';
 
   meta = {
-    description = "A Hyprland shell";
+    description = "A Wayland desktop shell";
     homepage = "https://github.com/nicolaegr/nosh";
     license = lib.licenses.mit;
     mainProgram = "nosh";

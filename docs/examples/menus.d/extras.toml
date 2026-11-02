@@ -1,0 +1,121 @@
+# Three menus live in this one file. Their stylesheets are still named after
+# their ids: power.css, wallpapers.css, and themes.css.
+schema = 1
+
+[menu.power]
+title = "Power"
+placeholder = "Search actions"
+icon = "system-shutdown"
+show_in_apps = true
+
+[menu.power.window]
+width = 420
+height = 320
+
+[menu.power.view]
+type = "list"
+
+[menu.power.view.item]
+layout = "row"
+
+[menu.power.source]
+type = "builtin"
+name = "static"
+
+[menu.power.source.options]
+
+[[menu.power.source.options.items]]
+id = "lock"
+name = "Lock"
+description = "Lock the session"
+icon = "system-lock-screen"
+action = { command = ["nosh", "lock"], after = "close" }
+
+[[menu.power.source.options.items]]
+id = "reboot"
+name = "Reboot"
+description = "Restart the machine"
+icon = "system-reboot"
+action = { command = ["systemctl", "reboot"], after = "close" }
+
+[[menu.power.source.options.items]]
+id = "shutdown"
+name = "Shut down"
+description = "Power off the machine"
+icon = "system-shutdown"
+action = { command = ["systemctl", "poweroff"], after = "close" }
+
+[menu.wallpapers]
+title = "Wallpapers"
+placeholder = "Search wallpapers"
+icon = "preferences-desktop-wallpaper-symbolic"
+show_in_apps = true
+
+[menu.wallpapers.window]
+width = 900
+height = 640
+
+[menu.wallpapers.view]
+type = "grid"
+columns = 4
+cell_width = 200
+gap = 12
+
+[menu.wallpapers.view.item]
+layout = "card"
+
+[menu.wallpapers.source]
+type = "builtin"
+name = "files"
+search = "client"
+
+[menu.wallpapers.source.options]
+path = "~/Media/images/Wallpapers"
+extensions = ["png", "jpg", "jpeg", "webp"]
+
+[menu.wallpapers.action]
+command = ["awww", "img", "{item.path}"]
+after = "close"
+
+[menu.wallpapers.actions.open]
+command = ["xdg-open", "{item.path}"]
+after = "close"
+launch = "detached"
+
+[menu.wallpapers.keys]
+"ctrl+return" = "open"
+
+[menu.themes]
+title = "Themes"
+placeholder = "Search themes"
+icon = "applications-graphics-symbolic"
+show_in_apps = true
+
+[menu.themes.window]
+width = 720
+height = 540
+
+[menu.themes.view]
+type = "grid"
+columns = 3
+gap = 12
+
+[menu.themes.view.item]
+layout = "card"
+
+[menu.themes.source]
+type = "external"
+command = ["ht", "list", "--json"]
+search = "client"
+timeout_ms = 2000
+
+[menu.themes.template]
+name = "name"
+description = "description"
+preview = { field = "thumbnail", kind = "image" }
+badge = "badge"
+
+[menu.themes.action]
+command = ["ht", "set", "{item.theme}"]
+after = "reload"
+launch = "detached"

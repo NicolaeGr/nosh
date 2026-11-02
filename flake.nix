@@ -1,5 +1,5 @@
 {
-  description = "nosh - a Hyprland shell written in Rust";
+  description = "nosh - a Wayland desktop shell written in Rust";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -10,8 +10,8 @@
     inputs:
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
-        ./nix/packages.nix
-        ./nix/modules.nix
+        ./packaging/nix/packages.nix
+        ./packaging/nix/modules.nix
       ];
 
       systems = [

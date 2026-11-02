@@ -62,6 +62,17 @@ const USER_STYLE_TEMPLATE: &str = "\
  * built-in rules in this file.
  */
 /* nosh:builtin-styles */
+
+/* Examples:
+ *
+ * .Bar {
+ *   background: rgba(0, 0, 0, 0.55);
+ * }
+ *
+ * .MenuItem {
+ *   border-radius: 6px;
+ * }
+ */
 ";
 
 struct Ui {
@@ -719,6 +730,14 @@ impl Ui {
         self.power_menu.open(monitor.as_ref());
     }
 
+    fn toggle_quick_settings(&self) {
+        if self.lock_screen.is_locked() {
+            return;
+        }
+        let monitor = self.active_monitor();
+        self.quick_settings.toggle(monitor.as_ref());
+    }
+
     /// Closes the transient panels and locks the session.
     fn lock(&self) {
         self.quick_settings.close();
@@ -856,6 +875,7 @@ fn update_endpoint(
 enum StartupAction {
     Menu(String),
     Session,
+    QuickSettings,
     Lock,
     Command(Command),
 }
@@ -897,6 +917,10 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
                     StartupAction::Session => match &ui {
                         Some(ui) => ui.open_power_menu(),
                         None => pending.borrow_mut().push(StartupAction::Session),
+                    },
+                    StartupAction::QuickSettings => match &ui {
+                        Some(ui) => ui.toggle_quick_settings(),
+                        None => pending.borrow_mut().push(StartupAction::QuickSettings),
                     },
                     StartupAction::Lock => match &ui {
                         Some(ui) => ui.lock(),
@@ -973,6 +997,7 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<u8, Box<dyn Error>> {
                 match action {
                     StartupAction::Menu(id) => ui.open_menu(&id),
                     StartupAction::Session => ui.open_power_menu(),
+                    StartupAction::QuickSettings => ui.toggle_quick_settings(),
                     StartupAction::Lock => ui.lock(),
                     StartupAction::Command(command) => ui.core.send(command),
                 }
@@ -1016,6 +1041,7 @@ fn startup_action(arguments: &[std::ffi::OsString]) -> Option<StartupAction> {
                     .map(|id| StartupAction::Menu((*id).to_string()));
             }
             "session" => return Some(StartupAction::Session),
+            "quick-settings" => return Some(StartupAction::QuickSettings),
             "lock" => return Some(StartupAction::Lock),
             "volume-up" => {
                 return Some(StartupAction::Command(Command::AudioStepVolume(
@@ -1229,6 +1255,14 @@ mod tests {
         assert_eq!(
             startup_action(&arguments(&["session"])),
             Some(StartupAction::Session)
+        );
+    }
+
+    #[test]
+    fn the_command_line_toggles_quick_settings() {
+        assert_eq!(
+            startup_action(&arguments(&["quick-settings"])),
+            Some(StartupAction::QuickSettings)
         );
     }
 

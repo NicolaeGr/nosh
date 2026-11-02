@@ -1,0 +1,50 @@
+# Maintainer: NicolaeGr
+pkgname=nosh-git
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="A Wayland desktop shell written in Rust"
+arch=('x86_64' 'aarch64')
+url="https://github.com/NicolaeGr/nosh"
+license=('MIT')
+depends=(
+  gtk4
+  gtk4-layer-shell
+  libpulse
+  wayland
+)
+optdepends=(
+  'pam: lock screen, power menu, and polkit prompt'
+  'brightnessctl: brightness on the internal panel'
+  'ddcutil: brightness on external monitors over DDC/CI'
+  'upower: battery meter'
+  'networkmanager: network widget, Wi-Fi, and VPN'
+  'power-profiles-daemon: power profile control'
+  'polkit: privileged prompts'
+  'pipewire-pulse: PulseAudio server'
+  'pulseaudio: PulseAudio server, as an alternative to PipeWire'
+  'wireplumber: PipeWire session manager'
+)
+makedepends=(cargo rust pkgconf)
+provides=('nosh')
+conflicts=('nosh')
+source=("$pkgname::git+$url#branch=main")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  if git describe --long --tags --abbrev=7 >/dev/null 2>&1; then
+    git describe --long --tags --abbrev=7 |
+      sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+  else
+    printf '0.2.0.r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  fi
+}
+
+build() {
+  cd "$pkgname"
+  cargo build --locked --release -p nosh-ui --no-default-features --features stable
+}
+
+package() {
+  install -Dm755 "$pkgname/target/release/nosh" "$pkgdir/usr/bin/nosh"
+}

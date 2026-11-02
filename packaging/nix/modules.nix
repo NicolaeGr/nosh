@@ -7,7 +7,7 @@ let
   defaultPackage = pkgs: self.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
   mkUnit = cfg: {
-    description = "nosh - Hyprland shell";
+    description = "nosh - Wayland desktop shell";
     after = cfg.startAfter;
     partOf = [ "graphical-session.target" ];
     wantedBy = cfg.wantedBy;
@@ -15,8 +15,6 @@ let
     # Keep the session PATH that UWSM imported. The unit generator otherwise
     # writes Environment="PATH=coreutils:...".
     enableDefaultPath = false;
-
-    unitConfig.ConditionEnvironment = "HYPRLAND_INSTANCE_SIGNATURE";
 
     serviceConfig = {
       Type = "simple";
@@ -28,10 +26,9 @@ let
 
   mkHomeManagerUnit = cfg: {
     Unit = {
-      Description = "nosh - Hyprland shell";
+      Description = "nosh - Wayland desktop shell";
       After = cfg.startAfter;
       PartOf = [ "graphical-session.target" ];
-      ConditionEnvironment = "HYPRLAND_INSTANCE_SIGNATURE";
     };
     Service = {
       Type = "simple";
@@ -155,7 +152,7 @@ in
         in
         {
           options.programs.nosh = {
-            enable = mkEnableOption "nosh, a Hyprland shell";
+            enable = mkEnableOption "nosh, a Wayland desktop shell";
 
             package = mkOption {
               type = types.package;
@@ -200,7 +197,7 @@ in
         in
         {
           options.programs.nosh = {
-            enable = mkEnableOption "nosh, a Hyprland shell";
+            enable = mkEnableOption "nosh, a Wayland desktop shell";
 
             package = mkOption {
               type = types.package;

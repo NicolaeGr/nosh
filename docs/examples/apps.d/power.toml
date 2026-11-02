@@ -1,0 +1,10 @@
+# Copy to ~/.config/nosh/apps.d/power.toml.
+[[entry]]
+name = "Shutdown"
+icon = "system-shutdown"
+exec = "systemctl poweroff"
+
+[[entry]]
+name = "Reboot"
+icon = "system-reboot"
+exec = "systemctl reboot"

@@ -1,0 +1,14 @@
+[[entry]]
+name = "Settings"
+icon = "preferences-system"
+exec = "gnome-control-center"
+
+[[entry]]
+name = "Files"
+icon = "system-file-manager"
+exec = "nautilus --new-window"
+
+[[entry]]
+name = "Terminal"
+icon = "utilities-terminal"
+exec = "kitty"

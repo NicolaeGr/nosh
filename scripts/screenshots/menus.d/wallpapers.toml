@@ -1,0 +1,34 @@
+# Loaded by scripts/screenshots.sh. The path is filled in when the shots run.
+schema = 1
+
+[menu.wallpapers]
+title = "Wallpapers"
+placeholder = "Search wallpapers"
+icon = "preferences-desktop-wallpaper-symbolic"
+show_in_apps = true
+
+[menu.wallpapers.window]
+width = 900
+height = 640
+
+[menu.wallpapers.view]
+type = "grid"
+columns = 4
+cell_width = 200
+gap = 12
+
+[menu.wallpapers.view.item]
+layout = "card"
+
+[menu.wallpapers.source]
+type = "builtin"
+name = "files"
+search = "client"
+
+[menu.wallpapers.source.options]
+path = "@WALLPAPER_DIR@"
+extensions = ["png", "jpg", "jpeg", "webp"]
+
+[menu.wallpapers.action]
+command = ["awww", "img", "{item.path}"]
+after = "close"

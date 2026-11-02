@@ -1,0 +1,15 @@
+/* nosh:builtin-styles */
+
+@define-color accent_bg_color #1e66f5;
+
+.Bar {
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.MenuItem {
+    border-radius: 6px;
+}
+
+.menu-wallpapers .MenuItemTitle {
+    font-weight: 600;
+}

@@ -113,6 +113,14 @@ gridview.MenuGrid > child {
     outline-width: 0;
 }
 
+listview.MenuList > row {
+    margin: 0.125em 0;
+}
+
+gridview.MenuGrid > child {
+    margin: 0.125em;
+}
+
 listview.MenuList > row:hover,
 gridview.MenuGrid > child:hover {
     background-color: @menu_hover;
@@ -128,8 +136,6 @@ listview.MenuList > row:focus,
 gridview.MenuGrid > child:focus,
 listview.MenuList > row:focus-visible,
 gridview.MenuGrid > child:focus-visible {
-    outline-style: solid;
-    outline-width: 0.125em;
-    outline-offset: -0.125em;
-    outline-color: @menu_accent;
+    outline-style: none;
+    outline-width: 0;
 }

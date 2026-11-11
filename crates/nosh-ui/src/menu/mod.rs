@@ -145,18 +145,38 @@ impl MenuWindow {
         selection.set_autoselect(false);
         selection.set_can_unselect(true);
 
+        let send = {
+            let core = Rc::clone(&core);
+            let id = id.to_string();
+            move |index: usize, action: Option<String>| {
+                core.send(Command::MenuActivate {
+                    id: id.clone(),
+                    index,
+                    action,
+                });
+            }
+        };
+        let activate = {
+            let send = send.clone();
+            let selection = selection.clone();
+            move |action: Option<String>| {
+                let index = selection.selected();
+                let index = if index == u32::MAX { 0 } else { index };
+                send(index as usize, action);
+            }
+        };
+
         let layout = def.view.item.layout;
         let factory = gtk::SignalListItemFactory::new();
-        factory.connect_bind(move |_, object| {
-            let Some(list_item) = object.downcast_ref::<gtk::ListItem>() else {
-                return;
-            };
-            let Some(boxed) = list_item.item().and_downcast::<glib::BoxedAnyObject>() else {
-                return;
-            };
-            let item = boxed.borrow::<MenuItem>();
-            let child = build_item(&item, layout);
-            list_item.set_child(Some(&child));
+        factory.connect_bind({
+            let send = send.clone();
+            let selection = selection.clone();
+            move |_, object| {
+                let Some(list_item) = object.downcast_ref::<gtk::ListItem>() else {
+                    return;
+                };
+                bind_row(list_item, layout, &send, &selection);
+            }
         });
 
         let scrolled = gtk::ScrolledWindow::new();
@@ -165,42 +185,21 @@ impl MenuWindow {
 
         let bindings = menu_bindings(&def);
 
-        let send = {
-            let core = Rc::clone(&core);
-            let id = id.to_string();
-            let selection = selection.clone();
-            move |action: Option<String>| {
-                let index = selection.selected();
-                let index = if index == u32::MAX { 0 } else { index };
-                core.send(Command::MenuActivate {
-                    id: id.clone(),
-                    index: index as usize,
-                    action,
-                });
-            }
-        };
-        let activate = {
-            let send = send.clone();
-            move || send(None)
-        };
-
         let view: gtk::Widget = match def.view.kind {
             ViewKind::List => {
                 let list = gtk::ListView::new(Some(selection.clone()), Some(factory));
-                list.set_single_click_activate(true);
                 list.add_css_class("MenuList");
-                let activate = activate.clone();
-                list.connect_activate(move |_, _| activate());
+                let send = send.clone();
+                list.connect_activate(move |_, position| send(position as usize, None));
                 scrolled.set_child(Some(&list));
                 list.upcast()
             }
             ViewKind::Grid => {
                 let grid = gtk::GridView::new(Some(selection.clone()), Some(factory));
                 grid.set_max_columns(def.view.resolved_columns());
-                grid.set_single_click_activate(true);
                 grid.add_css_class("MenuGrid");
-                let activate = activate.clone();
-                grid.connect_activate(move |_, _| activate());
+                let send = send.clone();
+                grid.connect_activate(move |_, position| send(position as usize, None));
                 scrolled.set_child(Some(&grid));
                 grid.upcast()
             }
@@ -215,7 +214,7 @@ impl MenuWindow {
 
         entry.connect_activate({
             let activate = activate.clone();
-            move |_| activate()
+            move |_| activate(None)
         });
         entry.connect_changed({
             let core = Rc::clone(&core);
@@ -237,9 +236,11 @@ impl MenuWindow {
             let core = Rc::clone(&core);
             let id = id.to_string();
             let columns = def.view.resolved_columns();
+            let activate = activate.clone();
             move |_, key, _, state| {
                 handle_key(
-                    key, state, &entry, &view, &selection, columns, &id, &core, &send, &bindings,
+                    key, state, &entry, &view, &selection, columns, &id, &core, &activate,
+                    &bindings,
                 )
             }
         });
@@ -398,8 +399,8 @@ fn handle_key(
     let entry_focused = entry.has_focus();
 
     if matches!(key, gdk::Key::Down | gdk::Key::Tab) && entry_focused {
-        view.grab_focus();
-        selection.set_selected(0);
+        // TabForward starts at the first item, unlike Down.
+        view.child_focus(gtk::DirectionType::TabForward);
         return glib::Propagation::Stop;
     }
 
@@ -420,9 +421,7 @@ fn handle_key(
         return glib::Propagation::Stop;
     }
 
-    // Any focus outside the search bar means the user is navigating items.
-    // Focus may sit on the list or grid itself or on a row inside it, so do
-    // not test the view widget. Typing always belongs to the search bar.
+    // Typing anywhere outside the search bar belongs to the search bar.
     if !entry_focused
         && !state.intersects(
             gdk::ModifierType::CONTROL_MASK
@@ -446,6 +445,81 @@ fn handle_key(
     }
 
     glib::Propagation::Proceed
+}
+
+fn bind_row(
+    list_item: &gtk::ListItem,
+    layout: ItemLayout,
+    send: &(impl Fn(usize, Option<String>) + Clone + 'static),
+    selection: &gtk::SingleSelection,
+) {
+    let Some(boxed) = list_item.item().and_downcast::<glib::BoxedAnyObject>() else {
+        return;
+    };
+    let item = boxed.borrow::<MenuItem>();
+    let child = build_item(&item, layout);
+    attach_row_click(&child, list_item, send);
+    list_item.set_child(Some(&child));
+    if let Some(row) = child.parent() {
+        attach_row_focus(&row, list_item, selection);
+    }
+}
+
+/// Keeps the selection on the row that has keyboard focus.
+fn attach_row_focus(
+    row: &gtk::Widget,
+    list_item: &gtk::ListItem,
+    selection: &gtk::SingleSelection,
+) {
+    // Adding a controller to a row inside the factory's bind handler crashes
+    // GTK's row bookkeeping, so install it after bind returns.
+    let row = row.clone();
+    let list_item = list_item.clone();
+    let selection = selection.clone();
+    glib::idle_add_local_once(move || {
+        if has_focus_controller(&row) {
+            return;
+        }
+        let focus = gtk::EventControllerFocus::new();
+        focus.connect_enter(move |_| {
+            let position = list_item.position();
+            if position != u32::MAX {
+                selection.set_selected(position);
+            }
+        });
+        row.add_controller(focus);
+    });
+}
+
+fn has_focus_controller(row: &gtk::Widget) -> bool {
+    let controllers = row.observe_controllers();
+    (0..controllers.n_items())
+        .filter_map(|index| controllers.item(index))
+        .any(|object| object.downcast_ref::<gtk::EventControllerFocus>().is_some())
+}
+
+/// Activates a row on a single click. The views' own single-click mode also
+/// selects on hover, so clicks are handled here instead.
+fn attach_row_click(
+    child: &gtk::Box,
+    list_item: &gtk::ListItem,
+    send: &(impl Fn(usize, Option<String>) + Clone + 'static),
+) {
+    let click = gtk::GestureClick::new();
+    click.set_button(gdk::BUTTON_PRIMARY);
+    let list_item = list_item.clone();
+    let send = send.clone();
+    click.connect_released(move |gesture, presses, _, _| {
+        if presses != 1 {
+            return;
+        }
+        gesture.set_state(gtk::EventSequenceState::Claimed);
+        let position = list_item.position();
+        if position != u32::MAX {
+            send(position as usize, None);
+        }
+    });
+    child.add_controller(click);
 }
 
 fn insert_at_cursor(entry: &gtk::Entry, character: char) {

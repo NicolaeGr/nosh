@@ -2,7 +2,9 @@
 //!
 //! `loginctl lock-session` emits `Lock` on the caller's session object. The
 //! object path is resolved through `GetSessionByPID`, because `session/auto`
-//! is a method alias and does not carry the signals of the real session.
+//! is a method alias and does not carry the signals of the real session. A
+//! shell started by the systemd user manager is outside the session cgroup, so
+//! `XDG_SESSION_ID` and the user's display session are the fallbacks.
 
 use async_channel::Sender;
 use futures_util::StreamExt;
@@ -11,7 +13,9 @@ use zbus::OwnedObjectPath;
 
 use crate::error::BackendError;
 use crate::event::SessionLockEvent;
-use crate::power::logind::{LOGIND_MANAGER, LOGIND_PATH, LOGIND_SERVICE, LOGIND_SESSION_INTERFACE};
+use crate::power::logind::{
+    display_session, LOGIND_MANAGER, LOGIND_PATH, LOGIND_SERVICE, LOGIND_SESSION_INTERFACE,
+};
 use crate::session_lock::backend::SessionLockBackend;
 
 pub struct LogindSessionLockBackend {
@@ -50,7 +54,16 @@ impl LogindSessionLockBackend {
         {
             Ok(path) => Ok(path),
             Err(error) => {
-                let id = std::env::var("XDG_SESSION_ID").map_err(|_| {
+                if let Ok(id) = std::env::var("XDG_SESSION_ID") {
+                    if !id.is_empty() {
+                        return manager.call("GetSession", &(id,)).await.map_err(dbus_error);
+                    }
+                }
+
+                // Under a session manager such as UWSM the shell has no
+                // session of its own. The display session is the one that
+                // carries the lock signal.
+                let id = display_session(connection).await.map_err(|_| {
                     BackendError::Unavailable(format!("the session is unknown: {error}"))
                 })?;
                 manager.call("GetSession", &(id,)).await.map_err(dbus_error)

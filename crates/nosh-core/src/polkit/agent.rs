@@ -97,8 +97,9 @@ impl PolkitBackend for PolkitAgentBackend {
         }
 
         let authority = self.authority().await?;
+        let subject = subject(connection).await;
         if let Err(error) = authority
-            .call::<_, _, ()>("RegisterAuthenticationAgent", &(subject(), locale, path))
+            .call::<_, _, ()>("RegisterAuthenticationAgent", &(subject, locale, path))
             .await
         {
             let _ = connection
@@ -114,8 +115,9 @@ impl PolkitBackend for PolkitAgentBackend {
     async fn unregister(&self, path: &str) -> Result<(), BackendError> {
         let connection = self.connection().await?;
         let authority = self.authority().await?;
+        let subject = subject(connection).await;
         let result = authority
-            .call::<_, _, ()>("UnregisterAuthenticationAgent", &(subject(), path))
+            .call::<_, _, ()>("UnregisterAuthenticationAgent", &(subject, path))
             .await;
         let _ = connection
             .object_server()
@@ -129,18 +131,46 @@ impl PolkitBackend for PolkitAgentBackend {
 ///
 /// A session subject covers every process in the user's session, which is where
 /// `systemctl`, `pkexec`, and graphical applications live. When the session id
-/// is missing the process subject is the only fallback.
-fn subject() -> (String, HashMap<String, OwnedVariant>) {
+/// is missing, the user's display session is asked from logind, because a shell
+/// started by the systemd user manager sits outside the session cgroup. The
+/// process subject is the last fallback, and polkit rejects it without the
+/// start time.
+async fn subject(connection: &zbus::Connection) -> (String, HashMap<String, OwnedVariant>) {
     let mut details = HashMap::new();
-    if let Ok(session) = std::env::var("XDG_SESSION_ID") {
-        if !session.is_empty() {
-            details.insert("session-id".to_string(), string_value(session));
-            return ("unix-session".to_string(), details);
-        }
+
+    let session = match std::env::var("XDG_SESSION_ID") {
+        Ok(session) if !session.is_empty() => Some(session),
+        _ => crate::power::logind::display_session(connection)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    %error,
+                    "the display session is unknown, falling back to the process subject"
+                );
+            })
+            .ok(),
+    };
+    if let Some(session) = session {
+        details.insert("session-id".to_string(), string_value(session));
+        return ("unix-session".to_string(), details);
     }
 
     details.insert("pid".to_string(), OwnedVariant::from(std::process::id()));
+    if let Some(start_time) = process_start_time() {
+        details.insert("start-time".to_string(), OwnedVariant::from(start_time));
+    }
     ("unix-process".to_string(), details)
+}
+
+/// The start time of this process, read from `/proc/self/stat` field 22.
+///
+/// polkit stores the raw clock ticks and rejects a process subject without it.
+fn process_start_time() -> Option<u64> {
+    let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+    // Only the command name can hold a `)`, so the fields after it split cleanly.
+    let fields: Vec<&str> = stat.rsplit_once(')')?.1.split_whitespace().collect();
+    // The first value after the command name is field 3, so field 22 is index 19.
+    fields.get(19)?.parse().ok()
 }
 
 fn string_value(value: String) -> OwnedVariant {
@@ -343,15 +373,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_session_subject_uses_the_session_id() {
-        // The test process may run outside a session, so only assert the shape
-        // that does not depend on the environment.
-        let (kind, details) = subject();
-        match kind.as_str() {
-            "unix-session" => assert!(details.contains_key("session-id")),
-            "unix-process" => assert!(details.contains_key("pid")),
-            other => panic!("unexpected subject kind {other}"),
-        }
+    fn the_process_start_time_is_read_for_the_subject_fallback() {
+        let start = process_start_time().expect("/proc/self/stat is readable");
+        assert!(start > 0);
     }
 
     #[test]

@@ -15,6 +15,42 @@ pub const LOGIND_PATH: &str = "/org/freedesktop/login1";
 pub const LOGIND_MANAGER: &str = "org.freedesktop.login1.Manager";
 pub const LOGIND_SESSION_INTERFACE: &str = "org.freedesktop.login1.Session";
 pub const LOGIND_SESSION_PATH: &str = "/org/freedesktop/login1/session/auto";
+pub const LOGIND_USER_INTERFACE: &str = "org.freedesktop.login1.User";
+
+/// The graphical session logind reports for the current user.
+///
+/// A shell started by the systemd user manager runs outside the logind session
+/// cgroup, so `GetSessionByPID` fails for it. The `Display` property of the user
+/// object names the session polkitd itself resolves through
+/// `sd_pid_get_owner_uid` and `sd_uid_get_display`, which is the session an
+/// authentication agent or a lock watcher must use.
+pub async fn display_session(connection: &zbus::Connection) -> Result<String, BackendError> {
+    let manager = zbus::Proxy::new(connection, LOGIND_SERVICE, LOGIND_PATH, LOGIND_MANAGER)
+        .await
+        .map_err(dbus_error)?;
+
+    // The real user id, so the lookup matches the session owner.
+    let uid = unsafe { libc::getuid() };
+    let user_path: zbus::OwnedObjectPath =
+        manager.call("GetUser", &(uid,)).await.map_err(dbus_error)?;
+    let user = zbus::Proxy::new(
+        connection,
+        LOGIND_SERVICE,
+        user_path.as_str(),
+        LOGIND_USER_INTERFACE,
+    )
+    .await
+    .map_err(dbus_error)?;
+
+    let (session, _path): (String, zbus::OwnedObjectPath) =
+        user.get_property("Display").await.map_err(dbus_error)?;
+    if session.is_empty() {
+        return Err(BackendError::Unavailable(
+            "the user has no graphical session".to_string(),
+        ));
+    }
+    Ok(session)
+}
 
 /// The answer to a logind `Can*` question.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
